@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -356,12 +357,24 @@ func (e *Engine) startWatchdog(session *Session) {
 func (e *Engine) startHookServer() {
 	addr := fmt.Sprintf(":%d", e.config.HookServer.Port)
 
-	http.HandleFunc("/hook", e.handleHookRequest)
+	// Create HTTP server instance
+	mux := http.NewServeMux()
+	mux.HandleFunc("/hook", e.handleHookRequest)
+
+	e.hookServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
 
 	log.Printf("Hook server listening on %s", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+
+	// Start server (blocking)
+	// When Shutdown() is called, ListenAndServe will return ErrServerClosed
+	if err := e.hookServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Printf("Hook server error: %v", err)
 	}
+
+	log.Println("Hook server stopped")
 }
 
 // handleHookRequest handles HTTP hook requests
@@ -465,18 +478,26 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 func (e *Engine) Stop() error {
 	log.Println("Stopping clibot engine...")
 
+	// Stop hook server with graceful shutdown
+	if e.hookServer != nil {
+		log.Println("Stopping hook server...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := e.hookServer.Shutdown(ctx); err != nil {
+			log.Printf("Failed to gracefully stop hook server: %v", err)
+			// Force close if graceful shutdown fails
+			e.hookServer.Close()
+		} else {
+			log.Println("Hook server stopped gracefully")
+		}
+	}
+
 	// Stop all bots
 	for botType, botAdapter := range e.activeBots {
 		log.Printf("Stopping %s bot...", botType)
 		if err := botAdapter.Stop(); err != nil {
 			log.Printf("Failed to stop %s bot: %v", botType, err)
-		}
-	}
-
-	// Stop hook server
-	if e.hookServer != nil {
-		if err := e.hookServer.Close(); err != nil {
-			log.Printf("Failed to stop hook server: %v", err)
 		}
 	}
 
