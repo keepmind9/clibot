@@ -1,0 +1,99 @@
+package core
+
+// SessionState represents the current state of a session
+type SessionState string
+
+const (
+	StateIdle         SessionState = "idle"            // Idle and ready for new tasks
+	StateProcessing   SessionState = "processing"      // Currently processing a command
+	StateWaitingInput SessionState = "waiting_input"   // Waiting for user input (mid-interaction)
+	StateError        SessionState = "error"           // Error state
+)
+
+// Session represents a tmux session with its metadata
+type Session struct {
+	Name      string       // tmux session name
+	CLIType   string       // claude/gemini/opencode
+	WorkDir   string       // Working directory
+	State     SessionState // Current state
+	CreatedAt string       // Creation timestamp
+}
+
+// ResponseEvent represents a CLI response event
+type ResponseEvent struct {
+	SessionName string
+	Response    string
+	Timestamp   string
+}
+
+// Config represents the complete clibot configuration structure
+type Config struct {
+	HookServer    HookServerConfig        `yaml:"hook_server"`
+	CommandPrefix string                  `yaml:"command_prefix"`
+	Security      SecurityConfig          `yaml:"security"`
+	Watchdog      WatchdogConfig          `yaml:"watchdog"`
+	Sessions      []SessionConfig         `yaml:"sessions"`
+	DefaultSession string                 `yaml:"default_session"`
+	Bots          map[string]BotConfig    `yaml:"bots"`
+	CLIAdapters   map[string]CLIAdapterConfig `yaml:"cli_adapters"`
+	Logging       LoggingConfig           `yaml:"logging"`
+}
+
+// HookServerConfig represents HTTP Hook server configuration
+type HookServerConfig struct {
+	Port int `yaml:"port"`
+}
+
+// SecurityConfig represents security and access control configuration
+type SecurityConfig struct {
+	WhitelistEnabled bool                `yaml:"whitelist_enabled"`
+	AllowedUsers     map[string][]string `yaml:"allowed_users"`
+	Admins           map[string][]string `yaml:"admins"`
+}
+
+// WatchdogConfig represents watchdog monitoring configuration
+type WatchdogConfig struct {
+	Enabled        bool     `yaml:"enabled"`
+	CheckIntervals []string `yaml:"check_intervals"`
+	Timeout        string   `yaml:"timeout"`
+}
+
+// SessionConfig represents a session configuration
+type SessionConfig struct {
+	Name      string `yaml:"name"`
+	CLIType   string `yaml:"cli_type"`
+	WorkDir   string `yaml:"work_dir"`
+	AutoStart bool   `yaml:"auto_start"`
+}
+
+// BotConfig represents bot configuration
+type BotConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	AppID          string `yaml:"app_id"`
+	AppSecret      string `yaml:"app_secret"`
+	Token          string `yaml:"token"`
+	DefaultChannel string `yaml:"default_channel"`
+	ChannelID      string `yaml:"channel_id"`
+}
+
+// CLIAdapterConfig represents CLI adapter configuration
+type CLIAdapterConfig struct {
+	HistoryDir  string            `yaml:"history_dir"`
+	HistoryDB   string            `yaml:"history_db"`
+	HistoryFile string            `yaml:"history_file"`
+	HookCommand string            `yaml:"hook_command"`
+	Interactive InteractiveConfig `yaml:"interactive"`
+}
+
+// InteractiveConfig represents interactive detection configuration
+type InteractiveConfig struct {
+	Enabled    bool     `yaml:"enabled"`
+	CheckLines int      `yaml:"check_lines"`
+	Patterns   []string `yaml:"patterns"`
+}
+
+// LoggingConfig represents logging configuration
+type LoggingConfig struct {
+	Level string `yaml:"level"`
+	File  string `yaml:"file"`
+}

@@ -8,6 +8,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	DefaultHookPort     = 8080
+	DefaultCommandPrefix = "!!"
+)
+
 // LoadConfig loads configuration from file and expands environment variables
 func LoadConfig(configPath string) (*Config, error) {
 	// Read configuration file
@@ -48,17 +53,17 @@ func expandEnv(input string) string {
 func validateConfig(config *Config) error {
 	// Validate hook server port
 	if config.HookServer.Port == 0 {
-		config.HookServer.Port = 8080 // Default port
+		config.HookServer.Port = DefaultHookPort
 	}
 
 	// Validate command prefix
 	if config.CommandPrefix == "" {
-		config.CommandPrefix = "!!" // Default prefix
+		config.CommandPrefix = DefaultCommandPrefix
 	}
 
 	// Validate security settings
 	if config.Security.WhitelistEnabled {
-		if config.Security.AllowedUsers == nil || len(config.Security.AllowedUsers) == 0 {
+		if len(config.Security.AllowedUsers) == 0 {
 			return fmt.Errorf("security.allowed_users cannot be empty when whitelist is enabled")
 		}
 	}
@@ -76,6 +81,20 @@ func validateConfig(config *Config) error {
 	// Set default session if not specified
 	if config.DefaultSession == "" && len(config.Sessions) > 0 {
 		config.DefaultSession = config.Sessions[0].Name
+	}
+
+	// Validate that default_session references an existing session
+	if config.DefaultSession != "" {
+		found := false
+		for _, session := range config.Sessions {
+			if session.Name == config.DefaultSession {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("default_session '%s' does not exist in sessions configuration", config.DefaultSession)
+		}
 	}
 
 	return nil
@@ -113,7 +132,13 @@ func (c *Config) GetCLIAdapterConfig(cliType string) (CLIAdapterConfig, error) {
 // expandHome expands ~ to user's home directory
 func expandHome(path string) string {
 	if strings.HasPrefix(path, "~/") {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			// If we can't get home directory, return original path
+			// This allows the system to continue with potentially invalid paths
+			// that will be caught by actual usage
+			return path
+		}
 		return home + path[1:]
 	}
 	return path
