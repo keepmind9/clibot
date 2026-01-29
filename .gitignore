@@ -4,7 +4,8 @@
 *.dll
 *.so
 *.dylib
-clibot
+/clibot
+./clibot
 
 # Test binary, built with `go test -c`
 *.test

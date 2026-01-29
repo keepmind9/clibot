@@ -1,0 +1,110 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/keepmind9/clibot/internal/bot"
+	"github.com/keepmind9/clibot/internal/cli"
+	"github.com/keepmind9/clibot/internal/core"
+	"github.com/spf13/cobra"
+)
+
+var (
+	configFile string
+
+	startCmd = &cobra.Command{
+		Use:   "start",
+		Short: "Start clibot main process",
+		Long:  "Start clibot main process, listen to bot messages and dispatch to AI CLI tools",
+		Run: func(cmd *cobra.Command, args []string) {
+			// Load configuration
+			config, err := core.LoadConfig(configFile)
+			if err != nil {
+				log.Fatalf("Failed to load config: %v", err)
+			}
+
+			fmt.Printf("Starting clibot with config: %s\n", configFile)
+			fmt.Printf("Hook server port: %d\n", config.HookServer.Port)
+			fmt.Printf("Command prefix: %s\n", config.CommandPrefix)
+			fmt.Printf("Whitelist enabled: %v\n", config.Security.WhitelistEnabled)
+
+			// Create engine
+			engine := core.NewEngine(config)
+
+			// Register CLI adapters
+			for cliType, cliConfig := range config.CLIAdapters {
+				switch cliType {
+				case "claude":
+					claudeAdapter, err := cli.NewClaudeAdapter(cli.ClaudeAdapterConfig{
+						HistoryDir: cliConfig.HistoryDir,
+						CheckLines: cliConfig.Interactive.CheckLines,
+						Patterns:   cliConfig.Interactive.Patterns,
+					})
+					if err != nil {
+						log.Fatalf("Failed to create Claude CLI adapter: %v", err)
+					}
+					engine.RegisterCLIAdapter(cliType, claudeAdapter)
+					log.Printf("Registered %s CLI adapter", cliType)
+
+				// TODO: Add other CLI adapters (gemini, opencode) when implemented
+				default:
+					log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
+				}
+			}
+
+			// Register bot adapters
+			for botType, botConfig := range config.Bots {
+				if !botConfig.Enabled {
+					log.Printf("Bot %s is disabled, skipping", botType)
+					continue
+				}
+
+				switch botType {
+				case "discord":
+					discordBot := bot.NewDiscordBot(botConfig.Token, botConfig.ChannelID)
+					engine.RegisterBotAdapter(botType, discordBot)
+					log.Printf("Registered %s bot adapter", botType)
+
+				// TODO: Add other bot adapters (feishu, telegram) when implemented
+				default:
+					log.Printf("Warning: Bot type '%s' not implemented yet", botType)
+				}
+			}
+
+			// Setup signal handling for graceful shutdown
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+			// Start engine in a goroutine
+			engineErrChan := make(chan error, 1)
+			go func() {
+				fmt.Println("\nclibot engine starting...")
+				fmt.Println("Press Ctrl+C to stop\n")
+				engineErrChan <- engine.Run()
+			}()
+
+			// Wait for signal or engine error
+			select {
+			case sig := <-sigChan:
+				log.Printf("\nReceived signal: %v, shutting down gracefully...", sig)
+				if err := engine.Stop(); err != nil {
+					log.Printf("Error during shutdown: %v", err)
+				}
+			case err := <-engineErrChan:
+				if err != nil {
+					log.Fatalf("Engine error: %v", err)
+				}
+			}
+
+			log.Println("Clbot stopped")
+		},
+	}
+)
+
+func init() {
+	startCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file path")
+}
