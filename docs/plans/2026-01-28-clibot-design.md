@@ -869,7 +869,10 @@ bots:
 cli_adapters:
   claude:
     history_dir: "~/.claude/conversations"
-    hook_command: "clibot hook --session $SESSION --event completed"
+    # Hook command: CLI should pass JSON via stdin with --cli-type parameter
+    # Example: echo '{"session":"my-session","event":"completed"}' | clibot hook --cli-type claude
+    # The JSON structure is flexible - different CLIs can pass different fields
+    hook_command: "cat | clibot hook --cli-type claude"
 
     # ========== 新增：交互检测配置 ==========
     interactive:
@@ -882,7 +885,8 @@ cli_adapters:
 
   gemini:
     history_db: "~/.gemini/history.sqlite"
-    hook_command: "clibot hook --session $SESSION --event completed"
+    # Hook command for Gemini CLI
+    hook_command: "cat | clibot hook --cli-type gemini"
 
     interactive:
       enabled: true
@@ -893,7 +897,8 @@ cli_adapters:
 
   opencode:
     history_file: "~/.opencode/sessions.log"
-    hook_command: "clibot hook --session $SESSION --event completed"
+    # Hook command for OpenCode CLI
+    hook_command: "cat | clibot hook --cli-type opencode"
 
     interactive:
       enabled: true

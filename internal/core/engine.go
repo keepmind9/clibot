@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -365,11 +366,57 @@ func (e *Engine) startHookServer() {
 
 // handleHookRequest handles HTTP hook requests
 func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
-	sessionName := r.URL.Query().Get("session")
-	event := r.URL.Query().Get("event")
+	// Only accept POST requests
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-	log.Printf("Hook received: session=%s, event=%s", sessionName, event)
+	// Parse JSON body
+	var payload struct {
+		CLIType string                 `json:"cli_type"`
+		Data    map[string]interface{} `json:"data"`
+	}
 
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		log.Printf("Failed to decode hook payload: %v", err)
+		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	// Extract session and event from data (flexible - different CLIs may use different field names)
+	var sessionName, event string
+
+	if s, ok := payload.Data["session"].(string); ok {
+		sessionName = s
+	}
+	if s, ok := payload.Data["session_name"].(string); ok {
+		sessionName = s
+	}
+
+	if e, ok := payload.Data["event"].(string); ok {
+		event = e
+	}
+	if e, ok := payload.Data["event_type"].(string); ok {
+		event = e
+	}
+
+	log.Printf("Hook received: cli_type=%s, session=%s, event=%s", payload.CLIType, sessionName, event)
+
+	// Validate required fields
+	if sessionName == "" {
+		log.Printf("Missing session name in hook data")
+		http.Error(w, "Missing session name", http.StatusBadRequest)
+		return
+	}
+
+	if event == "" {
+		log.Printf("Missing event type in hook data")
+		http.Error(w, "Missing event type", http.StatusBadRequest)
+		return
+	}
+
+	// Handle completed event
 	if event == "completed" {
 		// Get session info
 		e.sessionMu.RLock()
