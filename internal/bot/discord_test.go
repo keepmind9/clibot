@@ -3,16 +3,18 @@ package bot
 import (
 	"errors"
 	"testing"
+
+	"github.com/bwmarrin/discordgo"
 )
 
-// MockDiscordSession is a mock implementation of DiscordSession for testing
+// MockDiscordSession is a mock implementation of DiscordSessionInterface for testing
 type MockDiscordSession struct {
 	shouldFailOnOpen bool
 	shouldFailOnSend bool
 	openCalled       bool
 	closed           bool
 	sentMessages     []SentMessage
-	onAddHandler     func(handler interface{})
+	handler          interface{}
 }
 
 type SentMessage struct {
@@ -20,10 +22,9 @@ type SentMessage struct {
 	Message string
 }
 
-func (m *MockDiscordSession) AddHandler(handler interface{}) {
-	if m.onAddHandler != nil {
-		m.onAddHandler(handler)
-	}
+func (m *MockDiscordSession) AddHandler(handler interface{}) func() {
+	m.handler = handler
+	return func() {} // Return a remove handler function
 }
 
 func (m *MockDiscordSession) Open() error {
@@ -39,58 +40,58 @@ func (m *MockDiscordSession) Close() error {
 	return nil
 }
 
-func (m *MockDiscordSession) ChannelMessageSend(channel, message string) (string, error) {
+func (m *MockDiscordSession) ChannelMessageSend(channel, message string, options ...discordgo.RequestOption) (*discordgo.Message, error) {
 	if m.shouldFailOnSend {
-		return "", errors.New("failed to send message")
+		return nil, errors.New("failed to send message")
 	}
 	m.sentMessages = append(m.sentMessages, SentMessage{
 		Channel: channel,
 		Message: message,
 	})
-	return "msg-id", nil
+	return &discordgo.Message{ID: "msg-id"}, nil
 }
 
-// MockMessageAuthor represents a message author for testing
-type MockMessageAuthor struct {
-	Bot    bool
-	UserID string
-}
-
-// ToDiscordMessageAuthor converts MockMessageAuthor to DiscordMessageAuthor
-func (m MockMessageAuthor) ToDiscordMessageAuthor() DiscordMessageAuthor {
-	return DiscordMessageAuthor{
-		Bot:    m.Bot,
-		UserID: m.UserID,
+// Helper to simulate receiving a message through the mock session
+func (m *MockDiscordSession) SimulateMessage(s *discordgo.Session, msg *discordgo.MessageCreate) {
+	if m.handler == nil {
+		return
 	}
+	handlerFunc, ok := m.handler.(func(*discordgo.Session, *discordgo.MessageCreate))
+	if !ok {
+		return
+	}
+	handlerFunc(s, msg)
 }
 
 func TestNewDiscordBot_WithValidToken_CreatesBot(t *testing.T) {
-	bot := NewDiscordBot(DiscordConfig{
-		Token:     "test-token",
-		ChannelID: "123456789",
-	})
+	bot := NewDiscordBot("test-token", "123456789")
 
 	if bot == nil {
 		t.Fatal("Expected bot to be created, got nil")
 	}
 
-	if bot.token != "test-token" {
-		t.Errorf("Expected token 'test-token', got '%s'", bot.token)
+	if bot.Token != "test-token" {
+		t.Errorf("Expected token 'test-token', got '%s'", bot.Token)
 	}
 
-	if bot.channelID != "123456789" {
-		t.Errorf("Expected channelID '123456789', got '%s'", bot.channelID)
+	if bot.ChannelID != "123456789" {
+		t.Errorf("Expected channelID '123456789', got '%s'", bot.ChannelID)
+	}
+
+	if bot.Session != nil {
+		t.Error("Expected session to be nil initially")
 	}
 }
 
-func TestNewDiscordBot_WithEmptyToken_ReturnsNil(t *testing.T) {
-	bot := NewDiscordBot(DiscordConfig{
-		Token:     "",
-		ChannelID: "123456789",
-	})
+func TestNewDiscordBot_WithEmptyToken_CreatesBot(t *testing.T) {
+	bot := NewDiscordBot("", "123456789")
 
-	if bot != nil {
-		t.Error("Expected nil bot with empty token, got non-nil")
+	if bot == nil {
+		t.Fatal("Expected bot to be created, got nil")
+	}
+
+	if bot.Token != "" {
+		t.Errorf("Expected empty token, got '%s'", bot.Token)
 	}
 }
 
@@ -99,24 +100,14 @@ func TestDiscordBot_Start_WithValidSession_ConnectsSuccessfully(t *testing.T) {
 		shouldFailOnOpen: false,
 	}
 
-	bot := &DiscordBot{
-		token:     "test-token",
-		channelID: "123456789",
-		session:   mockSession,
-	}
+	bot := NewDiscordBot("test-token", "123456789")
+	bot.Session = mockSession
 
 	handlerCalled := false
 	var receivedMsg BotMessage
 	messageHandler := func(msg BotMessage) {
 		handlerCalled = true
 		receivedMsg = msg
-	}
-
-	// Track the handler registration
-	var registeredHandler interface{}
-	mockSession.onAddHandler = func(handler interface{}) {
-		registeredHandler = handler
-		bot.messageHandler = messageHandler
 	}
 
 	err := bot.Start(messageHandler)
@@ -128,22 +119,26 @@ func TestDiscordBot_Start_WithValidSession_ConnectsSuccessfully(t *testing.T) {
 		t.Error("Expected session.Open() to be called")
 	}
 
-	if registeredHandler == nil {
+	if mockSession.handler == nil {
 		t.Error("Expected message handler to be registered")
 	}
 
+	// Create a discordgo session for simulation
+	dgSession := &discordgo.Session{}
+
 	// Simulate a message event
-	if registeredHandler != nil {
-		// Simulate message through the bot's handleMessage
-		bot.handleMessage(DiscordMessage{
+	mockSession.SimulateMessage(dgSession, &discordgo.MessageCreate{
+		Message: &discordgo.Message{
 			Content:   "Hello, bot!",
 			ChannelID: "123456789",
-			Author: DiscordMessageAuthor{
-				Bot:    false,
-				UserID: "user-123",
+			Author: &discordgo.User{
+				ID:            "user-123",
+				Bot:           false,
+				Username:      "testuser",
+				Discriminator: "1234",
 			},
-		})
-	}
+		},
+	})
 
 	if !handlerCalled {
 		t.Error("Expected message handler to be called")
@@ -174,11 +169,8 @@ func TestDiscordBot_Start_WithSessionOpenError_ReturnsError(t *testing.T) {
 		shouldFailOnOpen: true,
 	}
 
-	bot := &DiscordBot{
-		token:     "test-token",
-		channelID: "123456789",
-		session:   mockSession,
-	}
+	bot := NewDiscordBot("test-token", "123456789")
+	bot.Session = mockSession
 
 	err := bot.Start(func(msg BotMessage) {})
 	if err == nil {
@@ -190,31 +182,47 @@ func TestDiscordBot_Start_WithSessionOpenError_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestDiscordBot_HandleMessage_IgnoresBotMessages(t *testing.T) {
-	bot := &DiscordBot{
-		token:     "test-token",
-		channelID: "123456789",
+func TestDiscordBot_Start_IgnoresBotMessages(t *testing.T) {
+	mockSession := &MockDiscordSession{
+		shouldFailOnOpen: false,
 	}
+
+	bot := NewDiscordBot("test-token", "123456789")
+	bot.Session = mockSession
 
 	handlerCalled := false
 	messageHandler := func(msg BotMessage) {
 		handlerCalled = true
 	}
-	bot.messageHandler = messageHandler
+
+	err := bot.Start(messageHandler)
+	if err != nil {
+		t.Fatalf("Expected no error on start, got %v", err)
+	}
+
+	// Create a discordgo session for simulation
+	dgSession := &discordgo.Session{}
 
 	// Simulate a bot message
-	bot.handleMessage(DiscordMessage{
-		Content:   "Bot message",
-		ChannelID: "123456789",
-		Author: DiscordMessageAuthor{
-			Bot:    true, // This is a bot message
-			UserID: "bot-123",
+	mockSession.SimulateMessage(dgSession, &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			Content:   "Bot message",
+			ChannelID: "123456789",
+			Author: &discordgo.User{
+				ID:            "bot-123",
+				Bot:           true, // This is a bot message
+				Username:      "testbot",
+				Discriminator: "5678",
+			},
 		},
 	})
 
 	if handlerCalled {
 		t.Error("Expected bot messages to be ignored, but handler was called")
 	}
+
+	// Cleanup
+	bot.Stop()
 }
 
 func TestDiscordBot_SendMessage_WithValidChannel_SendsSuccessfully(t *testing.T) {
@@ -222,11 +230,8 @@ func TestDiscordBot_SendMessage_WithValidChannel_SendsSuccessfully(t *testing.T)
 		shouldFailOnSend: false,
 	}
 
-	bot := &DiscordBot{
-		token:     "test-token",
-		channelID: "123456789",
-		session:   mockSession,
-	}
+	bot := NewDiscordBot("test-token", "123456789")
+	bot.Session = mockSession
 
 	err := bot.SendMessage("test-channel", "Hello, world!")
 	if err != nil {
@@ -251,11 +256,8 @@ func TestDiscordBot_SendMessage_WithSendError_ReturnsError(t *testing.T) {
 		shouldFailOnSend: true,
 	}
 
-	bot := &DiscordBot{
-		token:     "test-token",
-		channelID: "123456789",
-		session:   mockSession,
-	}
+	bot := NewDiscordBot("test-token", "123456789")
+	bot.Session = mockSession
 
 	err := bot.SendMessage("test-channel", "Hello, world!")
 	if err == nil {
@@ -266,11 +268,8 @@ func TestDiscordBot_SendMessage_WithSendError_ReturnsError(t *testing.T) {
 func TestDiscordBot_Stop_WithActiveSession_ClosesSuccessfully(t *testing.T) {
 	mockSession := &MockDiscordSession{}
 
-	bot := &DiscordBot{
-		token:     "test-token",
-		channelID: "123456789",
-		session:   mockSession,
-	}
+	bot := NewDiscordBot("test-token", "123456789")
+	bot.Session = mockSession
 
 	err := bot.Stop()
 	if err != nil {
@@ -283,11 +282,8 @@ func TestDiscordBot_Stop_WithActiveSession_ClosesSuccessfully(t *testing.T) {
 }
 
 func TestDiscordBot_Stop_WithNilSession_NoError(t *testing.T) {
-	bot := &DiscordBot{
-		token:     "test-token",
-		channelID: "123456789",
-		session:   nil,
-	}
+	bot := NewDiscordBot("test-token", "123456789")
+	bot.Session = nil
 
 	err := bot.Stop()
 	if err != nil {

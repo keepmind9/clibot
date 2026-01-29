@@ -1,0 +1,112 @@
+# HTTP Hook 服务端口
+hook_server:
+  port: 8080
+
+# 特殊命令前缀
+command_prefix: "!!"
+
+# ========== 安全配置（白名单机制） ==========
+# clibot 本质上是远程代码执行工具，必须启用用户白名单
+security:
+  # 白名单开关（默认启用）
+  whitelist_enabled: true
+
+  # 允许的用户列表（平台 -> 用户ID）
+  allowed_users:
+    telegram:
+      - 123456789      # Telegram user_id 示例
+      - 987654321
+    discord:
+      - "123456789012345678"  # Discord user_id 示例
+    feishu:
+      - "ou_xxx"        # 飞书 open_id 示例
+
+  # 管理员列表（可以执行危险命令）
+  admins:
+    telegram:
+      - 123456789
+
+# ========== Watchdog 配置 ==========
+watchdog:
+  enabled: true
+  # 分阶段轮询间隔（避免频繁查询）
+  check_intervals:
+    - 1s    # 第1秒：检测立即交互
+    - 2s    # 第3秒：检测快速交互
+    - 5s    # 第8秒：检测慢速交互
+  timeout: 5m  # 超时时间
+
+# tmux session 管理
+sessions:
+  # 自动发现已有 tmux session，或手动配置
+  - name: "project-a"
+    cli_type: "claude"      # claude/gemini/opencode
+    work_dir: "/home/user/project-a"
+    auto_start: true        # 如果不存在是否自动创建
+
+  - name: "backend-test"
+    cli_type: "gemini"
+    work_dir: "/home/user/tests"
+    auto_start: false
+
+# 默认 session（Bot 未指定时使用）
+default_session: "project-a"
+
+# Bot 配置
+bots:
+  feishu:
+    enabled: true
+    app_id: "${FEISHU_APP_ID}"        # 从环境变量读取
+    app_secret: "${FEISHU_APP_SECRET}"
+    default_channel: "ou_xxx"
+
+  discord:
+    enabled: true
+    token: "${DISCORD_TOKEN}"
+    channel_id: "123456789"
+
+  telegram:
+    enabled: false
+    token: "${TELEGRAM_TOKEN}"
+
+# CLI 适配器配置
+cli_adapters:
+  claude:
+    history_dir: "~/.claude/conversations"
+    hook_command: "clibot hook --session $SESSION --event completed"
+
+    # ========== 交互检测配置 ==========
+    interactive:
+      enabled: true
+      check_lines: 3              # 检查最后几行
+      patterns:                   # 用户可以添加自定义模式
+        - "\\? [y/N]"
+        - "Confirm\\?"
+        - "Press Enter"
+
+  gemini:
+    history_db: "~/.gemini/history.sqlite"
+    hook_command: "clibot hook --session $SESSION --event completed"
+
+    interactive:
+      enabled: true
+      check_lines: 5              # Gemini 可能需要更多行
+      patterns:
+        - "⚠️ .* \\? \\(yes/no\\)"
+        - "Select an option"
+
+  opencode:
+    history_file: "~/.opencode/sessions.log"
+    hook_command: "clibot hook --session $SESSION --event completed"
+
+    interactive:
+      enabled: true
+      check_lines: 3
+      patterns:
+        - "\\[Y/n\\]"
+        - "Continue\\?"
+
+# 日志配置
+logging:
+  level: "info"
+  file: "/var/log/clibot/app.log"
