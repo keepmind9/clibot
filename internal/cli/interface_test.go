@@ -8,11 +8,14 @@ import (
 func TestClaudeAdapter_CLIAdapterInterface(t *testing.T) {
 	var _ CLIAdapter = (*ClaudeAdapter)(nil)
 
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "/tmp/test/conversations",
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`},
 	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
 
 	// Verify all methods exist and have correct signatures
 	_ = adapter.SendInput

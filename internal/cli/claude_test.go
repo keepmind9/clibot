@@ -17,11 +17,15 @@ var (
 )
 
 func TestClaudeAdapter_NewClaudeAdapter(t *testing.T) {
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "/tmp/test/conversations",
 		CheckLines: 3,
-		Patterns:   []string{`\? [y/N]`, `Confirm\?`},
+		Patterns:   []string{`\? \[y/N\]`, `Confirm\?`},
 	})
+
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter returned error: %v", err)
+	}
 
 	if adapter == nil {
 		t.Fatal("NewClaudeAdapter returned nil")
@@ -41,11 +45,15 @@ func TestClaudeAdapter_NewClaudeAdapter(t *testing.T) {
 }
 
 func TestClaudeAdapter_NewClaudeAdapter_PatternCompilation(t *testing.T) {
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "/tmp/test/conversations",
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`, `Confirm\?`},
 	})
+
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter returned error: %v", err)
+	}
 
 	// Verify patterns are compiled regex
 	if len(adapter.patterns) != 2 {
@@ -70,14 +78,17 @@ func TestClaudeAdapter_NewClaudeAdapter_PatternCompilation(t *testing.T) {
 }
 
 func TestClaudeAdapter_SendInput(t *testing.T) {
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "/tmp/test/conversations",
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`},
 	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
 
 	// Test that SendInput doesn't panic and returns appropriate error for non-existent session
-	err := adapter.SendInput("test-session-nonexistent", "help")
+	err = adapter.SendInput("test-session-nonexistent", "help")
 
 	// We expect an error since the session doesn't exist
 	if err == nil {
@@ -86,11 +97,14 @@ func TestClaudeAdapter_SendInput(t *testing.T) {
 }
 
 func TestClaudeAdapter_CheckInteractive_WithConfirmationPrompt_ReturnsTrue(t *testing.T) {
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "/tmp/test/conversations",
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`, `Confirm\?`},
 	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
 
 	// Test pattern matching
 	lines := []string{"Processing files...", "Execute 'rm -rf ./temp'? [y/N]"}
@@ -106,11 +120,14 @@ func TestClaudeAdapter_CheckInteractive_WithConfirmationPrompt_ReturnsTrue(t *te
 }
 
 func TestClaudeAdapter_CheckInteractive_WithoutPrompt_ReturnsFalse(t *testing.T) {
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "/tmp/test/conversations",
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`, `Confirm\?`},
 	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
 
 	// Test data: normal output without prompt
 	lines := []string{"Processing files...", "Done!"}
@@ -123,11 +140,14 @@ func TestClaudeAdapter_CheckInteractive_WithoutPrompt_ReturnsFalse(t *testing.T)
 }
 
 func TestClaudeAdapter_CheckInteractive_AnsiCodes_StripCorrectly(t *testing.T) {
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "/tmp/test/conversations",
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`},
 	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
 
 	// Test data: ANSI codes with prompt
 	lines := []string{"\x1b[31mError:\x1b[0m Execute? [y/N]"}
@@ -150,11 +170,14 @@ func TestClaudeAdapter_CheckInteractive_AnsiCodes_StripCorrectly(t *testing.T) {
 }
 
 func TestClaudeAdapter_HomeDirExpansion(t *testing.T) {
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "~/.claude/conversations",
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`},
 	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
 
 	// Home directory should be expanded
 	if adapter.historyDir == "~" {
@@ -188,11 +211,14 @@ func stripAnsiHelper(input string) string {
 }
 
 func TestClaudeAdapter_IsSessionAlive(t *testing.T) {
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "/tmp/test/conversations",
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`},
 	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
 
 	// Test interface implementation
 	// This will be properly tested with mocks
@@ -257,16 +283,19 @@ func TestConversation_LoadConversation_InvalidJSON(t *testing.T) {
 }
 
 func TestClaudeAdapter_CreateSession(t *testing.T) {
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: "/tmp/test/conversations",
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`},
 	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
 
 	// Test CreateSession with a unique name to avoid conflicts
 	sessionName := "test-clibot-session-12345"
 
-	err := adapter.CreateSession(sessionName, "claude", "/tmp")
+	err = adapter.CreateSession(sessionName, "claude", "/tmp")
 	// This might fail if tmux is not installed or not configured
 	// We're just testing that it doesn't panic
 	if err != nil {
@@ -282,14 +311,30 @@ func TestClaudeAdapter_GetLastResponse_NoConversationFiles(t *testing.T) {
 	// Create a temporary directory with no conversation files
 	tmpDir := t.TempDir()
 
-	adapter := NewClaudeAdapter(ClaudeAdapterConfig{
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
 		HistoryDir: tmpDir,
 		CheckLines: 3,
 		Patterns:   []string{`\? \[y/N\]`},
 	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
 
-	_, err := adapter.GetLastResponse("test-session")
+	_, err = adapter.GetLastResponse("test-session")
 	if err == nil {
 		t.Error("expected error when no conversation files exist")
+	}
+}
+
+func TestClaudeAdapter_NewClaudeAdapter_InvalidPattern(t *testing.T) {
+	// Test with invalid regex pattern
+	_, err := NewClaudeAdapter(ClaudeAdapterConfig{
+		HistoryDir: "/tmp/test/conversations",
+		CheckLines: 3,
+		Patterns:   []string{`[invalid(`}, // Unclosed bracket
+	})
+
+	if err == nil {
+		t.Error("expected error for invalid regex pattern")
 	}
 }

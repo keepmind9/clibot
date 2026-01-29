@@ -26,21 +26,26 @@ type ClaudeAdapter struct {
 }
 
 // NewClaudeAdapter creates a new Claude Code adapter
-func NewClaudeAdapter(config ClaudeAdapterConfig) *ClaudeAdapter {
+// Returns an error if any of the regex patterns fail to compile
+func NewClaudeAdapter(config ClaudeAdapterConfig) (*ClaudeAdapter, error) {
 	// Expand home directory in historyDir
 	historyDir := expandHome(config.HistoryDir)
 
 	// Compile regex patterns
 	patterns := make([]*regexp.Regexp, len(config.Patterns))
 	for i, pattern := range config.Patterns {
-		patterns[i] = regexp.MustCompile(pattern)
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile pattern '%s': %w", pattern, err)
+		}
+		patterns[i] = compiled
 	}
 
 	return &ClaudeAdapter{
 		historyDir: historyDir,
 		checkLines: config.CheckLines,
 		patterns:   patterns,
-	}
+	}, nil
 }
 
 // SendInput sends input to Claude Code via tmux
