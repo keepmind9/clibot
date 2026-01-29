@@ -36,20 +36,22 @@
 ## ⏳ In Progress
 
 ### Phase 4: Core Integration
-- 🔄 **Task 5**: Core Engine Implementation
-  - Files: `internal/core/engine.go`
-  - Integrates: Config + CLI adapters + Bot adapters + Hook server
-  - Status: Not started
+- ✅ **Task 5**: Core Engine Implementation
+  - Files: `internal/core/engine.go` (427 lines), `engine_test.go` (825 lines)
+  - Tests: 20/20 passing (100%)
+  - Integrates: Config + CLI + Bot + Hook server
+  - Commit: `ed1c4df`
+  - Status: **COMPLETE**
 
 - 🔄 **Task 6**: HTTP Hook Server
   - Files: `internal/hook/server.go`
   - Purpose: Receive CLI completion notifications
-  - Status: Not started
+  - Status: Already integrated in Engine, needs standalone implementation
 
 - 🔄 **Task 7**: Watchdog Monitoring
   - Files: `internal/watchdog/watchdog.go`
   - Purpose: Detect interactive prompts in CLI
-  - Status: Not started
+  - Status: Stub in Engine, needs full implementation
 
 ---
 
