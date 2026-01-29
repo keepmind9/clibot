@@ -8,6 +8,12 @@ type CLIAdapter interface {
 	// GetLastResponse 获取最新的完整回复（读取 CLI 历史文件）
 	GetLastResponse(sessionName string) (string, error)
 
+	// HandleHookData 处理 CLI hook 传入的数据
+	// 对于 Claude Code: data 包含 transcript_path，从 transcript.jsonl 提取回复
+	// 参数 data: hook 传入的 JSON 数据（字段名取决于 CLI 类型）
+	// 返回: CLI 的回复文本
+	HandleHookData(data map[string]interface{}) (string, error)
+
 	// IsSessionAlive 检查 session 是否存活
 	IsSessionAlive(sessionName string) bool
 

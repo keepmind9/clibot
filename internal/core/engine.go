@@ -372,13 +372,17 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse JSON body
-	var payload struct {
-		CLIType string                 `json:"cli_type"`
-		Data    map[string]interface{} `json:"data"`
+	// Get cli_type from query parameter
+	cliType := r.URL.Query().Get("cli_type")
+	if cliType == "" {
+		log.Printf("Missing cli_type query parameter")
+		http.Error(w, "Missing cli_type parameter", http.StatusBadRequest)
+		return
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	// Parse JSON body (raw data from CLI)
+	var data map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		log.Printf("Failed to decode hook payload: %v", err)
 		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
 		return
@@ -387,21 +391,21 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	// Extract session and event from data (flexible - different CLIs may use different field names)
 	var sessionName, event string
 
-	if s, ok := payload.Data["session"].(string); ok {
+	if s, ok := data["session"].(string); ok {
 		sessionName = s
 	}
-	if s, ok := payload.Data["session_name"].(string); ok {
+	if s, ok := data["session_name"].(string); ok {
 		sessionName = s
 	}
 
-	if e, ok := payload.Data["event"].(string); ok {
-		event = e
+	if ev, ok := data["event"].(string); ok {
+		event = ev
 	}
-	if e, ok := payload.Data["event_type"].(string); ok {
-		event = e
+	if ev, ok := data["event_type"].(string); ok {
+		event = ev
 	}
 
-	log.Printf("Hook received: cli_type=%s, session=%s, event=%s", payload.CLIType, sessionName, event)
+	log.Printf("Hook received: cli_type=%s, session=%s, event=%s", cliType, sessionName, event)
 
 	// Validate required fields
 	if sessionName == "" {
@@ -429,9 +433,16 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Get response from CLI adapter
-		adapter := e.cliAdapters[session.CLIType]
-		response, err := adapter.GetLastResponse(sessionName)
+		// Get CLI adapter
+		adapter, exists := e.cliAdapters[session.CLIType]
+		if !exists {
+			log.Printf("No adapter found for CLI type: %s", session.CLIType)
+			http.Error(w, "CLI adapter not found", http.StatusInternalServerError)
+			return
+		}
+
+		// Get response from CLI adapter using hook data
+		response, err := adapter.HandleHookData(data)
 		if err != nil {
 			log.Printf("Failed to get response from session %s: %v", sessionName, err)
 			http.Error(w, "Failed to get response", http.StatusInternalServerError)

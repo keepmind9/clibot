@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,14 +56,28 @@ func (c *ClaudeAdapter) SendInput(sessionName, input string) error {
 }
 
 // GetLastResponse retrieves the last assistant response from conversation history
+// This is the fallback method when hook doesn't provide transcript_path
 func (c *ClaudeAdapter) GetLastResponse(sessionName string) (string, error) {
-	// Get last assistant message content from conversation files
+	// Try to get from conversation history files (fallback)
 	content, err := GetLastAssistantContent(c.historyDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get last response: %w", err)
 	}
 
 	return content, nil
+}
+
+// HandleHookData processes hook data from Claude Code Stop hook
+// Expected data format: {"transcript_path": "/path/to/transcript.jsonl", ...}
+func (c *ClaudeAdapter) HandleHookData(data map[string]interface{}) (string, error) {
+	// Extract transcript_path from hook data
+	transcriptPath, ok := data["transcript_path"].(string)
+	if !ok {
+		return "", fmt.Errorf("missing transcript_path in hook data")
+	}
+
+	// Use transcript_path to get response
+	return c.GetLastResponseFromTranscript(transcriptPath)
 }
 
 // IsSessionAlive checks if the tmux session is still running
@@ -155,4 +171,115 @@ func expandHome(path string) string {
 	}
 
 	return path
+}
+
+// ========== Transcript.jsonl Parsing ==========
+
+// TranscriptMessage represents a single message in Claude Code's transcript.jsonl
+// Each line in the file is a JSON object with this structure
+type TranscriptMessage struct {
+	Type    string         `json:"type"` // "user" or "assistant"
+	Message MessageContent `json:"message"`
+}
+
+// MessageContent represents the message content structure
+type MessageContent struct {
+	Content []ContentBlock `json:"content"`
+}
+
+// ContentBlock represents a block of content (text, image, etc.)
+type ContentBlock struct {
+	Type string `json:"type"` // "text", "image", etc.
+	Text string `json:"text,omitempty"`
+}
+
+// ParseTranscript parses a Claude Code transcript.jsonl file
+// Returns all messages in order
+func ParseTranscript(filePath string) ([]TranscriptMessage, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open transcript file: %w", err)
+	}
+	defer file.Close()
+
+	var messages []TranscriptMessage
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		var msg TranscriptMessage
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			// Skip invalid lines
+			continue
+		}
+
+		messages = append(messages, msg)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading transcript file: %w", err)
+	}
+
+	return messages, nil
+}
+
+// ExtractLastAssistantResponse extracts all assistant messages after the last user message
+// This matches the logic from claudecode-telegram's send-to-telegram.sh hook
+func ExtractLastAssistantResponse(transcriptPath string) (string, error) {
+	// Parse transcript file
+	messages, err := ParseTranscript(transcriptPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Find the last user message index
+	lastUserIndex := -1
+	for i, msg := range messages {
+		if msg.Type == "user" {
+			lastUserIndex = i
+		}
+	}
+
+	if lastUserIndex == -1 {
+		return "", fmt.Errorf("no user messages found in transcript")
+	}
+
+	// Extract all assistant messages after the last user message
+	var responseTexts []string
+	for i := lastUserIndex + 1; i < len(messages); i++ {
+		if messages[i].Type == "assistant" {
+			// Extract all text content blocks
+			for _, block := range messages[i].Message.Content {
+				if block.Type == "text" && block.Text != "" {
+					responseTexts = append(responseTexts, block.Text)
+				}
+			}
+		}
+	}
+
+	if len(responseTexts) == 0 {
+		return "", fmt.Errorf("no assistant responses found after last user message")
+	}
+
+	// Join all response texts with double newlines (matching Claude's output format)
+	return strings.Join(responseTexts, "\n\n"), nil
+}
+
+// GetLastResponseFromTranscript retrieves response from transcript.jsonl
+// This is called when hook provides transcript_path
+func (c *ClaudeAdapter) GetLastResponseFromTranscript(transcriptPath string) (string, error) {
+	// Expand home directory in path
+	transcriptPath = expandHome(transcriptPath)
+
+	// Extract response from transcript
+	response, err := ExtractLastAssistantResponse(transcriptPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract response from transcript: %w", err)
+	}
+
+	return response, nil
 }
