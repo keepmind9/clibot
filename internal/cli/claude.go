@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -219,24 +218,6 @@ func (c *ClaudeAdapter) startClaude(sessionName string) error {
 	}
 
 	return nil
-}
-
-// expandHome expands ~ to the user's home directory
-func expandHome(path string) string {
-	if strings.HasPrefix(path, "~/") || path == "~" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-
-		if path == "~" {
-			return home
-		}
-
-		return filepath.Join(home, path[2:])
-	}
-
-	return path
 }
 
 // ========== Transcript.jsonl Parsing ==========

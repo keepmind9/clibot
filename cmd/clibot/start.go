@@ -72,7 +72,19 @@ var (
 					engine.RegisterCLIAdapter(cliType, claudeAdapter)
 					log.Printf("Registered %s CLI adapter", cliType)
 
-				// TODO: Add other CLI adapters (gemini, opencode) when implemented
+				case "gemini":
+					geminiAdapter, err := cli.NewGeminiAdapter(cli.GeminiAdapterConfig{
+						HistoryDir: cliConfig.HistoryDir,
+						CheckLines: cliConfig.Interactive.CheckLines,
+						Patterns:   cliConfig.Interactive.Patterns,
+					})
+					if err != nil {
+						log.Fatalf("Failed to create Gemini CLI adapter: %v", err)
+					}
+					engine.RegisterCLIAdapter(cliType, geminiAdapter)
+					log.Printf("Registered %s CLI adapter", cliType)
+
+				// Add other CLI adapters (opencode) when implemented
 				default:
 					log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
 				}

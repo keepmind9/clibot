@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/sirupsen/logrus"
@@ -47,10 +48,20 @@ func IsSessionAlive(sessionName string) bool {
 }
 
 // SendKeys sends keystrokes to a tmux session
-func SendKeys(sessionName, input string) error {
+// Parameters:
+//   - sessionName: tmux session name
+//   - input: text to send
+//   - delayMs: delay in milliseconds before sending Enter key (default 0)
+func SendKeys(sessionName, input string, delayMs ...int) error {
+	delay := 0
+	if len(delayMs) > 0 {
+		delay = delayMs[0]
+	}
+
 	logger.WithFields(logrus.Fields{
-		"session": sessionName,
-		"input":   input,
+		"session":  sessionName,
+		"input":    input,
+		"delay_ms": delay,
 	}).Debug("Sending keys to tmux session")
 
 	// Step 1: Send the input text
@@ -63,6 +74,11 @@ func SendKeys(sessionName, input string) error {
 			"output":  string(output),
 		}).Error("Failed to send text to tmux session")
 		return fmt.Errorf("failed to send text to session %s: %w (output: %s)", sessionName, err, string(output))
+	}
+
+	// Delay before Enter key if specified
+	if delay > 0 {
+		time.Sleep(time.Duration(delay) * time.Millisecond)
 	}
 
 	// Step 2: Send Enter key (C-m)
