@@ -552,8 +552,8 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Not thinking anymore, validate and use this response
-			response = filteredOutput
+			// Not thinking anymore, remove UI status lines and validate response
+			response = removeUIStatusLines(filteredOutput)
 
 			// Validate response - check if it's not empty and has meaningful content
 			if response != "" && len(response) > 20 && !looksLikeIncompleteResponse(response) {
@@ -577,11 +577,11 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 		// If still no valid response after all retries, use the last capture
 		if response == "" && lastResponse != "" {
 			logger.WithFields(logrus.Fields{
-				"max_retries":      maxRetries,
+				"max_retries":       maxRetries,
 				"using_last_attempt": true,
-				"response_length": len(lastResponse),
+				"response_length":   len(lastResponse),
 			}).Info("Using last attempt capture (still may be thinking)")
-			response = lastResponse
+			response = removeUIStatusLines(lastResponse)
 		}
 
 		if response == "" {
@@ -914,6 +914,68 @@ func looksLikeIncompleteResponse(response string) bool {
 
 	// Check for incomplete lists
 	if strings.HasSuffix(response, "-") || strings.HasSuffix(response, "*") {
+		return true
+	}
+
+	return false
+}
+
+// removeUIStatusLines removes Claude Code UI status lines from the response
+// This should be called AFTER isThinking() check, when response is ready to send to user
+// It removes UI artifacts like "running stop hook", "esc to interrupt", etc.
+func removeUIStatusLines(output string) string {
+	lines := strings.Split(output, "\n")
+	var filteredLines []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Skip empty lines
+		if trimmed == "" {
+			continue
+		}
+
+		// Remove UI status lines
+		if isUIStatusLine(trimmed) {
+			logger.WithField("line", trimmed).Debug("Removing UI status line from response")
+			continue
+		}
+
+		filteredLines = append(filteredLines, line)
+	}
+
+	result := strings.Join(filteredLines, "\n")
+
+	// Clean up multiple consecutive newlines
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
+
+	return result
+}
+
+// isUIStatusLine checks if a line is a Claude Code UI status line
+// UI status lines include indicators like "running stop hook", "esc to interrupt", etc.
+// These lines are used for thinking detection but should be removed from final response
+func isUIStatusLine(line string) bool {
+	// UI status line patterns
+	uiPatterns := []string{
+		"Undulating…",
+		"running stop hook",
+		"esc to interrupt",
+		"press escape",
+		"? for shortcuts",
+	}
+
+	lowerLine := strings.ToLower(line)
+	for _, pattern := range uiPatterns {
+		if strings.Contains(lowerLine, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+
+	// Check for single-character cursor indicators
+	if line == "❯" || line == ">" || line == "$" {
 		return true
 	}
 
