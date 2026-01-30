@@ -9,8 +9,14 @@ import (
 )
 
 const (
-	DefaultHookPort     = 8080
-	DefaultCommandPrefix = "!!"
+	DefaultHookPort       = 8080
+	DefaultCommandPrefix  = "!!"
+	DefaultLogLevel       = "info"
+	DefaultLogMaxSize     = 100 // MB
+	DefaultLogMaxBackups  = 5
+	DefaultLogMaxAge      = 30  // days
+	DefaultLogCompress    = true
+	DefaultLogEnableStdout = true
 )
 
 // LoadConfig loads configuration from file and expands environment variables
@@ -59,6 +65,26 @@ func validateConfig(config *Config) error {
 	// Validate command prefix
 	if config.CommandPrefix == "" {
 		config.CommandPrefix = DefaultCommandPrefix
+	}
+
+	// Set default logging configuration
+	if config.Logging.Level == "" {
+		config.Logging.Level = DefaultLogLevel
+	}
+	if config.Logging.MaxSize == 0 {
+		config.Logging.MaxSize = DefaultLogMaxSize
+	}
+	if config.Logging.MaxBackups == 0 {
+		config.Logging.MaxBackups = DefaultLogMaxBackups
+	}
+	if config.Logging.MaxAge == 0 {
+		config.Logging.MaxAge = DefaultLogMaxAge
+	}
+	if !config.Logging.Compress {
+		config.Logging.Compress = DefaultLogCompress
+	}
+	if !config.Logging.EnableStdout {
+		config.Logging.EnableStdout = DefaultLogEnableStdout
 	}
 
 	// Validate security settings

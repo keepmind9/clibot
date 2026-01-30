@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/sirupsen/logrus"
 )
 
 // DiscordMessage represents a Discord message for our interface
@@ -42,6 +44,12 @@ func NewDiscordBot(token, channelID string) *DiscordBot {
 func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 	d.messageHandler = messageHandler
 
+	// Log bot startup
+	logger.WithFields(logrus.Fields{
+		"token":   maskToken(d.Token),
+		"channel": d.ChannelID,
+	}).Info("Starting Discord bot")
+
 	// Create Discord session
 	session, err := discordgo.New("Bot " + d.Token)
 	if err != nil {
@@ -57,6 +65,15 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 			return
 		}
 
+		// Log received message
+		logger.WithFields(logrus.Fields{
+			"platform":  "discord",
+			"user_id":   m.Author.ID,
+			"username":  m.Author.Username,
+			"channel":   m.ChannelID,
+			"content":   m.Content,
+		}).Debug("Received Discord message")
+
 		// Call the handler with BotMessage
 		if d.messageHandler != nil {
 			d.messageHandler(BotMessage{
@@ -66,6 +83,12 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 				Content:   m.Content,
 				Timestamp: time.Now(),
 			})
+
+			logger.WithFields(logrus.Fields{
+				"platform": "discord",
+				"user":     m.Author.ID,
+				"channel":  m.ChannelID,
+			}).Info("Message received from Discord")
 		}
 	})
 
@@ -89,11 +112,27 @@ func (d *DiscordBot) SendMessage(channel, message string) error {
 		targetChannel = d.ChannelID
 	}
 
+	// Discord limit: 4000 characters
+	const maxDiscordLength = 4000
+	if len(message) > maxDiscordLength {
+		logger.WithFields(logrus.Fields{
+			"original_length": len(message),
+			"max_length":      maxDiscordLength,
+		}).Info("Truncating message for Discord limit (keeping latest content)")
+		// Keep the last (max-3) characters to show the newest content
+		message = "..." + message[len(message)-maxDiscordLength+3:]
+	}
+
 	_, err := d.Session.ChannelMessageSend(targetChannel, message)
 	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"channel": targetChannel,
+			"error":   err,
+		}).Error("Failed to send message to Discord")
 		return fmt.Errorf("failed to send message to channel %s: %w", targetChannel, err)
 	}
 
+	logger.WithField("channel", targetChannel).Info("Message sent to Discord")
 	return nil
 }
 
@@ -108,4 +147,12 @@ func (d *DiscordBot) Stop() error {
 	}
 
 	return nil
+}
+
+// maskToken masks sensitive token information for logging
+func maskToken(token string) string {
+	if len(token) <= 10 {
+		return "***"
+	}
+	return token[:7] + "***" + token[len(token)-4:]
 }

@@ -1,8 +1,8 @@
 # clibot 设计文档
 
-**版本**: v0.4
+**版本**: v0.5
 **日期**: 2026-01-29
-**状态**: 设计阶段（已整合安全白名单机制、长连接架构）
+**状态**: 设计阶段（已整合安全白名单机制、长连接架构、多会话管理）
 
 ---
 
@@ -446,6 +446,176 @@ func (e *Engine) isUserAuthorized(msg BotMessage) bool {
     return false
 }
 ```
+
+#### 5.1.4 Session 管理（多会话支持）
+
+**问题背景**：
+
+在多 session 场景下，不同频道可能需要使用不同的 session。例如：
+- 频道 A 用于项目 A（`session-project-a`）
+- 频道 B 用于项目 B（`session-project-b`）
+
+当前设计中 `GetActiveSession()` 忽略了 `channel` 参数，所有频道共享同一个 session。
+
+**设计方案**：
+
+**1. 数据结构**：
+
+```go
+type Engine struct {
+    config          *Config
+    cliAdapters     map[string]CLIAdapter
+    activeBots      map[string]BotAdapter
+    sessions        map[string]*Session
+    sessionMu       sync.RWMutex
+    messageChan     chan BotMessage
+    responseChan    chan ResponseEvent
+    hookServer      *http.Server
+
+    // 新增：频道 → Session 映射
+    channelSessions map[string]string  // channelID → sessionName
+    channelMu      sync.RWMutex        // 保护 channelSessions
+}
+```
+
+**2. Session 选择流程**：
+
+```
+用户消息 → Engine
+    ↓
+检查是否特殊命令？→ 是 → 执行特殊命令
+    ↓ 否
+获取当前频道的活跃 session
+    ↓
+检查 session 是否存在？
+    ├─ 是 → 使用该 session
+    └─ 否 → 返回错误提示
+```
+
+**3. 关键方法**：
+
+```go
+// GetActiveSession 获取频道的活跃 session
+func (e *Engine) GetActiveSession(channel string) *Session {
+    e.channelMu.RLock()
+    defer e.channelMu.RUnlock()
+
+    // 1. 优先检查频道特定的 session
+    if sessionName, exists := e.channelSessions[channel]; exists {
+        if session, ok := e.sessions[sessionName]; ok {
+            return session
+        }
+    }
+
+    // 2. 回退到默认 session
+    if session, exists := e.sessions[e.config.DefaultSession]; exists {
+        return session
+    }
+
+    // 3. 返回第一个可用 session
+    for _, session := range e.sessions {
+        return session
+    }
+
+    return nil
+}
+
+// useSession 切换频道使用的 session
+func (e *Engine) useSession(sessionName string, msg bot.BotMessage) {
+    // 验证 session 存在
+    if _, exists := e.sessions[sessionName]; !exists {
+        e.SendToBot(msg.Platform, msg.Channel,
+            fmt.Sprintf("❌ Session '%s' not found\n可用 sessions: %s",
+                sessionName, e.listSessionNames()))
+        return
+    }
+
+    // 更新映射
+    e.channelMu.Lock()
+    e.channelSessions[msg.Channel] = sessionName
+    e.channelMu.Unlock()
+
+    e.SendToBot(msg.Platform, msg.Channel,
+        fmt.Sprintf("✅ 已切换到 session: %s", sessionName))
+}
+```
+
+**4. 特殊命令扩展**：
+
+```go
+func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
+    parts := strings.SplitN(cmd, " ", 2)
+
+    switch parts[0] {
+    case "sessions":
+        e.listSessions(msg)
+    case "status":
+        e.showStatus(msg)
+    case "whoami":
+        e.showWhoami(msg)
+    case "use": // 新增
+        if len(parts) < 2 {
+            e.SendToBot(msg.Platform, msg.Channel,
+                "用法: !!use <session-name>\n示例: !!use project-a")
+            return
+        }
+        e.useSession(parts[1], msg)
+    default:
+        e.SendToBot(msg.Platform, msg.Channel,
+            fmt.Sprintf("❌ 未知命令: %s\n可用命令: sessions, status, whoami, use", parts[0]))
+    }
+}
+```
+
+**5. 命令示例**：
+
+```
+# 列出所有 session
+用户: !!sessions
+Bot:  📋 可用 Sessions:
+      • project-a (claude) - idle [current]
+      • project-b (claude) - idle
+
+# 切换 session
+用户: !!use project-b
+Bot:  ✅ 已切换到 session: project-b
+
+# 查看当前 session
+用户: !!whoami
+Bot:  📊 当前 Session:
+      频道: Discord-Channel-123
+      Session: project-b
+      CLI: claude
+      状态: idle
+
+# 发送普通消息
+用户: 帮我优化这个函数
+Bot: [使用 project-b session 处理]
+```
+
+**6. 边界情况处理**：
+
+| 场景 | 处理方式 |
+|------|---------|
+| 频道未选择 session | 返回友好错误，引导用户运行 `!!use` |
+| 选择的 session 不存在 | 列出可用 session，提示重新选择 |
+| clibot 重启 | 清空 `channelSessions` 映射，需要重新选择 |
+| 多个频道用同一个 session | 允许，正常工作 |
+| Session 被删除 | 下次 `GetActiveSession` 时返回 nil |
+
+**7. 内存管理**：
+
+- `channelSessions` 只在内存中，不持久化
+- clibot 重启后清空，用户需重新运行 `!!use`
+- 优势：简单、无状态、重启自动清理
+
+**8. 向后兼容**：
+
+- 单 session 场景：自动使用默认 session，无需 `!!use`
+- 多 session 场景：首次使用前需运行 `!!use` 选择
+- 现有配置：无需修改，完全兼容
+
+---
 
 ### 5.2 HTTP Hook 服务器
 

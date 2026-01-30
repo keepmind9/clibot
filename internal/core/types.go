@@ -94,6 +94,11 @@ type InteractiveConfig struct {
 
 // LoggingConfig represents logging configuration
 type LoggingConfig struct {
-	Level string `yaml:"level"`
-	File  string `yaml:"file"`
+	Level        string `yaml:"level"`         // debug, info, warn, error
+	File         string `yaml:"file"`          // Log file path
+	MaxSize      int    `yaml:"max_size"`      // Single file max size in MB (default: 100)
+	MaxBackups   int    `yaml:"max_backups"`   // Number of backups to keep (default: 5)
+	MaxAge       int    `yaml:"max_age"`       // Maximum days to retain (default: 30)
+	Compress     bool   `yaml:"compress"`      // Whether to compress old logs (default: true)
+	EnableStdout bool   `yaml:"enable_stdout"` // Also output to stdout (default: true)
 }

@@ -10,6 +10,8 @@ import (
 	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/cli"
 	"github.com/keepmind9/clibot/internal/core"
+	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +33,26 @@ var (
 			fmt.Printf("Hook server port: %d\n", config.HookServer.Port)
 			fmt.Printf("Command prefix: %s\n", config.CommandPrefix)
 			fmt.Printf("Whitelist enabled: %v\n", config.Security.WhitelistEnabled)
+
+			// Initialize logger
+			logConfig := logger.Config{
+				Level:        config.Logging.Level,
+				File:         config.Logging.File,
+				MaxSize:      config.Logging.MaxSize,
+				MaxBackups:   config.Logging.MaxBackups,
+				MaxAge:       config.Logging.MaxAge,
+				Compress:     config.Logging.Compress,
+				EnableStdout: config.Logging.EnableStdout,
+			}
+			if err := logger.InitLogger(logConfig); err != nil {
+				log.Fatalf("Failed to initialize logger: %v", err)
+			}
+
+			logger.WithFields(logrus.Fields{
+				"config_file": configFile,
+				"log_level":   config.Logging.Level,
+				"log_file":    config.Logging.File,
+			}).Info("Logger initialized")
 
 			// Create engine
 			engine := core.NewEngine(config)

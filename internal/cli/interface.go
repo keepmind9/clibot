@@ -1,27 +1,39 @@
 package cli
 
-// CLIAdapter CLI 适配器接口
+// CLIAdapter defines the interface for CLI adapters
 type CLIAdapter interface {
-	// SendInput 发送输入到 CLI（通过 tmux send-keys）
+	// SendInput sends input to the CLI (via tmux send-keys)
 	SendInput(sessionName, input string) error
 
-	// GetLastResponse 获取最新的完整回复（读取 CLI 历史文件）
+	// GetLastResponse retrieves the latest complete response (reads CLI history files)
 	GetLastResponse(sessionName string) (string, error)
 
-	// HandleHookData 处理 CLI hook 传入的数据
-	// 对于 Claude Code: data 包含 transcript_path，从 transcript.jsonl 提取回复
-	// 参数 data: hook 传入的 JSON 数据（字段名取决于 CLI 类型）
-	// 返回: CLI 的回复文本
-	HandleHookData(data map[string]interface{}) (string, error)
+	// HandleHookData handles raw hook data from the CLI
+	// The adapter is responsible for:
+	//   - Parsing the data (in any format: JSON, text, etc.)
+	//   - Extracting the last user prompt for tmux filtering
+	//   - Extracting the session name from the data
+	//   - Processing the hook data and generating the response
+	//
+	// This interface is protocol-agnostic - it works with HTTP, gRPC, message queues, etc.
+	// The engine is responsible for extracting the raw data from the transport layer.
+	//
+	// Parameter data: raw hook data (bytes)
+	// Returns: (sessionName, lastUserPrompt, responseText, error)
+	//   - sessionName: which session this hook is for (cwd)
+	//   - lastUserPrompt: the last user's input (for filtering tmux output)
+	//   - responseText: the CLI's response to send back to the user
+	//   - error: any error that occurred
+	HandleHookData(data []byte) (sessionName string, lastUserPrompt string, response string, err error)
 
-	// IsSessionAlive 检查 session 是否存活
+	// IsSessionAlive checks if the session is still alive
 	IsSessionAlive(sessionName string) bool
 
-	// CreateSession 创建新 session（可选）
+	// CreateSession creates a new session (optional)
 	CreateSession(sessionName, cliType, workDir string) error
 
-	// CheckInteractive 检查 CLI 是否在等待用户输入
-	// 返回: (是否在等待, 提示文本, 错误)
-	// 用于处理中间交互场景，如确认执行命令、澄清歧义等
+	// CheckInteractive checks if the CLI is waiting for user input
+	// Returns: (isWaiting, promptText, error)
+	// Used for handling intermediate interactions, such as confirming command execution, clarifying ambiguities, etc.
 	CheckInteractive(sessionName string) (bool, string, error)
 }

@@ -10,7 +10,9 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/keepmind9/clibot/internal/watchdog"
+	"github.com/sirupsen/logrus"
 )
 
 // ClaudeAdapterConfig configuration for Claude Code adapter
@@ -52,7 +54,21 @@ func NewClaudeAdapter(config ClaudeAdapterConfig) (*ClaudeAdapter, error) {
 
 // SendInput sends input to Claude Code via tmux
 func (c *ClaudeAdapter) SendInput(sessionName, input string) error {
-	return watchdog.SendKeys(sessionName, input)
+	logger.WithFields(logrus.Fields{
+		"session": sessionName,
+		"input":   input,
+		"length":  len(input),
+	}).Debug("Sending input to tmux session")
+
+	if err := watchdog.SendKeys(sessionName, input); err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": sessionName,
+			"error":   err,
+		}).Error("Failed to send input to tmux")
+		return err
+	}
+
+	return nil
 }
 
 // GetLastResponse retrieves the last assistant response from conversation history
@@ -67,17 +83,67 @@ func (c *ClaudeAdapter) GetLastResponse(sessionName string) (string, error) {
 	return content, nil
 }
 
-// HandleHookData processes hook data from Claude Code Stop hook
-// Expected data format: {"transcript_path": "/path/to/transcript.jsonl", ...}
-func (c *ClaudeAdapter) HandleHookData(data map[string]interface{}) (string, error) {
-	// Extract transcript_path from hook data
-	transcriptPath, ok := data["transcript_path"].(string)
-	if !ok {
-		return "", fmt.Errorf("missing transcript_path in hook data")
+// HandleHookData handles raw hook data from Claude Code
+// Expected data format (JSON):
+//   {"cwd": "/path/to/workdir", "session_id": "...", "transcript_path": "...", ...}
+//
+// This returns the cwd as the session identifier, which will be matched against
+// the configured session's work_dir in the engine.
+//
+// Parameter data: raw hook data (JSON bytes)
+// Returns: (cwd, lastUserPrompt, response, error)
+func (c *ClaudeAdapter) HandleHookData(data []byte) (string, string, string, error) {
+	// Parse JSON
+	var hookData map[string]interface{}
+	if err := json.Unmarshal(data, &hookData); err != nil {
+		logger.WithField("error", err).Error("Failed to parse hook JSON data")
+		return "", "", "", fmt.Errorf("failed to parse JSON data: %w", err)
 	}
 
-	// Use transcript_path to get response
-	return c.GetLastResponseFromTranscript(transcriptPath)
+	// Extract cwd (current working directory) - used to match the tmux session
+	cwd, ok := hookData["cwd"].(string)
+	if !ok {
+		logger.Warn("Missing cwd in hook data")
+		return "", "", "", fmt.Errorf("missing cwd in hook data")
+	}
+
+	// Extract transcript_path (contains the conversation history)
+	transcriptPath, ok := hookData["transcript_path"].(string)
+	if !ok {
+		logger.Warn("Missing transcript_path in hook data")
+		return "", "", "", fmt.Errorf("missing transcript_path in hook data")
+	}
+
+	logger.WithFields(logrus.Fields{
+		"cwd":             cwd,
+		"transcript_path": transcriptPath,
+	}).Debug("Hook data parsed")
+
+	// Extract last user prompt for tmux filtering
+	lastUserPrompt, err := extractLastUserPrompt(transcriptPath)
+	if err != nil {
+		logger.WithField("error", err).Debug("Failed to extract last user prompt")
+	} else {
+		logger.WithField("last_user_prompt", lastUserPrompt).Debug("Extracted last user prompt")
+	}
+
+	// Try to extract response from transcript
+	response, err := extractFromTranscriptFile(transcriptPath)
+	if err != nil {
+		// Don't fail the hook - transcript parsing errors are not critical
+		logger.WithFields(logrus.Fields{
+			"transcript": transcriptPath,
+			"error":      err,
+		}).Warn("Failed to extract response from transcript")
+		return cwd, lastUserPrompt, "", nil
+	}
+
+	logger.WithFields(logrus.Fields{
+		"cwd":          cwd,
+		"response_len": len(response),
+	}).Info("Response extracted from transcript")
+
+	return cwd, lastUserPrompt, response, nil
 }
 
 // IsSessionAlive checks if the tmux session is still running
@@ -178,19 +244,76 @@ func expandHome(path string) string {
 // TranscriptMessage represents a single message in Claude Code's transcript.jsonl
 // Each line in the file is a JSON object with this structure
 type TranscriptMessage struct {
-	Type    string         `json:"type"` // "user" or "assistant"
+	Type    string         `json:"type"` // "user", "assistant", "progress", etc.
 	Message MessageContent `json:"message"`
 }
 
 // MessageContent represents the message content structure
+// Note: content can be either a string (user messages) or an array (assistant messages)
 type MessageContent struct {
-	Content []ContentBlock `json:"content"`
+	ID          string         `json:"id,omitempty"`
+	Type        string         `json:"type,omitempty"`         // "message" for assistant
+	Role        string         `json:"role,omitempty"`         // "user" or "assistant"
+	Model       string         `json:"model,omitempty"`        // Model name
+	Content     []ContentBlock `json:"content,omitempty"`
+	ContentText string         `json:"-"`                      // Extracted when content is a string
+	StopReason  string         `json:"stop_reason,omitempty"`  // null if incomplete, "end_turn"/"max_tokens" if complete
 }
 
-// ContentBlock represents a block of content (text, image, etc.)
+// UnmarshalJSON implements custom JSON unmarshaling for MessageContent
+func (mc *MessageContent) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as full message object first
+	var full struct {
+		ID          string `json:"id"`
+		Type        string `json:"type"`
+		Role        string `json:"role"`
+		Model       string `json:"model"`
+		Content     interface{} `json:"content"`
+		StopReason  string `json:"stop_reason"`
+		StopSequence string `json:"stop_sequence"`
+		Usage       map[string]interface{} `json:"usage"`
+	}
+	if err := json.Unmarshal(data, &full); err == nil {
+		mc.ID = full.ID
+		mc.Type = full.Type
+		mc.Role = full.Role
+		mc.Model = full.Model
+		mc.StopReason = full.StopReason
+
+		// Handle content field (can be string or array)
+		switch v := full.Content.(type) {
+		case string:
+			mc.ContentText = v
+		case []interface{}:
+			// Convert []interface{} to []ContentBlock
+			contentJSON, _ := json.Marshal(v)
+			json.Unmarshal(contentJSON, &mc.Content)
+		}
+		return nil
+	}
+
+	// Fallback: try to unmarshal as string (for simple user messages)
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		mc.ContentText = str
+		return nil
+	}
+
+	// Fallback: try to unmarshal as array (shouldn't happen but just in case)
+	var arr []ContentBlock
+	if err := json.Unmarshal(data, &arr); err == nil {
+		mc.Content = arr
+		return nil
+	}
+
+	return fmt.Errorf("content is neither a message object, string, nor array")
+}
+
+// ContentBlock represents a block of content (text, thinking, image, etc.)
 type ContentBlock struct {
-	Type string `json:"type"` // "text", "image", etc.
-	Text string `json:"text,omitempty"`
+	Type     string `json:"type"` // "text", "thinking", "image", etc.
+	Text     string `json:"text,omitempty"`
+	Thinking string `json:"thinking,omitempty"`
 }
 
 // ParseTranscript parses a Claude Code transcript.jsonl file
@@ -211,9 +334,23 @@ func ParseTranscript(filePath string) ([]TranscriptMessage, error) {
 			continue
 		}
 
+		// Parse type first to filter out non-message lines
+		var typeCheck struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &typeCheck); err != nil {
+			continue
+		}
+
+		// Only process user and assistant messages
+		if typeCheck.Type != "user" && typeCheck.Type != "assistant" {
+			continue
+		}
+
 		var msg TranscriptMessage
 		if err := json.Unmarshal([]byte(line), &msg); err != nil {
-			// Skip invalid lines
+			// Skip invalid lines but log for debugging
+			fmt.Printf("Warning: failed to parse line (type=%s): %v\n", typeCheck.Type, err)
 			continue
 		}
 
@@ -228,13 +365,28 @@ func ParseTranscript(filePath string) ([]TranscriptMessage, error) {
 }
 
 // ExtractLastAssistantResponse extracts all assistant messages after the last user message
-// This matches the logic from claudecode-telegram's send-to-telegram.sh hook
+//
+// Currently only attempts to parse from transcript file.
+// TODO: Add tmux fallback with session name
+//
+// If no text response is found (e.g., assistant is still thinking), returns empty string.
 func ExtractLastAssistantResponse(transcriptPath string) (string, error) {
-	// Parse transcript file
+	logger.WithField("transcript", transcriptPath).Debug("Starting response extraction from transcript")
+
+	return extractFromTranscriptFile(transcriptPath)
+}
+
+// extractFromTranscriptFile tries to extract response from transcript file
+func extractFromTranscriptFile(transcriptPath string) (string, error) {
+	logger.WithField("transcript", transcriptPath).Debug("Parsing transcript file")
+
 	messages, err := ParseTranscript(transcriptPath)
 	if err != nil {
-		return "", err
+		logger.WithField("error", err).Debug("Failed to parse transcript")
+		return "", fmt.Errorf("failed to parse transcript: %w", err)
 	}
+
+	logger.WithField("message_count", len(messages)).Debug("Parsed transcript messages")
 
 	// Find the last user message index
 	lastUserIndex := -1
@@ -244,33 +396,133 @@ func ExtractLastAssistantResponse(transcriptPath string) (string, error) {
 		}
 	}
 
+	logger.WithField("last_user_index", lastUserIndex).Debug("Found last user message")
+
 	if lastUserIndex == -1 {
 		return "", fmt.Errorf("no user messages found in transcript")
 	}
 
-	// Extract all assistant messages after the last user message
+	// Extract all assistant text responses after the last user message
 	var responseTexts []string
+	assistantMessageCount := 0
+
 	for i := lastUserIndex + 1; i < len(messages); i++ {
 		if messages[i].Type == "assistant" {
-			// Extract all text content blocks
+			assistantMessageCount++
 			for _, block := range messages[i].Message.Content {
 				if block.Type == "text" && block.Text != "" {
 					responseTexts = append(responseTexts, block.Text)
+					logger.WithFields(logrus.Fields{
+						"block_type": block.Type,
+						"text_length": len(block.Text),
+					}).Debug("Found text block in assistant message")
 				}
 			}
 		}
 	}
 
+	logger.WithFields(logrus.Fields{
+		"assistant_messages": assistantMessageCount,
+		"text_blocks":        len(responseTexts),
+	}).Debug("Extracted text blocks from assistant messages")
+
 	if len(responseTexts) == 0 {
-		return "", fmt.Errorf("no assistant responses found after last user message")
+		logger.Debug("No text responses found in transcript")
+		return "", fmt.Errorf("no text responses found in transcript")
 	}
 
-	// Join all response texts with double newlines (matching Claude's output format)
-	return strings.Join(responseTexts, "\n\n"), nil
+	result := strings.Join(responseTexts, "\n\n")
+	logger.WithField("joined_length", len(result)).Debug("Joined response texts")
+
+	return result, nil
 }
 
-// GetLastResponseFromTranscript retrieves response from transcript.jsonl
-// This is called when hook provides transcript_path
+// extractFromTmux captures response from tmux session (fallback method)
+func extractFromTmux(sessionName string) (string, error) {
+	logger.WithField("session", sessionName).Debug("Capturing tmux pane")
+
+	// Capture the last 200 lines from tmux session
+	output, err := watchdog.CapturePane(sessionName, 200)
+	if err != nil {
+		logger.WithField("error", err).Error("Failed to capture tmux pane")
+		return "", fmt.Errorf("failed to capture tmux pane: %w", err)
+	}
+
+	logger.WithFields(logrus.Fields{
+		"raw_length":    len(output),
+		"raw_preview":   output[:min(500, len(output))],
+	}).Debug("Captured raw tmux output")
+
+	// Clean ANSI codes
+	cleanOutput := watchdog.StripANSI(output)
+
+	logger.WithField("cleaned_length", len(cleanOutput)).Debug("Cleaned ANSI codes")
+
+	// Simple heuristic: extract the last assistant response
+	lines := strings.Split(cleanOutput, "\n")
+
+	// Filter out empty lines and prompts
+	var contentLines []string
+	filteredCount := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Skip empty lines
+		if trimmed == "" {
+			continue
+		}
+
+		// Skip user prompts and common CLI patterns
+		if isPromptOrCommand(trimmed) {
+			filteredCount++
+			logger.WithField("filtered_line", trimmed).Debug("Filtered prompt/command")
+			continue
+		}
+
+		contentLines = append(contentLines, trimmed)
+	}
+
+	logger.WithFields(logrus.Fields{
+		"total_lines":      len(lines),
+		"content_lines":    len(contentLines),
+		"filtered_count":   filteredCount,
+	}).Debug("Processed tmux lines")
+
+	if len(contentLines) == 0 {
+		logger.Warn("No content found in tmux capture after filtering")
+		return "", fmt.Errorf("no content found in tmux capture")
+	}
+
+	// Join and return
+	response := strings.Join(contentLines, "\n")
+	logger.WithField("final_length", len(response)).Debug("Constructed final response from tmux")
+
+	return response, nil
+}
+
+
+// isPromptOrCommand checks if a line is a prompt/command rather than assistant output
+func isPromptOrCommand(line string) bool {
+	// Common CLI patterns that are not assistant output
+	promptPatterns := []string{
+		"user@",
+		"$ ",
+		">>>",
+		"...",
+		"\\[?\\]",
+		"Press Enter",
+		"Confirm?",
+	}
+
+	for _, pattern := range promptPatterns {
+		if strings.Contains(line, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
 func (c *ClaudeAdapter) GetLastResponseFromTranscript(transcriptPath string) (string, error) {
 	// Expand home directory in path
 	transcriptPath = expandHome(transcriptPath)
@@ -282,4 +534,42 @@ func (c *ClaudeAdapter) GetLastResponseFromTranscript(transcriptPath string) (st
 	}
 
 	return response, nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+
+// extractLastUserPrompt extracts the last user's prompt from transcript
+// This is used to filter tmux output to only show the latest response
+func extractLastUserPrompt(transcriptPath string) (string, error) {
+	transcriptPath = expandHome(transcriptPath)
+
+	messages, err := ParseTranscript(transcriptPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse transcript: %w", err)
+	}
+
+	// Find the last user message
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Type == "user" {
+			// Get the user's content
+			if messages[i].Message.ContentText != "" {
+				return messages[i].Message.ContentText, nil
+			}
+			// Try extracting from content array
+			for _, block := range messages[i].Message.Content {
+				if block.Type == "text" && block.Text != "" {
+					return block.Text, nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no user message found in transcript")
 }

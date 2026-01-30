@@ -2,15 +2,19 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/cli"
+	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/internal/watchdog"
+	"github.com/sirupsen/logrus"
 )
 
 // Engine is the core scheduling engine that manages CLI sessions and bot connections
@@ -21,19 +25,25 @@ type Engine struct {
 	sessions    map[string]*Session        // Session name -> Session
 	sessionMu   sync.RWMutex               // Mutex for session access
 	messageChan chan bot.BotMessage        // Bot message channel
-	responseChan chan ResponseEvent        // CLI response channel
 	hookServer  *http.Server               // HTTP server for hooks
+	sessionChannels map[string]BotChannel  // Session name -> active bot channel (for routing responses)
+}
+
+// BotChannel represents a bot channel for sending responses
+type BotChannel struct {
+	Platform string  // "discord", "telegram", "feishu", etc.
+	Channel  string  // Channel ID (platform-specific)
 }
 
 // NewEngine creates a new Engine instance
 func NewEngine(config *Config) *Engine {
 	return &Engine{
-		config:      config,
-		cliAdapters: make(map[string]cli.CLIAdapter),
-		activeBots:  make(map[string]bot.BotAdapter),
-		sessions:    make(map[string]*Session),
-		messageChan: make(chan bot.BotMessage, 100),
-		responseChan: make(chan ResponseEvent, 100),
+		config:         config,
+		cliAdapters:    make(map[string]cli.CLIAdapter),
+		activeBots:     make(map[string]bot.BotAdapter),
+		sessions:       make(map[string]*Session),
+		messageChan:    make(chan bot.BotMessage, 100),
+		sessionChannels: make(map[string]BotChannel),
 	}
 }
 
@@ -95,7 +105,7 @@ func (e *Engine) initializeSessions() error {
 
 // Run starts the engine and begins processing messages
 func (e *Engine) Run() error {
-	log.Println("Starting clibot engine...")
+	logger.Info("Starting clibot engine...")
 
 	// Initialize sessions
 	if err := e.initializeSessions(); err != nil {
@@ -131,17 +141,14 @@ func (e *Engine) Run() error {
 	return nil
 }
 
-// runEventLoop runs the main event loop for processing messages and responses
+// runEventLoop runs the main event loop for processing messages
 func (e *Engine) runEventLoop() {
-	log.Println("Engine event loop started")
+	logger.Info("Engine event loop started")
 
 	for {
 		select {
 		case msg := <-e.messageChan:
 			e.HandleUserMessage(msg)
-
-		case event := <-e.responseChan:
-			e.HandleCLIResponse(event)
 		}
 	}
 }
@@ -153,18 +160,32 @@ func (e *Engine) HandleBotMessage(msg bot.BotMessage) {
 
 // HandleUserMessage processes a message from a user
 func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
-	log.Printf("[%s] User %s: %s", msg.Platform, msg.UserID, msg.Content)
+	logger.WithFields(logrus.Fields{
+		"platform": msg.Platform,
+		"user":     msg.UserID,
+		"channel":  msg.Channel,
+	}).Info("Processing user message")
 
 	// Step 0: Security check - verify user is in whitelist
 	if !e.config.IsUserAuthorized(msg.Platform, msg.UserID) {
+		logger.WithFields(logrus.Fields{
+			"platform": msg.Platform,
+			"user":     msg.UserID,
+		}).Warn("Unauthorized access attempt")
 		e.SendToBot(msg.Platform, msg.Channel, "❌ Unauthorized: Please contact the administrator to add your user ID")
 		return
 	}
+
+	logger.WithField("user", msg.UserID).Debug("User authorized")
 
 	// Step 1: Check if it's a special command
 	prefix := e.config.CommandPrefix
 	if len(msg.Content) > len(prefix) && msg.Content[:len(prefix)] == prefix {
 		cmd := msg.Content[len(prefix):]
+		logger.WithFields(logrus.Fields{
+			"command": cmd,
+			"user":    msg.UserID,
+		}).Info("Special command received")
 		e.HandleSpecialCommand(cmd, msg)
 		return
 	}
@@ -172,10 +193,27 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	// Step 2: Get the active session for this channel
 	session := e.GetActiveSession(msg.Channel)
 	if session == nil {
+		logger.WithFields(logrus.Fields{
+			"channel": msg.Channel,
+		}).Warn("No active session found for channel")
 		e.SendToBot(msg.Platform, msg.Channel,
 			fmt.Sprintf("❌ No active session. Use '%ssessions' to list available sessions", prefix))
 		return
 	}
+
+	logger.WithFields(logrus.Fields{
+		"session": session.Name,
+		"state":   session.State,
+		"cli":     session.CLIType,
+	}).Debug("Session found")
+
+	// Record the session → channel mapping for routing responses
+	e.sessionMu.Lock()
+	e.sessionChannels[session.Name] = BotChannel{
+		Platform: msg.Platform,
+		Channel:  msg.Channel,
+	}
+	e.sessionMu.Unlock()
 
 	// Step 3: If session is waiting for input (interactive state), pass directly
 	if session.State == StateWaitingInput {
@@ -197,30 +235,24 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	// Step 4: Normal flow - send to CLI
 	adapter := e.cliAdapters[session.CLIType]
 	if err := adapter.SendInput(session.Name, msg.Content); err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": session.Name,
+			"error":   err,
+		}).Error("Failed to send input to CLI")
 		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send input: %v", err))
 		return
 	}
 
+	logger.WithFields(logrus.Fields{
+		"session": session.Name,
+		"cli":     session.CLIType,
+	}).Info("Input sent to CLI")
+
 	// Update session state
 	e.updateSessionState(session.Name, StateProcessing)
 
-	// Step 5: Start Watchdog and timeout timer
-	go func(sessionName string) {
-		// Start watchdog
-		e.startWatchdog(session)
-
-		// Wait for hook event or timeout
-		select {
-		case resp := <-e.responseChan:
-			if resp.SessionName == sessionName {
-				e.updateSessionState(sessionName, StateIdle)
-				e.SendToAllBots(resp.Response)
-			}
-		case <-time.After(5 * time.Minute):
-			e.updateSessionState(sessionName, StateError)
-			e.SendToAllBots("⚠️ CLI response timeout\nSuggestion: Use !!status to check status")
-		}
-	}(session.Name)
+	// Start watchdog monitoring (for detecting interactive prompts)
+	go e.startWatchdog(session)
 }
 
 // HandleSpecialCommand handles special clibot commands
@@ -317,7 +349,11 @@ func (e *Engine) updateSessionState(sessionName string, newState SessionState) {
 	if session, exists := e.sessions[sessionName]; exists {
 		oldState := session.State
 		session.State = newState
-		log.Printf("Session %s state: %s -> %s", sessionName, oldState, newState)
+		logger.WithFields(logrus.Fields{
+			"session":   sessionName,
+			"old_state": oldState,
+			"new_state": newState,
+		}).Debug("Session state updated")
 	}
 }
 
@@ -325,7 +361,17 @@ func (e *Engine) updateSessionState(sessionName string, newState SessionState) {
 func (e *Engine) SendToBot(platform, channel, message string) {
 	if botAdapter, exists := e.activeBots[platform]; exists {
 		if err := botAdapter.SendMessage(channel, message); err != nil {
-			log.Printf("Failed to send message to %s: %v", platform, err)
+			logger.WithFields(logrus.Fields{
+				"platform": platform,
+				"channel":  channel,
+				"error":    err,
+			}).Error("Failed to send message to bot")
+		} else {
+			logger.WithFields(logrus.Fields{
+				"platform": platform,
+				"channel":  channel,
+				"length":   len(message),
+			}).Info("Message sent to bot")
 		}
 	}
 }
@@ -337,14 +383,6 @@ func (e *Engine) SendToAllBots(message string) {
 			log.Printf("Failed to send message to %s: %v", platform, err)
 		}
 	}
-}
-
-// HandleCLIResponse handles a response event from CLI
-func (e *Engine) HandleCLIResponse(event ResponseEvent) {
-	log.Printf("Received response from session %s", event.SessionName)
-
-	// Send to response channel (will be picked up by the waiting goroutine)
-	e.responseChan <- event
 }
 
 // startWatchdog starts monitoring for CLI interactive prompts
@@ -366,18 +404,20 @@ func (e *Engine) startHookServer() {
 		Handler: mux,
 	}
 
-	log.Printf("Hook server listening on %s", addr)
+	logger.WithField("address", addr).Info("Hook server listening")
 
 	// Start server (blocking)
 	// When Shutdown() is called, ListenAndServe will return ErrServerClosed
 	if err := e.hookServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Printf("Hook server error: %v", err)
+		logger.Errorf("Hook server error: %v", err)
 	}
 
-	log.Println("Hook server stopped")
+	logger.Info("Hook server stopped")
 }
 
 // handleHookRequest handles HTTP hook requests
+// This function extracts raw data from HTTP request and delegates to CLI adapter
+// The CLI adapter is protocol-agnostic and only works with raw bytes
 func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	// Only accept POST requests
 	if r.Method != http.MethodPost {
@@ -385,90 +425,195 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get cli_type from query parameter
+	// Get cli_type from query parameter (used for routing to correct adapter)
 	cliType := r.URL.Query().Get("cli_type")
 	if cliType == "" {
-		log.Printf("Missing cli_type query parameter")
+		logger.Warn("Missing cli_type query parameter in hook request")
 		http.Error(w, "Missing cli_type parameter", http.StatusBadRequest)
 		return
 	}
 
-	// Parse JSON body (raw data from CLI)
-	var data map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		log.Printf("Failed to decode hook payload: %v", err)
-		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+	// Get CLI adapter
+	adapter, exists := e.cliAdapters[cliType]
+	if !exists {
+		logger.WithField("cli_type", cliType).Warn("No adapter found for CLI type")
+		http.Error(w, "CLI adapter not found", http.StatusInternalServerError)
 		return
 	}
 
-	// Extract session and event from data (flexible - different CLIs may use different field names)
-	var sessionName, event string
-
-	if s, ok := data["session"].(string); ok {
-		sessionName = s
+	// Read raw data from request body
+	// The adapter will parse this data in whatever format it expects (JSON, text, etc.)
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		logger.Errorf("Failed to read request body: %v", err)
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
 	}
-	if s, ok := data["session_name"].(string); ok {
-		sessionName = s
-	}
+	defer r.Body.Close()
 
-	if ev, ok := data["event"].(string); ok {
-		event = ev
-	}
-	if ev, ok := data["event_type"].(string); ok {
-		event = ev
-	}
-
-	log.Printf("Hook received: cli_type=%s, session=%s, event=%s", cliType, sessionName, event)
-
-	// Validate required fields
-	if sessionName == "" {
-		log.Printf("Missing session name in hook data")
-		http.Error(w, "Missing session name", http.StatusBadRequest)
+	if len(data) == 0 {
+		logger.Warn("Empty request body in hook request")
+		http.Error(w, "Empty request body", http.StatusBadRequest)
 		return
 	}
 
-	if event == "" {
-		log.Printf("Missing event type in hook data")
-		http.Error(w, "Missing event type", http.StatusBadRequest)
+	logger.WithFields(logrus.Fields{
+		"cli_type": cliType,
+		"hook_data": string(data),
+	}).Debug("Hook data received")
+
+	// Delegate to CLI adapter (protocol-agnostic)
+	// The adapter parses the data and returns: (cwd, lastUserPrompt, response, error)
+	// identifier is used to match the session (e.g., cwd, session name, etc.)
+	identifier, lastUserPrompt, response, err := adapter.HandleHookData(data)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"cli_type": cliType,
+			"error":    err,
+		}).Error("Failed to handle hook data")
+		http.Error(w, "Failed to process hook", http.StatusInternalServerError)
 		return
 	}
 
-	// Handle completed event
-	if event == "completed" {
-		// Get session info
-		e.sessionMu.RLock()
-		session, exists := e.sessions[sessionName]
-		e.sessionMu.RUnlock()
+	// Match identifier (cwd) to actual tmux session
+	// The adapter returns an identifier (e.g., cwd), and we find the matching session
+	e.sessionMu.RLock()
+	var session *Session
+	for _, s := range e.sessions {
+		// Normalize paths for comparison
+		normalizedWorkDir := normalizePath(s.WorkDir)
+		normalizedIdentifier := normalizePath(identifier)
 
-		if !exists {
-			log.Printf("Session %s not found", sessionName)
-			http.Error(w, "Session not found", http.StatusNotFound)
-			return
-		}
-
-		// Get CLI adapter
-		adapter, exists := e.cliAdapters[session.CLIType]
-		if !exists {
-			log.Printf("No adapter found for CLI type: %s", session.CLIType)
-			http.Error(w, "CLI adapter not found", http.StatusInternalServerError)
-			return
-		}
-
-		// Get response from CLI adapter using hook data
-		response, err := adapter.HandleHookData(data)
-		if err != nil {
-			log.Printf("Failed to get response from session %s: %v", sessionName, err)
-			http.Error(w, "Failed to get response", http.StatusInternalServerError)
-			return
-		}
-
-		// Send to response channel
-		e.responseChan <- ResponseEvent{
-			SessionName: sessionName,
-			Response:    response,
-			Timestamp:   time.Now().Format(time.RFC3339),
+		if normalizedWorkDir == normalizedIdentifier {
+			session = s
+			break
 		}
 	}
+	e.sessionMu.RUnlock()
+
+	if session == nil {
+		logger.WithFields(logrus.Fields{
+			"identifier": identifier,
+		}).Warn("No session found matching identifier")
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	logger.WithFields(logrus.Fields{
+		"session":  session.Name,
+		"work_dir": session.WorkDir,
+	}).Debug("Hook matched to session")
+
+	// If adapter returned empty response, try tmux capture as fallback
+	if response == "" {
+		logger.WithFields(logrus.Fields{
+			"session":         session.Name,
+			"last_user_prompt": lastUserPrompt,
+			"reason":          "adapter returned empty response",
+		}).Info("Using tmux capture as fallback with user prompt filtering")
+
+		// Retry mechanism: wait for Claude to finish thinking
+		const maxRetries = 10
+		const retryDelay = 800 * time.Millisecond  // 0.8 seconds (async hook: faster response expected)
+		var lastResponse string
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+			if attempt > 1 {
+				logger.WithField("attempt", attempt).Info("Retrying tmux capture")
+				time.Sleep(retryDelay)
+			}
+
+			tmuxOutput, err := watchdog.CapturePane(session.Name, 200)
+			if err != nil {
+				logger.WithField("error", err).Warn("Failed to capture tmux pane")
+				break
+			}
+
+			cleanOutput := watchdog.StripANSI(tmuxOutput)
+
+			// Extract content after the user's prompt
+			filteredOutput := extractContentAfterPrompt(cleanOutput, lastUserPrompt)
+
+			logger.WithFields(logrus.Fields{
+				"attempt":          attempt,
+				"filtered_length":  len(filteredOutput),
+				"filtered_preview": filteredOutput[:min(200, len(filteredOutput))],
+				"is_thinking":      isThinking(filteredOutput),
+			}).Debug("Extracted content after user prompt")
+
+			// Check if still thinking in the filtered content
+			if isThinking(filteredOutput) {
+				logger.WithFields(logrus.Fields{
+					"attempt":     attempt,
+					"max_retries": maxRetries,
+					"reason":      "thinking detected in filtered output",
+				}).Debug("Claude is still thinking (in response area), will retry")
+				lastResponse = filteredOutput // Save for final attempt
+				continue
+			}
+
+			// Not thinking anymore, validate and use this response
+			response = filteredOutput
+
+			// Validate response - check if it's not empty and has meaningful content
+			if response != "" && len(response) > 20 && !looksLikeIncompleteResponse(response) {
+				logger.WithFields(logrus.Fields{
+					"source":           "tmux",
+					"attempt":           attempt,
+					"response_length":  len(response),
+					"response_preview": response[:min(200, len(response))],
+				}).Info("Successfully extracted response from tmux")
+				break // Got valid response, stop retrying
+			}
+
+			logger.WithFields(logrus.Fields{
+				"attempt":          attempt,
+				"response_length": len(response),
+				"is_too_short":      len(response) < 20,
+				"looks_incomplete": looksLikeIncompleteResponse(response),
+			}).Debug("Response validation failed, will retry")
+		}
+
+		// If still no valid response after all retries, use the last capture
+		if response == "" && lastResponse != "" {
+			logger.WithFields(logrus.Fields{
+				"max_retries":      maxRetries,
+				"using_last_attempt": true,
+				"response_length": len(lastResponse),
+			}).Info("Using last attempt capture (still may be thinking)")
+			response = lastResponse
+		}
+
+		if response == "" {
+			logger.WithField("max_retries", maxRetries).Warn("All retry attempts exhausted and no valid response")
+		}
+	}
+
+	// Update session state to idle
+	e.updateSessionState(session.Name, StateIdle)
+
+	// Get the bot channel for this session
+	e.sessionMu.RLock()
+	botChannel, exists := e.sessionChannels[session.Name]
+	e.sessionMu.RUnlock()
+
+	if !exists {
+		// No active channel - user might be operating CLI directly
+		logger.WithFields(logrus.Fields{
+			"session": session.Name,
+		}).Debug("No active channel found, skipping bot notification")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Hook received (no active bot channel)")
+		return
+	}
+
+	// Send to the specific bot channel that initiated the request
+	logger.WithFields(logrus.Fields{
+		"platform": botChannel.Platform,
+		"channel":  botChannel.Channel,
+		"session":  session.Name,
+	}).Info("Sending hook response to bot")
+	e.SendToBot(botChannel.Platform, botChannel.Channel, response)
 
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "Hook received")
@@ -476,31 +621,301 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 
 // Stop gracefully stops the engine
 func (e *Engine) Stop() error {
-	log.Println("Stopping clibot engine...")
+	logger.Info("Stopping clibot engine...")
 
 	// Stop hook server with graceful shutdown
 	if e.hookServer != nil {
-		log.Println("Stopping hook server...")
+		logger.Info("Stopping hook server...")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		if err := e.hookServer.Shutdown(ctx); err != nil {
-			log.Printf("Failed to gracefully stop hook server: %v", err)
+			logger.Errorf("Failed to gracefully stop hook server: %v", err)
 			// Force close if graceful shutdown fails
 			e.hookServer.Close()
 		} else {
-			log.Println("Hook server stopped gracefully")
+			logger.Info("Hook server stopped gracefully")
 		}
 	}
 
 	// Stop all bots
 	for botType, botAdapter := range e.activeBots {
-		log.Printf("Stopping %s bot...", botType)
+		logger.WithField("bot_type", botType).Info("Stopping bot")
 		if err := botAdapter.Stop(); err != nil {
-			log.Printf("Failed to stop %s bot: %v", botType, err)
+			logger.WithFields(logrus.Fields{
+				"bot_type": botType,
+				"error":    err,
+			}).Error("Failed to stop bot")
 		}
 	}
 
-	log.Println("Engine stopped")
+	logger.Info("Engine stopped")
 	return nil
+}
+
+// normalizePath normalizes a path for comparison
+// Removes trailing slashes and expands relative paths if needed
+func normalizePath(path string) string {
+	// Remove trailing slash
+	path = strings.TrimSuffix(path, "/")
+
+	// TODO: Expand relative paths to absolute paths
+	// For now, just return the cleaned path
+	return path
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// isPromptOrCommand checks if a line is a prompt/command rather than assistant output
+func isPromptOrCommand(line string) bool {
+	promptPatterns := []string{
+		"user@",
+		"$ ",
+		">>>",
+		"...",
+		"[?]",
+		"Press Enter",
+		"Confirm?",
+	}
+
+	for _, pattern := range promptPatterns {
+		if strings.Contains(line, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// extractLastAssistantContent extracts the last meaningful assistant response from tmux output
+// Filters out UI borders, prompts, and system messages
+func extractLastAssistantContent(output string) string {
+	lines := strings.Split(output, "\n")
+
+	// Filter out borders and UI elements
+	var contentLines []string
+	skipBorder := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Skip empty lines
+		if trimmed == "" {
+			continue
+		}
+
+		// Detect and skip UI borders (box drawing characters)
+		if strings.Contains(trimmed, "─") || strings.Contains(trimmed, "│") ||
+		   strings.Contains(trimmed, "┌") || strings.Contains(trimmed, "└") ||
+		   strings.Contains(trimmed, "┐") || strings.Contains(trimmed, "┘") ||
+		   strings.Contains(trimmed, "├") || strings.Contains(trimmed, "┤") {
+			if strings.Contains(trimmed, "Claude Code") {
+				skipBorder = true
+			}
+			continue
+		}
+
+		// Skip while we're in the border area
+		if skipBorder {
+			if !strings.Contains(trimmed, "─") && !strings.Contains(trimmed, "│") {
+				skipBorder = false
+			} else {
+				continue
+			}
+		}
+
+		// Skip prompts and commands
+		if isPromptOrCommand(trimmed) {
+			continue
+		}
+
+		contentLines = append(contentLines, trimmed)
+	}
+
+	// Join with newlines
+	result := strings.Join(contentLines, "\n")
+
+	// Remove duplicate consecutive blank lines
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
+
+	return result
+}
+
+// extractContentAfterPrompt extracts content appearing after the user's prompt
+// Searches from the END to find the LAST occurrence of the prompt
+// This filters out historical messages and only returns the latest response
+func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
+	if userPrompt == "" {
+		// No prompt available, use basic extraction
+		return extractLastAssistantContent(tmuxOutput)
+	}
+
+	lines := strings.Split(tmuxOutput, "\n")
+
+	// Search from the end to find the last occurrence of user prompt
+	promptIndex := -1
+	promptPrefix := userPrompt
+	if len(userPrompt) > 30 {
+		// Use first 30 chars as prefix for matching long prompts
+		promptPrefix = userPrompt[:30]
+	}
+
+	// Search backwards for the prompt
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+
+		// Try exact match first
+		if strings.Contains(trimmed, userPrompt) {
+			promptIndex = i
+			logger.WithFields(logrus.Fields{
+				"line_index": i,
+				"prompt_matched": trimmed,
+			}).Debug("Found user prompt (backward search)")
+			break
+		}
+
+		// Try prefix match for long prompts
+		if len(userPrompt) > 30 && strings.Contains(trimmed, promptPrefix) {
+			promptIndex = i
+			logger.WithFields(logrus.Fields{
+				"line_index": i,
+				"prompt_matched_prefix": trimmed,
+			}).Debug("Found user prompt by prefix (backward search)")
+			break
+		}
+	}
+
+	// If prompt not found, fall back to basic extraction
+	if promptIndex == -1 {
+		logger.Debug("User prompt not found in tmux output, using basic extraction")
+		return extractLastAssistantContent(tmuxOutput)
+	}
+
+	// Collect content AFTER the prompt (forward from promptIndex + 1)
+	var contentLines []string
+	skipBorder := false
+
+	for i := promptIndex + 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+
+		// Skip empty lines
+		if trimmed == "" {
+			continue
+		}
+
+		// Detect and skip UI borders
+		if strings.Contains(trimmed, "─") || strings.Contains(trimmed, "│") ||
+		   strings.Contains(trimmed, "┌") || strings.Contains(trimmed, "└") {
+			if strings.Contains(trimmed, "Claude Code") {
+				skipBorder = true
+			}
+			continue
+		}
+
+		if skipBorder {
+			if !strings.Contains(trimmed, "─") && !strings.Contains(trimmed, "│") {
+				skipBorder = false
+			} else {
+				continue
+			}
+		}
+
+		// Skip prompts and commands
+		if isPromptOrCommand(trimmed) {
+			continue
+		}
+
+		contentLines = append(contentLines, trimmed)
+	}
+
+	logger.WithFields(logrus.Fields{
+		"total_lines":     len(lines),
+		"prompt_index":    promptIndex,
+		"content_lines":    len(contentLines),
+	}).Debug("Extracted content after prompt")
+
+	if len(contentLines) == 0 {
+		logger.Debug("No content found after prompt, using basic extraction")
+		return extractLastAssistantContent(tmuxOutput)
+	}
+
+	result := strings.Join(contentLines, "\n")
+
+	// Clean up multiple consecutive newlines
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
+
+	return result
+}
+
+// isThinking checks if Claude Code is still thinking based on tmux output
+// Uses universal keywords that work across different AI CLI tools
+// Only checks the last N lines to accurately determine current state
+func isThinking(output string) bool {
+	// Only check the last 20 lines for accurate current state
+	lines := strings.Split(output, "\n")
+	startIndex := 0
+	if len(lines) > 20 {
+		startIndex = len(lines) - 20
+	}
+	recentLines := lines[startIndex:]
+
+	// Universal thinking indicators (work across Claude, Gemini, etc.)
+	thinkingIndicators := []string{
+		"thinking",
+		"esc to interrupt",
+		"press escape to interrupt",
+		"interrupt",
+	}
+
+	recentOutput := strings.Join(recentLines, "\n")
+	outputLower := strings.ToLower(recentOutput)
+
+	for _, indicator := range thinkingIndicators {
+		if strings.Contains(outputLower, indicator) {
+			logger.WithFields(logrus.Fields{
+				"indicator":        indicator,
+				"checked_lines":    len(recentLines),
+				"total_lines":      len(lines),
+			}).Debug("Detected thinking state in recent lines")
+			return true
+		}
+	}
+
+	return false
+}
+
+// looksLikeIncompleteResponse checks if the response seems incomplete
+func looksLikeIncompleteResponse(response string) bool {
+	// Very short responses might be incomplete
+	if len(response) < 50 {
+		// Check if it ends abruptly without proper punctuation
+		lastChar := response[len(response)-1:]
+		if lastChar != "." && lastChar != "!" && lastChar != "?" &&
+		   lastChar != "。" && lastChar != "！" && lastChar != "？" &&
+		   lastChar != "\n" && lastChar != "`" {
+			return true
+		}
+	}
+
+	// Check for code blocks that might be incomplete
+	if strings.HasSuffix(response, "```") {
+		return true // Incomplete code block
+	}
+
+	// Check for incomplete lists
+	if strings.HasSuffix(response, "-") || strings.HasSuffix(response, "*") {
+		return true
+	}
+
+	return false
 }

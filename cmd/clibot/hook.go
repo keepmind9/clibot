@@ -2,13 +2,15 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/spf13/cobra"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -22,46 +24,89 @@ var (
 The CLI should pass event data as JSON via stdin. Different CLI types may
 have different JSON structures - this command just forwards the data.
 
+This command uses an asynchronous notification strategy:
+- Sends HTTP request in background (non-blocking)
+- Returns quickly after a short delay (300ms)
+- Allows Claude Code to continue execution without UI freeze
+
 Examples:
   echo '{"session":"my-session","event":"completed"}' | clibot hook --cli-type claude
   cat hook-data.json | clibot hook --cli-type gemini`,
 		Run: func(cmd *cobra.Command, args []string) {
-			// Read JSON data from stdin
+			// Read raw data from stdin (forward as-is, no parsing)
 			stdinData, err := io.ReadAll(os.Stdin)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
-				os.Exit(1)
+				logger.WithField("error", err).Error("Failed to read stdin")
+				// Exit gracefully to avoid affecting CLI behavior
+				return
 			}
 
 			if len(stdinData) == 0 {
-				fmt.Fprintf(os.Stderr, "Error: no data received from stdin\n")
-				os.Exit(1)
+				logger.Warn("No data received from stdin")
+				// Exit gracefully
+				return
 			}
 
-			// Validate that stdin contains valid JSON
-			var jsonData interface{}
-			if err := json.Unmarshal(stdinData, &jsonData); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: stdin data is not valid JSON: %v\n", err)
-				os.Exit(1)
-			}
+			logger.WithFields(logrus.Fields{
+				"cli_type": cliType,
+				"size":     len(stdinData),
+			}).Debug("Hook command received data")
 
-			// Send HTTP POST request to main process
-			// Pass cli_type as query parameter, forward stdin data as-is
-			url := fmt.Sprintf("http://localhost:8080/hook?cli_type=%s", cliType)
-			resp, err := http.Post(url, "application/json", bytes.NewBuffer(stdinData))
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Hook request failed: %v\n", err)
-				os.Exit(1)
-			}
-			defer resp.Body.Close()
+			// DEBUG: Print raw data (can be removed later)
+			fmt.Fprintf(os.Stderr, "=== Hook Debug ===\n")
+			fmt.Fprintf(os.Stderr, "cli_type: %s\n", cliType)
+			fmt.Fprintf(os.Stderr, "stdin (%d bytes):\n%s\n", len(stdinData), string(stdinData))
+			fmt.Fprintf(os.Stderr, "==================\n")
 
-			if resp.StatusCode == 200 {
-				fmt.Println("Hook notification succeeded")
-			} else {
-				body, _ := io.ReadAll(resp.Body)
-				fmt.Fprintf(os.Stderr, "Hook notification failed, status code: %d, response: %s\n", resp.StatusCode, string(body))
-				os.Exit(1)
-			}
+			// Forward raw data to Engine asynchronously (non-blocking)
+			// This allows Claude Code to continue without waiting for engine response
+			go func() {
+				url := fmt.Sprintf("http://localhost:8080/hook?cli_type=%s", cliType)
+
+				logger.WithFields(logrus.Fields{
+					"cli_type": cliType,
+					"url":      url,
+					"size":     len(stdinData),
+				}).Debug("Forwarding hook data to engine (async)")
+
+				resp, err := http.Post(url, "application/octet-stream", bytes.NewBuffer(stdinData))
+				if err != nil {
+					logger.WithFields(logrus.Fields{
+						"cli_type": cliType,
+						"error":    err,
+					}).Error("Hook request failed (async)")
+					// Don't print to stderr - we've already returned
+					return
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode == 200 {
+					logger.WithFields(logrus.Fields{
+						"cli_type":    cliType,
+						"status_code": resp.StatusCode,
+					}).Info("Hook notification succeeded (async)")
+				} else {
+					body, _ := io.ReadAll(resp.Body)
+					logger.WithFields(logrus.Fields{
+						"cli_type":     cliType,
+						"status_code":  resp.StatusCode,
+						"response":     string(body),
+					}).Warn("Hook notification failed (non-200 status, async)")
+				}
+			}()
+
+			// Light-weight delay to allow HTTP request to be sent
+			// This keeps the hook "alive" briefly but doesn't block Claude Code's UI
+			// 300ms is enough for HTTP request to initiate, but short enough to not affect UX
+			time.Sleep(300 * time.Millisecond)
+
+			// Return immediately - let Claude Code continue execution
+			// The background goroutine will handle the HTTP request independently
+			logger.WithFields(logrus.Fields{
+				"cli_type": cliType,
+			}).Debug("Hook command returning (async notification sent)")
+
+			fmt.Println("Hook notification sent asynchronously")
 		},
 	}
 )

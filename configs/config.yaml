@@ -108,5 +108,10 @@ cli_adapters:
 
 # 日志配置
 logging:
-  level: "info"
-  file: "/var/log/clibot/app.log"
+  level: "info"               # debug/info/warn/error
+  file: "/data/logs/clibot/clibot.log"
+  max_size: 100               # MB
+  max_backups: 5              # 保留5个备份文件
+  max_age: 30                 # 保留30天
+  compress: true              # 压缩旧日志
+  enable_stdout: true         # 同时输出到控制台

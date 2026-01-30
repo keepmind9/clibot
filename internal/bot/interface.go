@@ -2,23 +2,27 @@ package bot
 
 import "time"
 
-// BotAdapter Bot 适配器接口
+// BotAdapter defines the interface for bot adapters
 type BotAdapter interface {
-	// Start 启动 Bot，建立连接并开始监听消息
+	// Start starts the bot, establishes connection and begins listening for messages
 	Start(messageHandler func(BotMessage)) error
 
-	// SendMessage 发送消息到 IM 平台
+	// SendMessage sends a message to the IM platform
+	// Adapter is responsible for:
+	//   - Truncating to platform limits
+	//   - Splitting long messages when necessary
+	//   - Platform-specific formatting
 	SendMessage(channel, message string) error
 
-	// Stop 停止 Bot，清理资源
+	// Stop stops the bot and cleans up resources
 	Stop() error
 }
 
-// BotMessage Bot 消息结构
+// BotMessage represents a bot message structure
 type BotMessage struct {
 	Platform  string    // feishu/discord/telegram
-	UserID    string    // 用户唯一标识（用于权限控制）
-	Channel   string    // 频道/会话 ID
-	Content   string    // 消息内容
+	UserID    string    // Unique user identifier (for permission control)
+	Channel   string    // Channel/session ID
+	Content   string    // Message content
 	Timestamp time.Time
 }

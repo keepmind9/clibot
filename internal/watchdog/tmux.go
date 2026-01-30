@@ -5,6 +5,9 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/sirupsen/logrus"
 )
 
 // CapturePane captures the last N lines from a tmux session
@@ -45,14 +48,33 @@ func IsSessionAlive(sessionName string) bool {
 
 // SendKeys sends keystrokes to a tmux session
 func SendKeys(sessionName, input string) error {
-	// Build tmux send-keys command
-	// We use C-m to simulate Enter key
-	args := []string{"send-keys", "-t", sessionName, input, "C-m"}
-	cmd := exec.Command("tmux", args...)
+	logger.WithFields(logrus.Fields{
+		"session": sessionName,
+		"input":   input,
+	}).Debug("Sending keys to tmux session")
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to send keys to session %s: %w (output: %s)", sessionName, err, string(output))
+	// Step 1: Send the input text
+	args1 := []string{"send-keys", "-t", sessionName, "-l", input}
+	cmd1 := exec.Command("tmux", args1...)
+	if output, err := cmd1.CombinedOutput(); err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": sessionName,
+			"error":   err,
+			"output":  string(output),
+		}).Error("Failed to send text to tmux session")
+		return fmt.Errorf("failed to send text to session %s: %w (output: %s)", sessionName, err, string(output))
+	}
+
+	// Step 2: Send Enter key (C-m)
+	args2 := []string{"send-keys", "-t", sessionName, "C-m"}
+	cmd2 := exec.Command("tmux", args2...)
+	if output, err := cmd2.CombinedOutput(); err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": sessionName,
+			"error":   err,
+			"output":  string(output),
+		}).Error("Failed to send Enter key to tmux session")
+		return fmt.Errorf("failed to send Enter to session %s: %w (output: %s)", sessionName, err, string(output))
 	}
 
 	return nil
