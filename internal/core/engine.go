@@ -555,8 +555,9 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 			// Not thinking anymore, remove UI status lines and validate response
 			response = removeUIStatusLines(filteredOutput)
 
-			// Validate response - check if it's not empty and has meaningful content
-			if response != "" && len(response) > 20 && !looksLikeIncompleteResponse(response) {
+			// Validate response - just check if not empty
+			// We already have thinking check and UI filtering, so any content is valid
+			if response != "" {
 				logger.WithFields(logrus.Fields{
 					"source":           "tmux",
 					"attempt":           attempt,
@@ -569,8 +570,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 			logger.WithFields(logrus.Fields{
 				"attempt":          attempt,
 				"response_length": len(response),
-				"is_too_short":      len(response) < 20,
-				"looks_incomplete": looksLikeIncompleteResponse(response),
+				"reason":           "empty response",
 			}).Debug("Response validation failed, will retry")
 		}
 
@@ -768,28 +768,60 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 		promptPrefix = userPrompt[:30]
 	}
 
-	// Search backwards for the prompt
+	// Search backwards for the prompt with improved matching logic
 	for i := len(lines) - 1; i >= 0; i-- {
 		trimmed := strings.TrimSpace(lines[i])
 
-		// Try exact match first
-		if strings.Contains(trimmed, userPrompt) {
+		// Priority 1: Exact match (most reliable)
+		if trimmed == userPrompt || trimmed == "❯ "+userPrompt {
 			promptIndex = i
 			logger.WithFields(logrus.Fields{
-				"line_index": i,
+				"line_index":     i,
 				"prompt_matched": trimmed,
-			}).Debug("Found user prompt (backward search)")
+				"match_type":     "exact",
+			}).Debug("Found user prompt (exact match)")
 			break
 		}
 
-		// Try prefix match for long prompts
+		// Priority 2: Match with cursor prefix
+		if strings.HasPrefix(trimmed, "❯ ") && strings.Contains(trimmed, userPrompt) {
+			// Verify it's the actual user prompt, not AI content
+			if isLikelyUserPromptLine(trimmed, userPrompt) {
+				promptIndex = i
+				logger.WithFields(logrus.Fields{
+					"line_index":     i,
+					"prompt_matched": trimmed,
+					"match_type":     "cursor_prefix",
+				}).Debug("Found user prompt (with cursor prefix)")
+				break
+			}
+		}
+
+		// Priority 3: Partial match (fallback, but with validation)
+		if strings.Contains(trimmed, userPrompt) {
+			// Only match if this looks like a user prompt line
+			if isLikelyUserPromptLine(trimmed, userPrompt) {
+				promptIndex = i
+				logger.WithFields(logrus.Fields{
+					"line_index":     i,
+					"prompt_matched": trimmed,
+					"match_type":     "partial",
+				}).Debug("Found user prompt (partial match with validation)")
+				break
+			}
+		}
+
+		// Priority 4: Prefix match for long prompts
 		if len(userPrompt) > 30 && strings.Contains(trimmed, promptPrefix) {
-			promptIndex = i
-			logger.WithFields(logrus.Fields{
-				"line_index": i,
-				"prompt_matched_prefix": trimmed,
-			}).Debug("Found user prompt by prefix (backward search)")
-			break
+			if isLikelyUserPromptLine(trimmed, userPrompt) {
+				promptIndex = i
+				logger.WithFields(logrus.Fields{
+					"line_index":            i,
+					"prompt_matched_prefix": trimmed,
+					"match_type":            "prefix",
+				}).Debug("Found user prompt (prefix match with validation)")
+				break
+			}
 		}
 	}
 
@@ -978,6 +1010,44 @@ func isUIStatusLine(line string) bool {
 	if line == "❯" || line == ">" || line == "$" {
 		return true
 	}
+
+	return false
+}
+
+// isLikelyUserPromptLine checks if a line is likely to be the user's prompt input
+// rather than AI-generated content containing the same keywords
+// This prevents false matches like matching "test content follows" when user input is "test"
+//
+// Key insight: In tmux, user input typically has a cursor prefix "❯ "
+func isLikelyUserPromptLine(line, userPrompt string) bool {
+	// Priority 1: Lines with cursor prefix (most reliable indicator)
+	if strings.HasPrefix(line, "❯ ") && strings.Contains(line, userPrompt) {
+		logger.WithFields(logrus.Fields{
+			"line":        line,
+			"user_prompt": userPrompt,
+			"reason":      "has cursor prefix",
+		}).Debug("Accepting line: has cursor prefix")
+		return true
+	}
+
+	// Priority 2: Exact match (for cases without cursor prefix)
+	if line == userPrompt {
+		logger.WithFields(logrus.Fields{
+			"line":        line,
+			"user_prompt": userPrompt,
+			"reason":      "exact match",
+		}).Debug("Accepting line: exact match")
+		return true
+	}
+
+	// Reject all other cases (including AI responses like "test content follows")
+	logger.WithFields(logrus.Fields{
+		"line":        line,
+		"user_prompt": userPrompt,
+		"line_len":    len(line),
+		"prompt_len":  len(userPrompt),
+		"reason":      "no cursor prefix and not exact match",
+	}).Debug("Rejecting line: doesn't look like user prompt")
 
 	return false
 }
