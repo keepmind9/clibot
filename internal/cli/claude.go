@@ -118,16 +118,18 @@ func (c *ClaudeAdapter) HandleHookData(data []byte) (string, string, string, err
 		"transcript_path": transcriptPath,
 	}).Debug("hook-data-parsed")
 
-	// Extract last user prompt for tmux filtering
-	lastUserPrompt, err := extractLastUserPrompt(transcriptPath)
-	if err != nil {
-		logger.WithField("error", err).Debug("failed-to-extract-last-user-prompt")
-	} else {
-		logger.WithField("last_user_prompt", lastUserPrompt).Debug("extracted-last-user-prompt")
-	}
-
+	var lastUserPrompt = ""
 	// Try to extract response from transcript
 	response, err := extractFromTranscriptFile(transcriptPath)
+	if response == "" || err != nil{
+		// Extract last user prompt for tmux filtering
+		lastUserPrompt, err = extractLastUserPrompt(transcriptPath)
+		if err != nil {
+			logger.WithField("error", err).Debug("failed-to-extract-last-user-prompt")
+		} else {
+			logger.WithField("last_user_prompt", lastUserPrompt).Debug("extracted-last-user-prompt")
+		}
+	}
 	if err != nil {
 		// Don't fail the hook - transcript parsing errors are not critical
 		logger.WithFields(logrus.Fields{
@@ -418,92 +420,6 @@ func extractFromTranscriptFile(transcriptPath string) (string, error) {
 	return result, nil
 }
 
-// extractFromTmux captures response from tmux session (fallback method)
-func extractFromTmux(sessionName string) (string, error) {
-	logger.WithField("session", sessionName).Debug("capturing-tmux-pane")
-
-	// Capture the last 200 lines from tmux session
-	output, err := watchdog.CapturePane(sessionName, 200)
-	if err != nil {
-		logger.WithField("error", err).Error("failed-to-capture-tmux-pane")
-		return "", fmt.Errorf("failed to capture tmux pane: %w", err)
-	}
-
-	logger.WithFields(logrus.Fields{
-		"raw_length":    len(output),
-		"raw_preview":   output[:min(500, len(output))],
-	}).Debug("captured-raw-tmux-output")
-
-	// Clean ANSI codes
-	cleanOutput := watchdog.StripANSI(output)
-
-	logger.WithField("cleaned_length", len(cleanOutput)).Debug("cleaned-ansi-codes")
-
-	// Simple heuristic: extract the last assistant response
-	lines := strings.Split(cleanOutput, "\n")
-
-	// Filter out empty lines and prompts
-	var contentLines []string
-	filteredCount := 0
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Skip empty lines
-		if trimmed == "" {
-			continue
-		}
-
-		// Skip user prompts and common CLI patterns
-		if isPromptOrCommand(trimmed) {
-			filteredCount++
-			logger.WithField("filtered_line", trimmed).Debug("filtered-prompt-slash-command")
-			continue
-		}
-
-		contentLines = append(contentLines, trimmed)
-	}
-
-	logger.WithFields(logrus.Fields{
-		"total_lines":      len(lines),
-		"content_lines":    len(contentLines),
-		"filtered_count":   filteredCount,
-	}).Debug("processed-tmux-lines")
-
-	if len(contentLines) == 0 {
-		logger.Warn("no-content-found-in-tmux-capture-after-filtering")
-		return "", fmt.Errorf("no content found in tmux capture")
-	}
-
-	// Join and return
-	response := strings.Join(contentLines, "\n")
-	logger.WithField("final_length", len(response)).Debug("constructed-final-response-from-tmux")
-
-	return response, nil
-}
-
-
-// isPromptOrCommand checks if a line is a prompt/command rather than assistant output
-func isPromptOrCommand(line string) bool {
-	// Common CLI patterns that are not assistant output
-	promptPatterns := []string{
-		"user@",
-		"$ ",
-		">>>",
-		"...",
-		"\\[?\\]",
-		"Press Enter",
-		"Confirm?",
-	}
-
-	for _, pattern := range promptPatterns {
-		if strings.Contains(line, pattern) {
-			return true
-		}
-	}
-
-	return false
-}
 func (c *ClaudeAdapter) GetLastResponseFromTranscript(transcriptPath string) (string, error) {
 	// Expand home directory in path
 	transcriptPath = expandHome(transcriptPath)
@@ -516,15 +432,6 @@ func (c *ClaudeAdapter) GetLastResponseFromTranscript(transcriptPath string) (st
 
 	return response, nil
 }
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 
 // extractLastUserPrompt extracts the last user's prompt from transcript
 // This is used to filter tmux output to only show the latest response
