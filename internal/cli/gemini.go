@@ -112,21 +112,40 @@ func (g *GeminiAdapter) HandleHookData(data []byte) (string, string, string, err
 		return "", "", "", fmt.Errorf("missing cwd in hook data")
 	}
 
+	// Extract transcript_path if available
+	transcriptPath := ""
+	if v, ok := hookData["transcript_path"].(string); ok {
+		transcriptPath = v
+	}
+
+	// Extract hook_event_name to check if this is a notification event
+	hookEventName := ""
+	if v, ok := hookData["hook_event_name"].(string); ok {
+		hookEventName = v
+	}
+
 	logger.WithFields(logrus.Fields{
-		"cwd": cwd,
+		"cwd":             cwd,
+		"transcript_path":  transcriptPath,
+		"hook_event_name": hookEventName,
 	}).Debug("hook-data-parsed")
 
-	// For Gemini, we need to compute project hash to find history files
-	projectHash := computeProjectHash(cwd)
+	var response string
+	var err error
 
-	// Find and parse Gemini's session JSON file
-	response, err := g.extractGeminiResponse(projectHash)
-	if err != nil {
-		logger.WithFields(logrus.Fields{
-			"project_hash": projectHash,
-			"error":        err,
-		}).Warn("failed-to-extract-gemini-response")
-		return cwd, "", "", nil // Return cwd but empty response (will trigger tmux fallback)
+	// Only extract response for non-notification events
+	// Notification events don't have assistant responses to extract
+	if !strings.EqualFold(hookEventName, "Notification") {
+		response, err = g.extractGeminiResponse(transcriptPath, cwd)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"transcript_path": transcriptPath,
+				"cwd": cwd,
+				"error":          err,
+			}).Warn("failed-to-extract-gemini-response")
+		}
+	} else {
+		logger.WithField("hook_event_name", hookEventName).Debug("skipping-response-extraction-for-notification-event")
 	}
 
 	logger.WithFields(logrus.Fields{
@@ -137,11 +156,10 @@ func (g *GeminiAdapter) HandleHookData(data []byte) (string, string, string, err
 	return cwd, "", response, nil
 }
 
-// extractGeminiResponse extracts the latest Gemini response from history
 // Gemini stores history in: ~/.gemini/tmp/{project_hash}/chats/session-*.json
-// JSON structure: {"messages": [{"type": "user", ...}, {"type": "gemini", "content": "...", "thoughts": [...]}, ...]}
-func (g *GeminiAdapter) extractGeminiResponse(projectHash string) (string, error) {
+func (g *GeminiAdapter) lastSessionFile(cwd string)(string, error){
 	// Build path to chats directory
+	projectHash := computeProjectHash(cwd)
 	homeDir, _ := os.UserHomeDir()
 	chatsDir := filepath.Join(homeDir, ".gemini", "tmp", projectHash, "chats")
 
@@ -174,6 +192,22 @@ func (g *GeminiAdapter) extractGeminiResponse(projectHash string) (string, error
 		"latest_file": latestFile,
 		"chats_dir":    chatsDir,
 	}).Debug("found-latest-gemini-session-file")
+	return latestFile, nil
+}
+
+// extractGeminiResponse extracts the latest Gemini response from history
+// JSON structure: {"messages": [{"type": "user", ...}, {"type": "gemini", "content": "...", "thoughts": [...]}, ...]}
+func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string) (string, error) {
+	var latestFile = ""
+	if transcriptPath == "" {
+		_latestFile, _err := g.lastSessionFile(cwd)
+		if _err != nil{
+			return "", _err
+		}
+		latestFile = _latestFile
+	}else{
+		latestFile = transcriptPath
+	}
 
 	// Parse JSON
 	data, err := os.ReadFile(latestFile)
