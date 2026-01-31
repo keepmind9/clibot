@@ -103,7 +103,19 @@ var (
 					engine.RegisterBotAdapter(botType, discordBot)
 					log.Printf("Registered %s bot adapter", botType)
 
-				// TODO: Add other bot adapters (feishu, telegram) when implemented
+				case "feishu":
+					feishuBot := bot.NewFeishuBot(botConfig.AppID, botConfig.AppSecret)
+					// Set optional encryption fields if provided
+					if botConfig.EncryptKey != "" {
+						feishuBot.EncryptKey = botConfig.EncryptKey
+					}
+					if botConfig.VerificationToken != "" {
+						feishuBot.VerificationToken = botConfig.VerificationToken
+					}
+					engine.RegisterBotAdapter(botType, feishuBot)
+					log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
+
+				// TODO: Add other bot adapters (telegram) when implemented
 				default:
 					log.Printf("Warning: Bot type '%s' not implemented yet", botType)
 				}

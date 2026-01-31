@@ -68,12 +68,13 @@ type SessionConfig struct {
 
 // BotConfig represents bot configuration
 type BotConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	AppID          string `yaml:"app_id"`
-	AppSecret      string `yaml:"app_secret"`
-	Token          string `yaml:"token"`
-	DefaultChannel string `yaml:"default_channel"`
-	ChannelID      string `yaml:"channel_id"`
+	Enabled           bool   `yaml:"enabled"`
+	AppID             string `yaml:"app_id"`
+	AppSecret         string `yaml:"app_secret"`
+	Token             string `yaml:"token"`
+	ChannelID         string `yaml:"channel_id"`       // For Discord: server channel ID
+	EncryptKey        string `yaml:"encrypt_key"`      // Feishu: event encryption key (optional)
+	VerificationToken string `yaml:"verification_token"` // Feishu: verification token (optional)
 }
 
 // CLIAdapterConfig represents CLI adapter configuration
