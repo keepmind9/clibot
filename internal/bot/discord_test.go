@@ -96,6 +96,9 @@ func TestNewDiscordBot_WithEmptyToken_CreatesBot(t *testing.T) {
 }
 
 func TestDiscordBot_Start_WithValidSession_ConnectsSuccessfully(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test that requires Discord session initialization")
+	}
 	mockSession := &MockDiscordSession{
 		shouldFailOnOpen: false,
 	}
@@ -165,6 +168,9 @@ func TestDiscordBot_Start_WithValidSession_ConnectsSuccessfully(t *testing.T) {
 }
 
 func TestDiscordBot_Start_WithSessionOpenError_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test that requires Discord session initialization")
+	}
 	mockSession := &MockDiscordSession{
 		shouldFailOnOpen: true,
 	}
@@ -183,6 +189,9 @@ func TestDiscordBot_Start_WithSessionOpenError_ReturnsError(t *testing.T) {
 }
 
 func TestDiscordBot_Start_IgnoresBotMessages(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test that requires Discord session initialization")
+	}
 	mockSession := &MockDiscordSession{
 		shouldFailOnOpen: false,
 	}

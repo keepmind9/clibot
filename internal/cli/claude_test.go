@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -220,13 +221,13 @@ func TestClaudeAdapter_IsSessionAlive(t *testing.T) {
 		t.Fatalf("NewClaudeAdapter failed: %v", err)
 	}
 
-	// Test interface implementation
-	// This will be properly tested with mocks
-	alive := adapter.IsSessionAlive("test-session")
+	// Use a unique session name that almost certainly doesn't exist
+	uniqueSessionName := fmt.Sprintf("clibot-test-nonexistent-%d", time.Now().UnixNano())
+	alive := adapter.IsSessionAlive(uniqueSessionName)
 
-	// Without tmux running, this should return false
+	// This should return false for a non-existent session
 	if alive {
-		t.Error("expected session to be not alive without tmux")
+		t.Errorf("expected session %s to be not alive", uniqueSessionName)
 	}
 }
 

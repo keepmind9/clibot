@@ -134,15 +134,15 @@ func TestCapturePane_WithZeroLines_ReturnsAllLines(t *testing.T) {
 	}
 }
 
-func TestCapturePane_WithNegativeLines_ReturnsError(t *testing.T) {
+func TestCapturePane_WithNegativeLines_CapturesAllLines(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires actual tmux session")
 	}
-	// Negative lines should be handled by tmux (it will error)
+	// Negative lines should capture all lines (using -S -)
 	output, err := CapturePane("test-session", -1)
-	// We expect an error with negative lines
-	assert.Error(t, err)
-	assert.Empty(t, output)
+	// Should succeed and capture all lines
+	assert.NoError(t, err)
+	assert.NotEmpty(t, output)
 }
 
 func TestStripANSI_WithCursorMovementCodes_ReturnsCleanText(t *testing.T) {
