@@ -617,17 +617,17 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 			cleanOutput := watchdog.StripANSI(tmuxOutput)
 
 			// Extract content after the user's prompt
-			filteredOutput := extractContentAfterPrompt(cleanOutput, lastUserPrompt)
+			filteredOutput := watchdog.ExtractContentAfterPrompt(cleanOutput, lastUserPrompt)
 
 			logger.WithFields(logrus.Fields{
 				"attempt":          attempt,
 				"filtered_length":  len(filteredOutput),
-				"filtered_preview": filteredOutput[:min(200, len(filteredOutput))],
-				"is_thinking":      isThinking(filteredOutput),
+				"filtered_preview": filteredOutput[:watchdog.Min(200, len(filteredOutput))],
+				"is_thinking":      watchdog.IsThinking(filteredOutput),
 			}).Debug("extracted-content-after-user-prompt")
 
 			// Check if still thinking in the filtered content
-			if isThinking(filteredOutput) {
+			if watchdog.IsThinking(filteredOutput) {
 				logger.WithFields(logrus.Fields{
 					"attempt":     attempt,
 					"max_retries": maxRetries,
@@ -638,7 +638,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Not thinking anymore, remove UI status lines and validate response
-			response = removeUIStatusLines(filteredOutput)
+			response = watchdog.RemoveUIStatusLines(filteredOutput)
 
 			// Validate response - just check if not empty
 			// We already have thinking check and UI filtering, so any content is valid
@@ -647,7 +647,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 					"source":           "tmux",
 					"attempt":           attempt,
 					"response_length":  len(response),
-					"response_preview": response[:min(200, len(response))],
+					"response_preview": response[:watchdog.Min(200, len(response))],
 				}).Info("successfully-extracted-response-from-tmux")
 				break // Got valid response, stop retrying
 			}
@@ -666,7 +666,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 				"using_last_attempt": true,
 				"response_length":   len(lastResponse),
 			}).Info("using-last-attempt-capture-still-may-be-thinking")
-			response = removeUIStatusLines(lastResponse)
+			response = watchdog.RemoveUIStatusLines(lastResponse)
 		}
 
 		if response == "" {
@@ -747,375 +747,4 @@ func normalizePath(path string) string {
 	// TODO: Expand relative paths to absolute paths
 	// For now, just return the cleaned path
 	return path
-}
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// isPromptOrCommand checks if a line is a prompt/command rather than assistant output
-func isPromptOrCommand(line string) bool {
-	promptPatterns := []string{
-		"user@",
-		"$ ",
-		">>>",
-		"...",
-		"[?]",
-		"Press Enter",
-		"Confirm?",
-	}
-
-	for _, pattern := range promptPatterns {
-		if strings.Contains(line, pattern) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func canSkip(line string) bool {
-	if line == ""{
-		return true
-	}
-	// Detect and skip UI borders (box drawing characters)
-	for _, runeValue := range line{
-		if strings.ContainsRune("─│┌└┐┘├┤ ╭╮╰╯", runeValue){
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-// extractLastAssistantContent extracts the last meaningful assistant response from tmux output
-// Filters out UI borders, prompts, and system messages
-func extractLastAssistantContent(output string) string {
-	lines := strings.Split(output, "\n")
-
-	// Filter out borders and UI elements
-	var contentLines []string
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if canSkip(trimmed){
-			continue
-		}
-
-		// Skip prompts and commands
-		if isPromptOrCommand(trimmed) {
-			continue
-		}
-
-		contentLines = append(contentLines, trimmed)
-	}
-
-	// Join with newlines
-	result := strings.Join(contentLines, "\n")
-
-	// Remove duplicate consecutive blank lines
-	for strings.Contains(result, "\n\n\n") {
-		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
-	}
-
-	return result
-}
-
-func hasPromptCharacterPrefix(line string) bool {
-	prefix := []string{
-		"> ",
-		"❯ ",
-		">>>",
-	}
-	for _, pattern := range prefix {
-		if strings.HasPrefix(line, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-func eqPromptCharacterData(line string, userPrompt string) bool {
-	prefix := []string{
-		"> ",
-		"❯ ",
-		">>>",
-	}
-	for _, pattern := range prefix {
-		if line == pattern + userPrompt {
-			return true
-		}
-	}
-	return false
-}
-
-// extractContentAfterPrompt extracts content appearing after the user's prompt
-// Searches from the END to find the LAST occurrence of the prompt
-// This filters out historical messages and only returns the latest response
-func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
-	// if userPrompt == "" {
-	// 	// No prompt available, use basic extraction
-	// 	return extractLastAssistantContent(tmuxOutput)
-	// }
-
-	lines := strings.Split(tmuxOutput, "\n")
-
-	// Search from the end to find the last occurrence of user prompt
-	promptIndex := -1
-	promptPrefix := userPrompt
-	if len(userPrompt) > promptLen {
-		// Use first 30 chars as prefix for matching long prompts
-		promptPrefix = userPrompt[:promptLen]
-	}
-
-	// Search backwards for the prompt with improved matching logic
-	for i := len(lines) - 1; i >= 0; i-- {
-		trimmed := strings.TrimSpace(lines[i])
-		if trimmed == ""{
-			continue
-		}
-		if userPrompt == "" {
-			if hasPromptCharacterPrefix(trimmed){
-				promptIndex = i
-				break
-			}
-			continue
-		}
-
-		// Priority 1: Exact match (most reliable)
-		if trimmed == userPrompt || eqPromptCharacterData(trimmed, userPrompt){
-			promptIndex = i
-			logger.WithFields(logrus.Fields{
-				"line_index":     i,
-				"prompt_matched": trimmed,
-				"match_type":     "exact",
-			}).Debug("found-user-prompt-exact-match")
-			break
-		}
-
-		// Priority 2: Match with cursor prefix
-		if hasPromptCharacterPrefix(trimmed) && strings.Contains(trimmed, userPrompt) {
-			// Verify it's the actual user prompt, not AI content
-			if isLikelyUserPromptLine(trimmed, userPrompt) {
-				promptIndex = i
-				logger.WithFields(logrus.Fields{
-					"line_index":     i,
-					"prompt_matched": trimmed,
-					"match_type":     "cursor_prefix",
-				}).Debug("found-user-prompt-with-cursor-prefix")
-				break
-			}
-		}
-
-		// Priority 3: Partial match (fallback, but with validation)
-		if strings.Contains(trimmed, userPrompt) {
-			// Only match if this looks like a user prompt line
-			if isLikelyUserPromptLine(trimmed, userPrompt) {
-				promptIndex = i
-				logger.WithFields(logrus.Fields{
-					"line_index":     i,
-					"prompt_matched": trimmed,
-					"match_type":     "partial",
-				}).Debug("found-user-prompt-partial-match-with-validation")
-				break
-			}
-		}
-
-		// Priority 4: Prefix match for long prompts
-		if len(userPrompt) > promptLen && strings.Contains(trimmed, promptPrefix) {
-			if isLikelyUserPromptLine(trimmed, userPrompt) {
-				promptIndex = i
-				logger.WithFields(logrus.Fields{
-					"line_index":            i,
-					"prompt_matched_prefix": trimmed,
-					"match_type":            "prefix",
-				}).Debug("found-user-prompt-prefix-match-with-validation")
-				break
-			}
-		}
-	}
-
-	// If prompt not found, fall back to basic extraction
-	if promptIndex == -1 {
-		logger.Debug("user-prompt-not-found-in-tmux-output-using-basic-extraction")
-		return extractLastAssistantContent(tmuxOutput)
-	}
-
-	// Collect content AFTER the prompt (forward from promptIndex + 1)
-	var contentLines []string
-
-	for i := promptIndex + 1; i < len(lines); i++ {
-		trimmed := strings.TrimSpace(lines[i])
-		// Detect and skip UI borders
-		if canSkip(trimmed){
-			continue
-		}
-		// Skip prompts and commands
-		if isPromptOrCommand(trimmed) {
-			continue
-		}
-
-		contentLines = append(contentLines, trimmed)
-	}
-
-	logger.WithFields(logrus.Fields{
-		"total_lines":     len(lines),
-		"prompt_index":    promptIndex,
-		"content_lines":    len(contentLines),
-	}).Debug("extracted-content-after-prompt")
-
-	if len(contentLines) == 0 {
-		logger.Debug("no-content-found-after-prompt-using-basic-extraction")
-		return extractLastAssistantContent(tmuxOutput)
-	}
-
-	result := strings.Join(contentLines, "\n")
-
-	// Clean up multiple consecutive newlines
-	for strings.Contains(result, "\n\n\n") {
-		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
-	}
-
-	return result
-}
-
-// isThinking checks if Claude Code is still thinking based on tmux output
-// Uses universal keywords that work across different AI CLI tools
-// Only checks the last N lines to accurately determine current state
-func isThinking(output string) bool {
-	// Only check the last 20 lines for accurate current state
-	lines := strings.Split(output, "\n")
-	startIndex := 0
-	if len(lines) > 20 {
-		startIndex = len(lines) - 20
-	}
-	recentLines := lines[startIndex:]
-
-	// Universal thinking indicators (work across Claude, Gemini, etc.)
-	thinkingIndicators := []string{
-		"thinking",
-		"esc to interrupt",
-		"press escape to interrupt",
-		"interrupt",
-	}
-
-	recentOutput := strings.Join(recentLines, "\n")
-	outputLower := strings.ToLower(recentOutput)
-
-	for _, indicator := range thinkingIndicators {
-		if strings.Contains(outputLower, indicator) {
-			logger.WithFields(logrus.Fields{
-				"indicator":        indicator,
-				"checked_lines":    len(recentLines),
-				"total_lines":      len(lines),
-			}).Debug("detected-thinking-state-in-recent-lines")
-			return true
-		}
-	}
-
-	return false
-}
-
-// removeUIStatusLines removes Claude Code UI status lines from the response
-// This should be called AFTER isThinking() check, when response is ready to send to user
-// It removes UI artifacts like "running stop hook", "esc to interrupt", etc.
-func removeUIStatusLines(output string) string {
-	lines := strings.Split(output, "\n")
-	var filteredLines []string
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Skip empty lines
-		if trimmed == "" {
-			continue
-		}
-
-		// Remove UI status lines
-		if isUIStatusLine(trimmed) {
-			logger.WithField("line", trimmed).Debug("removing-ui-status-line-from-response")
-			continue
-		}
-
-		filteredLines = append(filteredLines, line)
-	}
-
-	result := strings.Join(filteredLines, "\n")
-
-	// Clean up multiple consecutive newlines
-	for strings.Contains(result, "\n\n\n") {
-		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
-	}
-
-	return result
-}
-
-// isUIStatusLine checks if a line is a Claude Code UI status line
-// UI status lines include indicators like "running stop hook", "esc to interrupt", etc.
-// These lines are used for thinking detection but should be removed from final response
-func isUIStatusLine(line string) bool {
-	// UI status line patterns
-	uiPatterns := []string{
-		"Undulating…",
-		"running stop hook",
-		"esc to interrupt",
-		"press escape",
-		"? for shortcuts",
-	}
-
-	lowerLine := strings.ToLower(line)
-	for _, pattern := range uiPatterns {
-		if strings.Contains(lowerLine, strings.ToLower(pattern)) {
-			return true
-		}
-	}
-
-	// Check for single-character cursor indicators
-	if line == "❯" || line == ">" || line == "$" {
-		return true
-	}
-
-	return false
-}
-
-// isLikelyUserPromptLine checks if a line is likely to be the user's prompt input
-// rather than AI-generated content containing the same keywords
-// This prevents false matches like matching "test content follows" when user input is "test"
-//
-// Key insight: In tmux, user input typically has a cursor prefix "❯ "
-func isLikelyUserPromptLine(line, userPrompt string) bool {
-	// Priority 1: Lines with cursor prefix (most reliable indicator)
-	if strings.HasPrefix(line, "❯ ") && strings.Contains(line, userPrompt) {
-		logger.WithFields(logrus.Fields{
-			"line":        line,
-			"user_prompt": userPrompt,
-			"reason":      "has cursor prefix",
-		}).Debug("accepting-line-has-cursor-prefix")
-		return true
-	}
-
-	// Priority 2: Exact match (for cases without cursor prefix)
-	if line == userPrompt {
-		logger.WithFields(logrus.Fields{
-			"line":        line,
-			"user_prompt": userPrompt,
-			"reason":      "exact match",
-		}).Debug("accepting-line-exact-match")
-		return true
-	}
-
-	// Reject all other cases (including AI responses like "test content follows")
-	logger.WithFields(logrus.Fields{
-		"line":        line,
-		"user_prompt": userPrompt,
-		"line_len":    len(line),
-		"prompt_len":  len(userPrompt),
-		"reason":      "no cursor prefix and not exact match",
-	}).Debug("rejecting-line-does-not-look-like-user-prompt")
-
-	return false
 }
