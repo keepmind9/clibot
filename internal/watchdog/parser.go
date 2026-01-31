@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/pkg/constants"
 	"github.com/sirupsen/logrus"
 )
 
@@ -141,22 +142,28 @@ func extractLastAssistantContent(output string) string {
 	return result
 }
 
-// ExtractContentAfterPrompt extracts content appearing after the user's prompt
-// Searches from the END to find the LAST occurrence of the prompt
-// This filters out historical messages and only returns the latest response
-func ExtractContentAfterPrompt(tmuxOutput, userPrompt string) string {
-	lines := strings.Split(tmuxOutput, "\n")
+// PromptMatcher handles finding and extracting content after user prompts
+type PromptMatcher struct {
+	userPrompt   string
+	promptPrefix string
+	promptLen    int
+}
 
-	// Search from the end to find the last occurrence of user prompt
-	promptIndex := -1
+// NewPromptMatcher creates a new PromptMatcher instance
+func NewPromptMatcher(userPrompt string) *PromptMatcher {
 	promptPrefix := userPrompt
-	const promptLen = 30
-	if len(userPrompt) > promptLen {
-		// Use first 30 chars as prefix for matching long prompts
-		promptPrefix = userPrompt[:promptLen]
+	if len(userPrompt) > constants.MaxPromptPrefixLength {
+		promptPrefix = userPrompt[:constants.MaxPromptPrefixLength]
 	}
+	return &PromptMatcher{
+		userPrompt:   userPrompt,
+		promptPrefix: promptPrefix,
+		promptLen:    constants.MaxPromptPrefixLength,
+	}
+}
 
-	// Search backwards for the prompt with improved matching logic
+// findPromptIndex searches backwards to find the last occurrence of the user prompt
+func (pm *PromptMatcher) findPromptIndex(lines []string) int {
 	for i := len(lines) - 1; i >= 0; i-- {
 		trimmed := strings.TrimSpace(lines[i])
 		if trimmed == "" {
@@ -164,66 +171,94 @@ func ExtractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 		}
 
 		// Handle empty userPrompt case
-		if userPrompt == "" {
+		if pm.userPrompt == "" {
 			if hasPromptCharacterPrefix(trimmed) {
-				promptIndex = i
-				break
+				return i
 			}
 			continue
 		}
 
 		// Priority 1: Exact match (most reliable)
-		if trimmed == userPrompt || eqPromptCharacterData(trimmed, userPrompt) {
-			promptIndex = i
+		if trimmed == pm.userPrompt || eqPromptCharacterData(trimmed, pm.userPrompt) {
 			logger.WithFields(logrus.Fields{
 				"line_index":     i,
 				"prompt_matched": trimmed,
 				"match_type":     "exact",
 			}).Debug("found-user-prompt-exact-match")
-			break
+			return i
 		}
 
 		// Priority 2: Match with cursor prefix
-		if hasPromptCharacterPrefix(trimmed) && strings.Contains(trimmed, userPrompt) {
-			// Verify it's the actual user prompt, not AI content
-			if isLikelyUserPromptLine(trimmed, userPrompt) {
-				promptIndex = i
+		if hasPromptCharacterPrefix(trimmed) && strings.Contains(trimmed, pm.userPrompt) {
+			if isLikelyUserPromptLine(trimmed, pm.userPrompt) {
 				logger.WithFields(logrus.Fields{
 					"line_index":     i,
 					"prompt_matched": trimmed,
 					"match_type":     "cursor_prefix",
 				}).Debug("found-user-prompt-with-cursor-prefix")
-				break
+				return i
 			}
 		}
 
 		// Priority 3: Partial match (fallback, but with validation)
-		if strings.Contains(trimmed, userPrompt) {
-			// Only match if this looks like a user prompt line
-			if isLikelyUserPromptLine(trimmed, userPrompt) {
-				promptIndex = i
+		if strings.Contains(trimmed, pm.userPrompt) {
+			if isLikelyUserPromptLine(trimmed, pm.userPrompt) {
 				logger.WithFields(logrus.Fields{
 					"line_index":     i,
 					"prompt_matched": trimmed,
 					"match_type":     "partial",
 				}).Debug("found-user-prompt-partial-match-with-validation")
-				break
+				return i
 			}
 		}
 
 		// Priority 4: Prefix match for long prompts
-		if len(userPrompt) > promptLen && strings.Contains(trimmed, promptPrefix) {
-			if isLikelyUserPromptLine(trimmed, userPrompt) {
-				promptIndex = i
+		if len(pm.userPrompt) > pm.promptLen && strings.Contains(trimmed, pm.promptPrefix) {
+			if isLikelyUserPromptLine(trimmed, pm.userPrompt) {
 				logger.WithFields(logrus.Fields{
 					"line_index":            i,
 					"prompt_matched_prefix": trimmed,
 					"match_type":            "prefix",
 				}).Debug("found-user-prompt-prefix-match-with-validation")
-				break
+				return i
 			}
 		}
 	}
+	return -1
+}
+
+// extractContent collects content lines after the prompt index
+func (pm *PromptMatcher) extractContent(lines []string, promptIndex int) []string {
+	var contentLines []string
+	for i := promptIndex + 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if canSkip(trimmed) {
+			continue
+		}
+		if isPromptOrCommand(trimmed) {
+			continue
+		}
+		contentLines = append(contentLines, trimmed)
+	}
+	return contentLines
+}
+
+// cleanContent removes multiple consecutive newlines
+func cleanContent(content string) string {
+	for strings.Contains(content, "\n\n\n") {
+		content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
+	}
+	return content
+}
+
+// ExtractContentAfterPrompt extracts content appearing after the user's prompt
+// Searches from the END to find the LAST occurrence of the prompt
+// This filters out historical messages and only returns the latest response
+func ExtractContentAfterPrompt(tmuxOutput, userPrompt string) string {
+	lines := strings.Split(tmuxOutput, "\n")
+	matcher := NewPromptMatcher(userPrompt)
+
+	promptIndex := matcher.findPromptIndex(lines)
 
 	// If prompt not found, fall back to basic extraction
 	if promptIndex == -1 {
@@ -231,22 +266,7 @@ func ExtractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 		return extractLastAssistantContent(tmuxOutput)
 	}
 
-	// Collect content AFTER the prompt (forward from promptIndex + 1)
-	var contentLines []string
-
-	for i := promptIndex + 1; i < len(lines); i++ {
-		trimmed := strings.TrimSpace(lines[i])
-		// Detect and skip UI borders
-		if canSkip(trimmed) {
-			continue
-		}
-		// Skip prompts and commands
-		if isPromptOrCommand(trimmed) {
-			continue
-		}
-
-		contentLines = append(contentLines, trimmed)
-	}
+	contentLines := matcher.extractContent(lines, promptIndex)
 
 	logger.WithFields(logrus.Fields{
 		"total_lines":  len(lines),
@@ -260,24 +280,18 @@ func ExtractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 	}
 
 	result := strings.Join(contentLines, "\n")
-
-	// Clean up multiple consecutive newlines
-	for strings.Contains(result, "\n\n\n") {
-		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
-	}
-
-	return result
+	return cleanContent(result)
 }
 
 // IsThinking checks if AI CLI is still thinking based on tmux output
 // Uses universal keywords that work across different AI CLI tools
 // Only checks the last N lines to accurately determine current state
 func IsThinking(output string) bool {
-	// Only check the last 20 lines for accurate current state
+	// Only check the last N lines for accurate current state
 	lines := strings.Split(output, "\n")
 	startIndex := 0
-	if len(lines) > 20 {
-		startIndex = len(lines) - 20
+	if len(lines) > constants.ThinkingCheckLines {
+		startIndex = len(lines) - constants.ThinkingCheckLines
 	}
 	recentLines := lines[startIndex:]
 

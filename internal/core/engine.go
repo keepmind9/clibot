@@ -13,13 +13,14 @@ import (
 	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/cli"
 	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/pkg/constants"
 	"github.com/keepmind9/clibot/internal/watchdog"
 	"github.com/sirupsen/logrus"
 )
 
-const(
-	capturePaneLine = 200
-	tmuxCapturePaneLine = 20
+const (
+	capturePaneLine    = constants.DefaultCaptureLines
+	tmuxCapturePaneLine = constants.DefaultManualCaptureLines
 )
 
 // Engine is the core scheduling engine that manages CLI sessions and bot connections
@@ -50,7 +51,7 @@ func NewEngine(config *Config) *Engine {
 		cliAdapters:     make(map[string]cli.CLIAdapter),
 		activeBots:      make(map[string]bot.BotAdapter),
 		sessions:        make(map[string]*Session),
-		messageChan:     make(chan bot.BotMessage, 100),
+		messageChan:     make(chan bot.BotMessage, constants.MessageChannelBufferSize),
 		sessionChannels: make(map[string]BotChannel),
 		ctx:             ctx,
 		cancel:          cancel,
@@ -397,12 +398,12 @@ func (e *Engine) captureTmux(msg bot.BotMessage, parts []string) {
 			e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Invalid line count: %s\nUsage: tmux [lines]", parts[1]))
 			return
 		}
-		// Limit to reasonable range (1-1000)
+		// Limit to reasonable range
 		if lines < 1 {
 			lines = 1
 		}
-		if lines > 1000 {
-			lines = 1000
+		if lines > constants.MaxTmuxCaptureLines {
+			lines = constants.MaxTmuxCaptureLines
 		}
 	}
 
@@ -643,9 +644,9 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 		}).Info("using-tmux-capture-as-fallback-with-user-prompt-filtering")
 
 		// Retry mechanism: wait for Claude to finish thinking
-		const maxRetries = 10
-		const initialDelay = 500 * time.Millisecond  // Initial delay to let UI render
-		const retryDelay = 800 * time.Millisecond  // 0.8 seconds (async hook: faster response expected)
+		const maxRetries = constants.MaxHookRetries
+		const initialDelay = constants.DefaultInitialDelay // Initial delay to let UI render
+		const retryDelay = constants.DefaultRetryDelay     // Delay between retry attempts
 		var lastResponse string
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
@@ -672,7 +673,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 			logger.WithFields(logrus.Fields{
 				"attempt":          attempt,
 				"filtered_length":  len(filteredOutput),
-				"filtered_preview": filteredOutput[:watchdog.Min(200, len(filteredOutput))],
+				"filtered_preview": filteredOutput[:watchdog.Min(constants.MaxPromptPrefixLength*6, len(filteredOutput))], // ~200 chars for preview
 				"is_thinking":      watchdog.IsThinking(filteredOutput),
 			}).Debug("extracted-content-after-user-prompt")
 
@@ -697,7 +698,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 					"source":           "tmux",
 					"attempt":           attempt,
 					"response_length":  len(response),
-					"response_preview": response[:watchdog.Min(200, len(response))],
+					"response_preview": response[:watchdog.Min(constants.MaxPromptPrefixLength*6, len(response))], // ~200 chars for preview
 				}).Info("successfully-extracted-response-from-tmux")
 				break // Got valid response, stop retrying
 			}

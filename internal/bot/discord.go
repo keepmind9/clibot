@@ -7,6 +7,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/pkg/constants"
 	"github.com/sirupsen/logrus"
 )
 
@@ -120,8 +121,8 @@ func (d *DiscordBot) SendMessage(channel, message string) error {
 		targetChannel = channelID
 	}
 
-	// Discord limit: 4000 characters
-	const maxDiscordLength = 4000
+	// Discord limit: message length
+	const maxDiscordLength = constants.MaxDiscordMessageLength
 	if len(message) > maxDiscordLength {
 		logger.WithFields(logrus.Fields{
 			"original_length": len(message),
@@ -164,10 +165,10 @@ func (d *DiscordBot) Stop() error {
 
 // maskToken masks sensitive token information for logging
 func maskToken(token string) string {
-	if len(token) <= 10 {
+	if len(token) <= constants.MinTokenLengthForMasking {
 		return "***"
 	}
-	return token[:7] + "***" + token[len(token)-4:]
+	return token[:constants.TokenMaskPrefixLength] + "***" + token[len(token)-constants.TokenMaskSuffixLength:]
 }
 
 // SetMessageHandler sets the message handler in a thread-safe manner

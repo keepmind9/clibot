@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/pkg/constants"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
@@ -84,7 +85,7 @@ func (f *FeishuBot) Start(messageHandler func(BotMessage)) error {
 	}()
 
 	// Give connection time to establish
-	time.Sleep(2 * time.Second)
+	time.Sleep(constants.DefaultConnectionTimeout)
 
 	logger.Info("feishu-websocket-long-connection-started")
 	return nil
@@ -183,7 +184,7 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 	}
 
 	// Feishu limit: text message content length
-	const maxFeishuLength = 20000
+	const maxFeishuLength = constants.MaxFeishuMessageLength
 	if len(message) > maxFeishuLength {
 		logger.WithFields(logrus.Fields{
 			"original_length": len(message),
@@ -275,10 +276,10 @@ func (f *FeishuBot) SetVerificationToken(token string) {
 
 // maskAppID masks sensitive app ID information for logging
 func maskAppID(appID string) string {
-	if len(appID) <= 8 {
+	if len(appID) <= constants.MinAppIDLengthForMasking {
 		return "***"
 	}
-	return appID[:4] + "***" + appID[len(appID)-4:]
+	return appID[:constants.AppIDMaskPrefixLength] + "***" + appID[len(appID)-constants.AppIDMaskSuffixLength:]
 }
 
 // TextContent represents the JSON structure of Feishu text message content

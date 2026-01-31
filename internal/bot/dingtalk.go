@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/pkg/constants"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
 	"github.com/sirupsen/logrus"
@@ -62,7 +63,7 @@ func (d *DingTalkBot) Start(messageHandler func(BotMessage)) error {
 	}()
 
 	// Give connection time to establish
-	time.Sleep(2 * time.Second)
+	time.Sleep(constants.DefaultConnectionTimeout)
 
 	logger.Info("dingtalk-websocket-long-connection-started")
 	return nil
@@ -119,7 +120,7 @@ func (d *DingTalkBot) SendMessage(conversationID, message string) error {
 	}
 
 	// DingTalk message limit
-	const maxDingTalkLength = 20000
+	const maxDingTalkLength = constants.MaxDingTalkMessageLength
 	if len(message) > maxDingTalkLength {
 		logger.WithFields(logrus.Fields{
 			"original_length": len(message),
@@ -175,8 +176,8 @@ func (d *DingTalkBot) GetMessageHandler() func(BotMessage) {
 
 // maskClientID masks sensitive client ID information for logging
 func maskClientID(clientID string) string {
-	if len(clientID) <= 8 {
+	if len(clientID) <= constants.MinAppIDLengthForMasking {
 		return "***"
 	}
-	return clientID[:4] + "***" + clientID[len(clientID)-4:]
+	return clientID[:constants.AppIDMaskPrefixLength] + "***" + clientID[len(clientID)-constants.AppIDMaskSuffixLength:]
 }

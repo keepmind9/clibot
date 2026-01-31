@@ -448,12 +448,13 @@ cli_adapters:
 	assert.Contains(t, err.Error(), "at least one session must be configured")
 }
 
-func TestExpandEnv_UndefinedVariable_PreservesPlaceholder(t *testing.T) {
+func TestExpandEnv_UndefinedVariable_ReturnsError(t *testing.T) {
 	input := "token: ${UNDEFINED_VAR}"
-	result := expandEnv(input)
+	_, err := expandEnv(input)
 
-	// Assert - undefined variables should preserve their placeholder
-	assert.Equal(t, "token: ${UNDEFINED_VAR}", result)
+	// Assert - undefined variables should return error
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "missing required environment variables")
 }
 
 func TestExpandEnv_MultipleVariables_ExpandsAll(t *testing.T) {
@@ -464,9 +465,10 @@ func TestExpandEnv_MultipleVariables_ExpandsAll(t *testing.T) {
 	defer os.Unsetenv("VAR2")
 
 	input := "${VAR1}/${VAR2}"
-	result := expandEnv(input)
+	result, err := expandEnv(input)
 
 	// Assert
+	assert.NoError(t, err)
 	assert.Equal(t, "value1/value2", result)
 }
 
@@ -567,18 +569,20 @@ cli_adapters:
 func TestExpandHome_RelativePath_ReturnsUnchanged(t *testing.T) {
 	// Test with a relative path that doesn't start with ~
 	path := "./relative/path"
-	result := expandHome(path)
+	result, err := expandHome(path)
 
 	// Assert - should return unchanged
+	assert.NoError(t, err)
 	assert.Equal(t, "./relative/path", result)
 }
 
 func TestExpandHome_AbsolutePath_ReturnsUnchanged(t *testing.T) {
 	// Test with an absolute path
 	path := "/absolute/path/to/file"
-	result := expandHome(path)
+	result, err := expandHome(path)
 
 	// Assert - should return unchanged
+	assert.NoError(t, err)
 	assert.Equal(t, "/absolute/path/to/file", result)
 }
 

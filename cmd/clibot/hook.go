@@ -10,12 +10,9 @@ import (
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/pkg/constants"
 	"github.com/spf13/cobra"
 	"github.com/sirupsen/logrus"
-)
-
-const (
-	defaultHookTimeout = 5 * time.Second
 )
 
 // HookNotifier handles HTTP notifications with timeout and cancellation
@@ -40,7 +37,7 @@ func (h *HookNotifier) Notify(ctx context.Context, url string, data []byte) erro
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != constants.HTTPSuccessStatusCode {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
@@ -107,7 +104,7 @@ Examples:
 					"size":     len(stdinData),
 				}).Debug("forwarding-hook-data-to-engine-async")
 
-				notifier := &HookNotifier{timeout: defaultHookTimeout}
+				notifier := &HookNotifier{timeout: constants.HookHTTPTimeout}
 				if err := notifier.Notify(ctx, url, stdinData); err != nil {
 					logger.WithFields(logrus.Fields{
 						"cli_type": cliType,
@@ -123,8 +120,7 @@ Examples:
 
 			// Light-weight delay to allow HTTP request to be sent
 			// This keeps the hook "alive" briefly but doesn't block Claude Code's UI
-			// 300ms is enough for HTTP request to initiate, but short enough to not affect UX
-			time.Sleep(300 * time.Millisecond)
+			time.Sleep(constants.HookNotificationDelay)
 
 			// Return immediately - let Claude Code continue execution
 			// The background goroutine will handle the HTTP request independently

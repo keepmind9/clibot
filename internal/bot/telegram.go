@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/pkg/constants"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
 )
@@ -57,7 +58,7 @@ func (t *TelegramBot) Start(messageHandler func(BotMessage)) error {
 
 	// Set up long polling configuration
 	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60 // Long poll timeout in seconds
+	u.Timeout = int(constants.DefaultPollTimeout.Seconds()) // Long poll timeout in seconds
 
 	// Start receiving updates via long polling
 	updates := bot.GetUpdatesChan(u)
@@ -156,7 +157,7 @@ func (t *TelegramBot) SendMessage(chatID, message string) error {
 	}
 
 	// Telegram message limit
-	const maxTelegramLength = 4096
+	const maxTelegramLength = constants.MaxTelegramMessageLength
 	if len(message) > maxTelegramLength {
 		logger.WithFields(logrus.Fields{
 			"original_length": len(message),
