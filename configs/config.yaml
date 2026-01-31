@@ -70,7 +70,7 @@ bots:
 
   telegram:
     enabled: false
-    token: "${TELEGRAM_TOKEN}"
+    token: "${TELEGRAM_TOKEN}"  # Telegram Bot Token from BotFather
 
   dingtalk:
     enabled: false
