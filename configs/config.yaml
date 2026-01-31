@@ -20,6 +20,8 @@ security:
       - "123456789012345678"  # Discord user_id 示例
     feishu:
       - "ou_xxx"        # 飞书 open_id 示例（user_id）
+    dingtalk:
+      - "123456789"     # 钉钉 staff_id 示例
 
   # 管理员列表（可以执行危险命令）
   admins:
@@ -69,6 +71,11 @@ bots:
   telegram:
     enabled: false
     token: "${TELEGRAM_TOKEN}"
+
+  dingtalk:
+    enabled: false
+    app_id: "${DINGTALK_APP_ID}"          # 钉钉 Client ID
+    app_secret: "${DINGTALK_APP_SECRET}"  # 钉钉 Client Secret
 
 # CLI 适配器配置
 cli_adapters:
