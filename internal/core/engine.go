@@ -105,7 +105,7 @@ func (e *Engine) initializeSessions() error {
 
 // Run starts the engine and begins processing messages
 func (e *Engine) Run() error {
-	logger.Info("Starting clibot engine...")
+	logger.Info("starting-clibot-engine")
 
 	// Initialize sessions
 	if err := e.initializeSessions(); err != nil {
@@ -143,7 +143,7 @@ func (e *Engine) Run() error {
 
 // runEventLoop runs the main event loop for processing messages
 func (e *Engine) runEventLoop() {
-	logger.Info("Engine event loop started")
+	logger.Info("engine-event-loop-started")
 
 	for {
 		select {
@@ -164,19 +164,19 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		"platform": msg.Platform,
 		"user":     msg.UserID,
 		"channel":  msg.Channel,
-	}).Info("Processing user message")
+	}).Info("processing-user-message")
 
 	// Step 0: Security check - verify user is in whitelist
 	if !e.config.IsUserAuthorized(msg.Platform, msg.UserID) {
 		logger.WithFields(logrus.Fields{
 			"platform": msg.Platform,
 			"user":     msg.UserID,
-		}).Warn("Unauthorized access attempt")
+		}).Warn("unauthorized-access-attempt")
 		e.SendToBot(msg.Platform, msg.Channel, "❌ Unauthorized: Please contact the administrator to add your user ID")
 		return
 	}
 
-	logger.WithField("user", msg.UserID).Debug("User authorized")
+	logger.WithField("user", msg.UserID).Debug("user-authorized")
 
 	// Step 1: Check if it's a special command
 	prefix := e.config.CommandPrefix
@@ -185,7 +185,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		logger.WithFields(logrus.Fields{
 			"command": cmd,
 			"user":    msg.UserID,
-		}).Info("Special command received")
+		}).Info("special-command-received")
 		e.HandleSpecialCommand(cmd, msg)
 		return
 	}
@@ -195,7 +195,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	if session == nil {
 		logger.WithFields(logrus.Fields{
 			"channel": msg.Channel,
-		}).Warn("No active session found for channel")
+		}).Warn("no-active-session-found-for-channel")
 		e.SendToBot(msg.Platform, msg.Channel,
 			fmt.Sprintf("❌ No active session. Use '%ssessions' to list available sessions", prefix))
 		return
@@ -205,7 +205,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		"session": session.Name,
 		"state":   session.State,
 		"cli":     session.CLIType,
-	}).Debug("Session found")
+	}).Debug("session-found")
 
 	// Record the session → channel mapping for routing responses
 	e.sessionMu.Lock()
@@ -238,7 +238,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
 			"error":   err,
-		}).Error("Failed to send input to CLI")
+		}).Error("failed-to-send-input-to-cli")
 		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send input: %v", err))
 		return
 	}
@@ -246,7 +246,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	logger.WithFields(logrus.Fields{
 		"session": session.Name,
 		"cli":     session.CLIType,
-	}).Info("Input sent to CLI")
+	}).Info("input-sent-to-cli")
 
 	// Update session state
 	e.updateSessionState(session.Name, StateProcessing)
@@ -353,7 +353,7 @@ func (e *Engine) updateSessionState(sessionName string, newState SessionState) {
 			"session":   sessionName,
 			"old_state": oldState,
 			"new_state": newState,
-		}).Debug("Session state updated")
+		}).Debug("session-state-updated")
 	}
 }
 
@@ -365,13 +365,13 @@ func (e *Engine) SendToBot(platform, channel, message string) {
 				"platform": platform,
 				"channel":  channel,
 				"error":    err,
-			}).Error("Failed to send message to bot")
+			}).Error("failed-to-send-message-to-bot")
 		} else {
 			logger.WithFields(logrus.Fields{
 				"platform": platform,
 				"channel":  channel,
 				"length":   len(message),
-			}).Info("Message sent to bot")
+			}).Info("message-sent-to-bot")
 		}
 	}
 }
@@ -404,15 +404,15 @@ func (e *Engine) startHookServer() {
 		Handler: mux,
 	}
 
-	logger.WithField("address", addr).Info("Hook server listening")
+	logger.WithField("address", addr).Info("hook-server-listening")
 
 	// Start server (blocking)
 	// When Shutdown() is called, ListenAndServe will return ErrServerClosed
 	if err := e.hookServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Errorf("Hook server error: %v", err)
+		logger.Errorf("hook-server-error: %v", err)
 	}
 
-	logger.Info("Hook server stopped")
+	logger.Info("hook-server-stopped")
 }
 
 // handleHookRequest handles HTTP hook requests
@@ -428,7 +428,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	// Get cli_type from query parameter (used for routing to correct adapter)
 	cliType := r.URL.Query().Get("cli_type")
 	if cliType == "" {
-		logger.Warn("Missing cli_type query parameter in hook request")
+		logger.Warn("missing-cli-type-query-parameter-in-hook-request")
 		http.Error(w, "Missing cli_type parameter", http.StatusBadRequest)
 		return
 	}
@@ -436,7 +436,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	// Get CLI adapter
 	adapter, exists := e.cliAdapters[cliType]
 	if !exists {
-		logger.WithField("cli_type", cliType).Warn("No adapter found for CLI type")
+		logger.WithField("cli_type", cliType).Warn("no-adapter-found-for-cli-type")
 		http.Error(w, "CLI adapter not found", http.StatusInternalServerError)
 		return
 	}
@@ -445,14 +445,14 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	// The adapter will parse this data in whatever format it expects (JSON, text, etc.)
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
-		logger.Errorf("Failed to read request body: %v", err)
+		logger.Errorf("failed-to-read-request-body: %v", err)
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
 	if len(data) == 0 {
-		logger.Warn("Empty request body in hook request")
+		logger.Warn("empty-request-body-in-hook-request")
 		http.Error(w, "Empty request body", http.StatusBadRequest)
 		return
 	}
@@ -460,7 +460,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	logger.WithFields(logrus.Fields{
 		"cli_type": cliType,
 		"hook_data": string(data),
-	}).Debug("Hook data received")
+	}).Debug("hook-data-received")
 
 	// Delegate to CLI adapter (protocol-agnostic)
 	// The adapter parses the data and returns: (cwd, lastUserPrompt, response, error)
@@ -470,7 +470,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 		logger.WithFields(logrus.Fields{
 			"cli_type": cliType,
 			"error":    err,
-		}).Error("Failed to handle hook data")
+		}).Error("failed-to-handle-hook-data")
 		http.Error(w, "Failed to process hook", http.StatusInternalServerError)
 		return
 	}
@@ -494,7 +494,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	if session == nil {
 		logger.WithFields(logrus.Fields{
 			"identifier": identifier,
-		}).Warn("No session found matching identifier")
+		}).Warn("no-session-found-matching-identifier")
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
@@ -502,7 +502,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	logger.WithFields(logrus.Fields{
 		"session":  session.Name,
 		"work_dir": session.WorkDir,
-	}).Debug("Hook matched to session")
+	}).Debug("hook-matched-to-session")
 
 	// If adapter returned empty response, try tmux capture as fallback
 	if response == "" {
@@ -510,7 +510,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 			"session":         session.Name,
 			"last_user_prompt": lastUserPrompt,
 			"reason":          "adapter returned empty response",
-		}).Info("Using tmux capture as fallback with user prompt filtering")
+		}).Info("using-tmux-capture-as-fallback-with-user-prompt-filtering")
 
 		// Retry mechanism: wait for Claude to finish thinking
 		const maxRetries = 10
@@ -519,13 +519,13 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 			if attempt > 1 {
-				logger.WithField("attempt", attempt).Info("Retrying tmux capture")
+				logger.WithField("attempt", attempt).Info("retrying-tmux-capture")
 				time.Sleep(retryDelay)
 			}
 
 			tmuxOutput, err := watchdog.CapturePane(session.Name, 200)
 			if err != nil {
-				logger.WithField("error", err).Warn("Failed to capture tmux pane")
+				logger.WithField("error", err).Warn("failed-to-capture-tmux-pane")
 				break
 			}
 
@@ -539,7 +539,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 				"filtered_length":  len(filteredOutput),
 				"filtered_preview": filteredOutput[:min(200, len(filteredOutput))],
 				"is_thinking":      isThinking(filteredOutput),
-			}).Debug("Extracted content after user prompt")
+			}).Debug("extracted-content-after-user-prompt")
 
 			// Check if still thinking in the filtered content
 			if isThinking(filteredOutput) {
@@ -547,7 +547,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 					"attempt":     attempt,
 					"max_retries": maxRetries,
 					"reason":      "thinking detected in filtered output",
-				}).Debug("Claude is still thinking (in response area), will retry")
+				}).Debug("claude-is-still-thinking-in-response-area-will-retry")
 				lastResponse = filteredOutput // Save for final attempt
 				continue
 			}
@@ -563,7 +563,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 					"attempt":           attempt,
 					"response_length":  len(response),
 					"response_preview": response[:min(200, len(response))],
-				}).Info("Successfully extracted response from tmux")
+				}).Info("successfully-extracted-response-from-tmux")
 				break // Got valid response, stop retrying
 			}
 
@@ -571,7 +571,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 				"attempt":          attempt,
 				"response_length": len(response),
 				"reason":           "empty response",
-			}).Debug("Response validation failed, will retry")
+			}).Debug("response-validation-failed-will-retry")
 		}
 
 		// If still no valid response after all retries, use the last capture
@@ -580,12 +580,12 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 				"max_retries":       maxRetries,
 				"using_last_attempt": true,
 				"response_length":   len(lastResponse),
-			}).Info("Using last attempt capture (still may be thinking)")
+			}).Info("using-last-attempt-capture-still-may-be-thinking")
 			response = removeUIStatusLines(lastResponse)
 		}
 
 		if response == "" {
-			logger.WithField("max_retries", maxRetries).Warn("All retry attempts exhausted and no valid response")
+			logger.WithField("max_retries", maxRetries).Warn("all-retry-attempts-exhausted-and-no-valid-response")
 		}
 	}
 
@@ -601,7 +601,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 		// No active channel - user might be operating CLI directly
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
-		}).Debug("No active channel found, skipping bot notification")
+		}).Debug("no-active-channel-found-skipping-bot-notification")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Hook received (no active bot channel)")
 		return
@@ -612,7 +612,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 		"platform": botChannel.Platform,
 		"channel":  botChannel.Channel,
 		"session":  session.Name,
-	}).Info("Sending hook response to bot")
+	}).Info("sending-hook-response-to-bot")
 	e.SendToBot(botChannel.Platform, botChannel.Channel, response)
 
 	w.WriteHeader(http.StatusOK)
@@ -621,35 +621,35 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 
 // Stop gracefully stops the engine
 func (e *Engine) Stop() error {
-	logger.Info("Stopping clibot engine...")
+	logger.Info("stopping-clibot-engine")
 
 	// Stop hook server with graceful shutdown
 	if e.hookServer != nil {
-		logger.Info("Stopping hook server...")
+		logger.Info("stopping-hook-server")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		if err := e.hookServer.Shutdown(ctx); err != nil {
-			logger.Errorf("Failed to gracefully stop hook server: %v", err)
+			logger.Errorf("failed-to-gracefully-stop-hook-server: %v", err)
 			// Force close if graceful shutdown fails
 			e.hookServer.Close()
 		} else {
-			logger.Info("Hook server stopped gracefully")
+			logger.Info("hook-server-stopped-gracefully")
 		}
 	}
 
 	// Stop all bots
 	for botType, botAdapter := range e.activeBots {
-		logger.WithField("bot_type", botType).Info("Stopping bot")
+		logger.WithField("bot_type", botType).Info("stopping-bot")
 		if err := botAdapter.Stop(); err != nil {
 			logger.WithFields(logrus.Fields{
 				"bot_type": botType,
 				"error":    err,
-			}).Error("Failed to stop bot")
+			}).Error("failed-to-stop-bot")
 		}
 	}
 
-	logger.Info("Engine stopped")
+	logger.Info("engine-stopped")
 	return nil
 }
 
@@ -779,7 +779,7 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 				"line_index":     i,
 				"prompt_matched": trimmed,
 				"match_type":     "exact",
-			}).Debug("Found user prompt (exact match)")
+			}).Debug("found-user-prompt-exact-match")
 			break
 		}
 
@@ -792,7 +792,7 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 					"line_index":     i,
 					"prompt_matched": trimmed,
 					"match_type":     "cursor_prefix",
-				}).Debug("Found user prompt (with cursor prefix)")
+				}).Debug("found-user-prompt-with-cursor-prefix")
 				break
 			}
 		}
@@ -806,7 +806,7 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 					"line_index":     i,
 					"prompt_matched": trimmed,
 					"match_type":     "partial",
-				}).Debug("Found user prompt (partial match with validation)")
+				}).Debug("found-user-prompt-partial-match-with-validation")
 				break
 			}
 		}
@@ -819,7 +819,7 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 					"line_index":            i,
 					"prompt_matched_prefix": trimmed,
 					"match_type":            "prefix",
-				}).Debug("Found user prompt (prefix match with validation)")
+				}).Debug("found-user-prompt-prefix-match-with-validation")
 				break
 			}
 		}
@@ -827,7 +827,7 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 
 	// If prompt not found, fall back to basic extraction
 	if promptIndex == -1 {
-		logger.Debug("User prompt not found in tmux output, using basic extraction")
+		logger.Debug("user-prompt-not-found-in-tmux-output-using-basic-extraction")
 		return extractLastAssistantContent(tmuxOutput)
 	}
 
@@ -872,10 +872,10 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 		"total_lines":     len(lines),
 		"prompt_index":    promptIndex,
 		"content_lines":    len(contentLines),
-	}).Debug("Extracted content after prompt")
+	}).Debug("extracted-content-after-prompt")
 
 	if len(contentLines) == 0 {
-		logger.Debug("No content found after prompt, using basic extraction")
+		logger.Debug("no-content-found-after-prompt-using-basic-extraction")
 		return extractLastAssistantContent(tmuxOutput)
 	}
 
@@ -918,7 +918,7 @@ func isThinking(output string) bool {
 				"indicator":        indicator,
 				"checked_lines":    len(recentLines),
 				"total_lines":      len(lines),
-			}).Debug("Detected thinking state in recent lines")
+			}).Debug("detected-thinking-state-in-recent-lines")
 			return true
 		}
 	}
@@ -969,7 +969,7 @@ func removeUIStatusLines(output string) string {
 
 		// Remove UI status lines
 		if isUIStatusLine(trimmed) {
-			logger.WithField("line", trimmed).Debug("Removing UI status line from response")
+			logger.WithField("line", trimmed).Debug("removing-ui-status-line-from-response")
 			continue
 		}
 
@@ -1026,7 +1026,7 @@ func isLikelyUserPromptLine(line, userPrompt string) bool {
 			"line":        line,
 			"user_prompt": userPrompt,
 			"reason":      "has cursor prefix",
-		}).Debug("Accepting line: has cursor prefix")
+		}).Debug("accepting-line-has-cursor-prefix")
 		return true
 	}
 
@@ -1036,7 +1036,7 @@ func isLikelyUserPromptLine(line, userPrompt string) bool {
 			"line":        line,
 			"user_prompt": userPrompt,
 			"reason":      "exact match",
-		}).Debug("Accepting line: exact match")
+		}).Debug("accepting-line-exact-match")
 		return true
 	}
 
@@ -1047,7 +1047,7 @@ func isLikelyUserPromptLine(line, userPrompt string) bool {
 		"line_len":    len(line),
 		"prompt_len":  len(userPrompt),
 		"reason":      "no cursor prefix and not exact match",
-	}).Debug("Rejecting line: doesn't look like user prompt")
+	}).Debug("rejecting-line-does-not-look-like-user-prompt")
 
 	return false
 }

@@ -57,13 +57,13 @@ func (c *ClaudeAdapter) SendInput(sessionName, input string) error {
 		"session": sessionName,
 		"input":   input,
 		"length":  len(input),
-	}).Debug("Sending input to tmux session")
+	}).Debug("sending-input-to-tmux-session")
 
 	if err := watchdog.SendKeys(sessionName, input); err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": sessionName,
 			"error":   err,
-		}).Error("Failed to send input to tmux")
+		}).Error("failed-to-send-input-to-tmux")
 		return err
 	}
 
@@ -95,35 +95,35 @@ func (c *ClaudeAdapter) HandleHookData(data []byte) (string, string, string, err
 	// Parse JSON
 	var hookData map[string]interface{}
 	if err := json.Unmarshal(data, &hookData); err != nil {
-		logger.WithField("error", err).Error("Failed to parse hook JSON data")
+		logger.WithField("error", err).Error("failed-to-parse-hook-json-data")
 		return "", "", "", fmt.Errorf("failed to parse JSON data: %w", err)
 	}
 
 	// Extract cwd (current working directory) - used to match the tmux session
 	cwd, ok := hookData["cwd"].(string)
 	if !ok {
-		logger.Warn("Missing cwd in hook data")
+		logger.Warn("missing-cwd-in-hook-data")
 		return "", "", "", fmt.Errorf("missing cwd in hook data")
 	}
 
 	// Extract transcript_path (contains the conversation history)
 	transcriptPath, ok := hookData["transcript_path"].(string)
 	if !ok {
-		logger.Warn("Missing transcript_path in hook data")
+		logger.Warn("missing-transcript-path-in-hook-data")
 		return "", "", "", fmt.Errorf("missing transcript_path in hook data")
 	}
 
 	logger.WithFields(logrus.Fields{
 		"cwd":             cwd,
 		"transcript_path": transcriptPath,
-	}).Debug("Hook data parsed")
+	}).Debug("hook-data-parsed")
 
 	// Extract last user prompt for tmux filtering
 	lastUserPrompt, err := extractLastUserPrompt(transcriptPath)
 	if err != nil {
-		logger.WithField("error", err).Debug("Failed to extract last user prompt")
+		logger.WithField("error", err).Debug("failed-to-extract-last-user-prompt")
 	} else {
-		logger.WithField("last_user_prompt", lastUserPrompt).Debug("Extracted last user prompt")
+		logger.WithField("last_user_prompt", lastUserPrompt).Debug("extracted-last-user-prompt")
 	}
 
 	// Try to extract response from transcript
@@ -133,14 +133,14 @@ func (c *ClaudeAdapter) HandleHookData(data []byte) (string, string, string, err
 		logger.WithFields(logrus.Fields{
 			"transcript": transcriptPath,
 			"error":      err,
-		}).Warn("Failed to extract response from transcript")
+		}).Warn("failed-to-extract-response-from-transcript")
 		return cwd, lastUserPrompt, "", nil
 	}
 
 	logger.WithFields(logrus.Fields{
 		"cwd":          cwd,
 		"response_len": len(response),
-	}).Info("Response extracted from transcript")
+	}).Info("response-extracted-from-transcript")
 
 	return cwd, lastUserPrompt, response, nil
 }
@@ -352,22 +352,22 @@ func ParseTranscript(filePath string) ([]TranscriptMessage, error) {
 //
 // If no text response is found (e.g., assistant is still thinking), returns empty string.
 func ExtractLastAssistantResponse(transcriptPath string) (string, error) {
-	logger.WithField("transcript", transcriptPath).Debug("Starting response extraction from transcript")
+	logger.WithField("transcript", transcriptPath).Debug("starting-response-extraction-from-transcript")
 
 	return extractFromTranscriptFile(transcriptPath)
 }
 
 // extractFromTranscriptFile tries to extract response from transcript file
 func extractFromTranscriptFile(transcriptPath string) (string, error) {
-	logger.WithField("transcript", transcriptPath).Debug("Parsing transcript file")
+	logger.WithField("transcript", transcriptPath).Debug("parsing-transcript-file")
 
 	messages, err := ParseTranscript(transcriptPath)
 	if err != nil {
-		logger.WithField("error", err).Debug("Failed to parse transcript")
+		logger.WithField("error", err).Debug("failed-to-parse-transcript")
 		return "", fmt.Errorf("failed to parse transcript: %w", err)
 	}
 
-	logger.WithField("message_count", len(messages)).Debug("Parsed transcript messages")
+	logger.WithField("message_count", len(messages)).Debug("parsed-transcript-messages")
 
 	// Find the last user message index
 	lastUserIndex := -1
@@ -377,7 +377,7 @@ func extractFromTranscriptFile(transcriptPath string) (string, error) {
 		}
 	}
 
-	logger.WithField("last_user_index", lastUserIndex).Debug("Found last user message")
+	logger.WithField("last_user_index", lastUserIndex).Debug("found-last-user-message")
 
 	if lastUserIndex == -1 {
 		return "", fmt.Errorf("no user messages found in transcript")
@@ -396,7 +396,7 @@ func extractFromTranscriptFile(transcriptPath string) (string, error) {
 					logger.WithFields(logrus.Fields{
 						"block_type": block.Type,
 						"text_length": len(block.Text),
-					}).Debug("Found text block in assistant message")
+					}).Debug("found-text-block-in-assistant-message")
 				}
 			}
 		}
@@ -405,39 +405,39 @@ func extractFromTranscriptFile(transcriptPath string) (string, error) {
 	logger.WithFields(logrus.Fields{
 		"assistant_messages": assistantMessageCount,
 		"text_blocks":        len(responseTexts),
-	}).Debug("Extracted text blocks from assistant messages")
+	}).Debug("extracted-text-blocks-from-assistant-messages")
 
 	if len(responseTexts) == 0 {
-		logger.Debug("No text responses found in transcript")
+		logger.Debug("no-text-responses-found-in-transcript")
 		return "", fmt.Errorf("no text responses found in transcript")
 	}
 
 	result := strings.Join(responseTexts, "\n\n")
-	logger.WithField("joined_length", len(result)).Debug("Joined response texts")
+	logger.WithField("joined_length", len(result)).Debug("joined-response-texts")
 
 	return result, nil
 }
 
 // extractFromTmux captures response from tmux session (fallback method)
 func extractFromTmux(sessionName string) (string, error) {
-	logger.WithField("session", sessionName).Debug("Capturing tmux pane")
+	logger.WithField("session", sessionName).Debug("capturing-tmux-pane")
 
 	// Capture the last 200 lines from tmux session
 	output, err := watchdog.CapturePane(sessionName, 200)
 	if err != nil {
-		logger.WithField("error", err).Error("Failed to capture tmux pane")
+		logger.WithField("error", err).Error("failed-to-capture-tmux-pane")
 		return "", fmt.Errorf("failed to capture tmux pane: %w", err)
 	}
 
 	logger.WithFields(logrus.Fields{
 		"raw_length":    len(output),
 		"raw_preview":   output[:min(500, len(output))],
-	}).Debug("Captured raw tmux output")
+	}).Debug("captured-raw-tmux-output")
 
 	// Clean ANSI codes
 	cleanOutput := watchdog.StripANSI(output)
 
-	logger.WithField("cleaned_length", len(cleanOutput)).Debug("Cleaned ANSI codes")
+	logger.WithField("cleaned_length", len(cleanOutput)).Debug("cleaned-ansi-codes")
 
 	// Simple heuristic: extract the last assistant response
 	lines := strings.Split(cleanOutput, "\n")
@@ -457,7 +457,7 @@ func extractFromTmux(sessionName string) (string, error) {
 		// Skip user prompts and common CLI patterns
 		if isPromptOrCommand(trimmed) {
 			filteredCount++
-			logger.WithField("filtered_line", trimmed).Debug("Filtered prompt/command")
+			logger.WithField("filtered_line", trimmed).Debug("filtered-prompt-slash-command")
 			continue
 		}
 
@@ -468,16 +468,16 @@ func extractFromTmux(sessionName string) (string, error) {
 		"total_lines":      len(lines),
 		"content_lines":    len(contentLines),
 		"filtered_count":   filteredCount,
-	}).Debug("Processed tmux lines")
+	}).Debug("processed-tmux-lines")
 
 	if len(contentLines) == 0 {
-		logger.Warn("No content found in tmux capture after filtering")
+		logger.Warn("no-content-found-in-tmux-capture-after-filtering")
 		return "", fmt.Errorf("no content found in tmux capture")
 	}
 
 	// Join and return
 	response := strings.Join(contentLines, "\n")
-	logger.WithField("final_length", len(response)).Debug("Constructed final response from tmux")
+	logger.WithField("final_length", len(response)).Debug("constructed-final-response-from-tmux")
 
 	return response, nil
 }

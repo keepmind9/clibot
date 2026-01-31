@@ -45,7 +45,7 @@ func (f *FeishuBot) Start(messageHandler func(BotMessage)) error {
 	// Log bot startup
 	logger.WithFields(logrus.Fields{
 		"app_id": maskAppID(f.AppID),
-	}).Info("Starting Feishu bot with WebSocket long connection")
+	}).Info("starting-feishu-bot-with-websocket-long-connection")
 
 	// Create event dispatcher
 	f.Dispatcher = dispatcher.NewEventDispatcher(f.VerificationToken, f.EncryptKey)
@@ -68,14 +68,14 @@ func (f *FeishuBot) Start(messageHandler func(BotMessage)) error {
 			logger.WithFields(logrus.Fields{
 				"app_id": f.AppID,
 				"error":  err,
-			}).Error("Feishu WebSocket connection failed")
+			}).Error("feishu-websocket-connection-failed")
 		}
 	}()
 
 	// Give connection time to establish
 	time.Sleep(2 * time.Second)
 
-	logger.Info("Feishu WebSocket long connection started")
+	logger.Info("feishu-websocket-long-connection-started")
 	return nil
 }
 
@@ -139,7 +139,7 @@ func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2Me
 		"message_type": messageType,
 		"content":      content,
 		"content_len":  len(content),
-	}).Info("Received Feishu message event (parsed)")
+	}).Info("received-feishu-message-event-parsed")
 
 	// Call the handler with BotMessage
 	if f.messageHandler != nil {
@@ -171,7 +171,7 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 		logger.WithFields(logrus.Fields{
 			"original_length": len(message),
 			"max_length":      maxFeishuLength,
-		}).Info("Truncating message for Feishu limit")
+		}).Info("truncating-message-for-feishu-limit")
 		message = message[:maxFeishuLength]
 	}
 
@@ -196,7 +196,7 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 		logger.WithFields(logrus.Fields{
 			"chat_id": chatID,
 			"error":   err,
-		}).Error("Failed to send message to Feishu")
+		}).Error("failed-to-send-message-to-feishu")
 		return fmt.Errorf("failed to send message to chat %s: %w", chatID, err)
 	}
 
@@ -206,11 +206,11 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 			"code":       resp.Code,
 			"msg":        resp.Msg,
 			"request_id": resp.RequestId,
-		}).Error("Failed to send message to Feishu (API error)")
+		}).Error("failed-to-send-message-to-feishu-api-error")
 		return fmt.Errorf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	logger.WithField("chat_id", chatID).Info("Message sent to Feishu")
+	logger.WithField("chat_id", chatID).Info("message-sent-to-feishu")
 	return nil
 }
 
@@ -223,10 +223,10 @@ func (f *FeishuBot) Stop() error {
 	if f.WSClient != nil {
 		// Note: ws.Client doesn't have a Stop method in v3.5.3
 		// The connection is managed by the context
-		logger.Info("Feishu WebSocket connection stopped")
+		logger.Info("feishu-websocket-connection-stopped")
 	}
 
-	logger.Info("Feishu bot stopped")
+	logger.Info("feishu-bot-stopped")
 	return nil
 }
 

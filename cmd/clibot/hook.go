@@ -36,13 +36,13 @@ Examples:
 			// Read raw data from stdin (forward as-is, no parsing)
 			stdinData, err := io.ReadAll(os.Stdin)
 			if err != nil {
-				logger.WithField("error", err).Error("Failed to read stdin")
+				logger.WithField("error", err).Error("failed-to-read-stdin")
 				// Exit gracefully to avoid affecting CLI behavior
 				return
 			}
 
 			if len(stdinData) == 0 {
-				logger.Warn("No data received from stdin")
+				logger.Warn("no-data-received-from-stdin")
 				// Exit gracefully
 				return
 			}
@@ -50,7 +50,7 @@ Examples:
 			logger.WithFields(logrus.Fields{
 				"cli_type": cliType,
 				"size":     len(stdinData),
-			}).Debug("Hook command received data")
+			}).Debug("hook-command-received-data")
 
 			// DEBUG: Print raw data (can be removed later)
 			fmt.Fprintf(os.Stderr, "=== Hook Debug ===\n")
@@ -67,14 +67,14 @@ Examples:
 					"cli_type": cliType,
 					"url":      url,
 					"size":     len(stdinData),
-				}).Debug("Forwarding hook data to engine (async)")
+				}).Debug("forwarding-hook-data-to-engine-async")
 
 				resp, err := http.Post(url, "application/octet-stream", bytes.NewBuffer(stdinData))
 				if err != nil {
 					logger.WithFields(logrus.Fields{
 						"cli_type": cliType,
 						"error":    err,
-					}).Error("Hook request failed (async)")
+					}).Error("hook-request-failed-async")
 					// Don't print to stderr - we've already returned
 					return
 				}
@@ -84,14 +84,14 @@ Examples:
 					logger.WithFields(logrus.Fields{
 						"cli_type":    cliType,
 						"status_code": resp.StatusCode,
-					}).Info("Hook notification succeeded (async)")
+					}).Info("hook-notification-succeeded-async")
 				} else {
 					body, _ := io.ReadAll(resp.Body)
 					logger.WithFields(logrus.Fields{
 						"cli_type":     cliType,
 						"status_code":  resp.StatusCode,
 						"response":     string(body),
-					}).Warn("Hook notification failed (non-200 status, async)")
+					}).Warn("hook-notification-failed-non-200-status-async")
 				}
 			}()
 
@@ -104,7 +104,7 @@ Examples:
 			// The background goroutine will handle the HTTP request independently
 			logger.WithFields(logrus.Fields{
 				"cli_type": cliType,
-			}).Debug("Hook command returning (async notification sent)")
+			}).Debug("hook-command-returning-async-notification-sent")
 
 			fmt.Println("Hook notification sent asynchronously")
 		},

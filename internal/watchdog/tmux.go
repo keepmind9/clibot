@@ -62,7 +62,7 @@ func SendKeys(sessionName, input string, delayMs ...int) error {
 		"session":  sessionName,
 		"input":    input,
 		"delay_ms": delay,
-	}).Debug("Sending keys to tmux session")
+	}).Debug("sending-keys-to-tmux-session")
 
 	// Step 1: Send the input text
 	args1 := []string{"send-keys", "-t", sessionName, "-l", input}
@@ -72,7 +72,7 @@ func SendKeys(sessionName, input string, delayMs ...int) error {
 			"session": sessionName,
 			"error":   err,
 			"output":  string(output),
-		}).Error("Failed to send text to tmux session")
+		}).Error("failed-to-send-text-to-tmux-session")
 		return fmt.Errorf("failed to send text to session %s: %w (output: %s)", sessionName, err, string(output))
 	}
 
@@ -89,7 +89,7 @@ func SendKeys(sessionName, input string, delayMs ...int) error {
 			"session": sessionName,
 			"error":   err,
 			"output":  string(output),
-		}).Error("Failed to send Enter key to tmux session")
+		}).Error("failed-to-send-enter-key-to-tmux-session")
 		return fmt.Errorf("failed to send Enter to session %s: %w (output: %s)", sessionName, err, string(output))
 	}
 

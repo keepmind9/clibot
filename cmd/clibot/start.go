@@ -52,7 +52,7 @@ var (
 				"config_file": configFile,
 				"log_level":   config.Logging.Level,
 				"log_file":    config.Logging.File,
-			}).Info("Logger initialized")
+			}).Info("logger-initialized")
 
 			// Create engine
 			engine := core.NewEngine(config)
@@ -128,8 +128,8 @@ var (
 			// Start engine in a goroutine
 			engineErrChan := make(chan error, 1)
 			go func() {
-				fmt.Println("\nclibot engine starting...")
-				fmt.Println("Press Ctrl+C to stop\n")
+				fmt.Println("clibot engine starting...")
+				fmt.Println("Press Ctrl+C to stop")
 				engineErrChan <- engine.Run()
 			}()
 

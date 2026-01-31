@@ -48,7 +48,7 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 	logger.WithFields(logrus.Fields{
 		"token":   maskToken(d.Token),
 		"channel": d.ChannelID,
-	}).Info("Starting Discord bot")
+	}).Info("starting-discord-bot")
 
 	// Create Discord session
 	session, err := discordgo.New("Bot " + d.Token)
@@ -72,7 +72,7 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 			"username":  m.Author.Username,
 			"channel":   m.ChannelID,
 			"content":   m.Content,
-		}).Debug("Received Discord message")
+		}).Debug("received-discord-message")
 
 		// Call the handler with BotMessage
 		if d.messageHandler != nil {
@@ -88,7 +88,7 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 				"platform": "discord",
 				"user":     m.Author.ID,
 				"channel":  m.ChannelID,
-			}).Info("Message received from Discord")
+			}).Info("message-received-from-discord")
 		}
 	})
 
@@ -118,7 +118,7 @@ func (d *DiscordBot) SendMessage(channel, message string) error {
 		logger.WithFields(logrus.Fields{
 			"original_length": len(message),
 			"max_length":      maxDiscordLength,
-		}).Info("Truncating message for Discord limit (keeping latest content)")
+		}).Info("truncating-message-for-discord-limit")
 		// Keep the last (max-3) characters to show the newest content
 		message = "..." + message[len(message)-maxDiscordLength+3:]
 	}
@@ -128,11 +128,11 @@ func (d *DiscordBot) SendMessage(channel, message string) error {
 		logger.WithFields(logrus.Fields{
 			"channel": targetChannel,
 			"error":   err,
-		}).Error("Failed to send message to Discord")
+		}).Error("failed-to-send-message-to-discord")
 		return fmt.Errorf("failed to send message to channel %s: %w", targetChannel, err)
 	}
 
-	logger.WithField("channel", targetChannel).Info("Message sent to Discord")
+	logger.WithField("channel", targetChannel).Info("message-sent-to-discord")
 	return nil
 }
 

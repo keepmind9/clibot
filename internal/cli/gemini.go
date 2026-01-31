@@ -59,14 +59,14 @@ func (g *GeminiAdapter) SendInput(sessionName, input string) error {
 		"session": sessionName,
 		"input":   input,
 		"length":  len(input),
-	}).Debug("Sending input to tmux session")
+	}).Debug("sending-input-to-tmux-session")
 
 	// Gemini CLI needs a delay before Enter key to properly process the input
 	if err := watchdog.SendKeys(sessionName, input, 200); err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": sessionName,
 			"error":   err,
-		}).Error("Failed to send input to tmux")
+		}).Error("failed-to-send-input-to-tmux")
 		return err
 	}
 
@@ -101,20 +101,20 @@ func (g *GeminiAdapter) HandleHookData(data []byte) (string, string, string, err
 	// Parse JSON
 	var hookData map[string]interface{}
 	if err := json.Unmarshal(data, &hookData); err != nil {
-		logger.WithField("error", err).Error("Failed to parse hook JSON data")
+		logger.WithField("error", err).Error("failed-to-parse-hook-json-data")
 		return "", "", "", fmt.Errorf("failed to parse JSON data: %w", err)
 	}
 
 	// Extract cwd (current working directory) - used to match the tmux session
 	cwd, ok := hookData["cwd"].(string)
 	if !ok {
-		logger.Warn("Missing cwd in hook data")
+		logger.Warn("missing-cwd-in-hook-data")
 		return "", "", "", fmt.Errorf("missing cwd in hook data")
 	}
 
 	logger.WithFields(logrus.Fields{
 		"cwd": cwd,
-	}).Debug("Hook data parsed")
+	}).Debug("hook-data-parsed")
 
 	// For Gemini, we need to compute project hash to find history files
 	projectHash := computeProjectHash(cwd)
@@ -125,14 +125,14 @@ func (g *GeminiAdapter) HandleHookData(data []byte) (string, string, string, err
 		logger.WithFields(logrus.Fields{
 			"project_hash": projectHash,
 			"error":        err,
-		}).Warn("Failed to extract Gemini response")
+		}).Warn("failed-to-extract-gemini-response")
 		return cwd, "", "", nil // Return cwd but empty response (will trigger tmux fallback)
 	}
 
 	logger.WithFields(logrus.Fields{
 		"cwd":          cwd,
 		"response_len": len(response),
-	}).Info("Response extracted from Gemini history")
+	}).Info("response-extracted-from-gemini-history")
 
 	return cwd, "", response, nil
 }
@@ -173,7 +173,7 @@ func (g *GeminiAdapter) extractGeminiResponse(projectHash string) (string, error
 	logger.WithFields(logrus.Fields{
 		"latest_file": latestFile,
 		"chats_dir":    chatsDir,
-	}).Debug("Found latest Gemini session file")
+	}).Debug("found-latest-gemini-session-file")
 
 	// Parse JSON
 	data, err := os.ReadFile(latestFile)
@@ -233,7 +233,7 @@ func (g *GeminiAdapter) extractGeminiResponse(projectHash string) (string, error
 		"last_user_index":   lastUserIndex,
 		"gemini_messages":   len(contentParts),
 		"response_length":   len(response),
-	}).Info("Extracted Gemini response from session file")
+	}).Info("extracted-gemini-response-from-session-file")
 
 	return response, nil
 }
@@ -243,7 +243,7 @@ func (g *GeminiAdapter) extractGeminiResponse(projectHash string) (string, error
 func computeProjectHash(projectPath string) string {
 	absPath, err := filepath.Abs(projectPath)
 	if err != nil {
-		logger.WithField("error", err).Warn("Failed to get absolute path, using raw path")
+		logger.WithField("error", err).Warn("failed-to-get-absolute-path-using-raw-path")
 		absPath = projectPath
 	}
 
@@ -315,7 +315,7 @@ func (g *GeminiAdapter) CheckInteractive(sessionName string) (bool, string, erro
 					"session":  sessionName,
 					"pattern":  pattern.String(),
 					"line":     trimmed,
-				}).Info("Interactive prompt detected")
+				}).Info("interactive-prompt-detected")
 				return true, trimmed, nil
 			}
 		}
@@ -326,7 +326,7 @@ func (g *GeminiAdapter) CheckInteractive(sessionName string) (bool, string, erro
 
 // startGemini starts Gemini CLI in a tmux session
 func (g *GeminiAdapter) startGemini(sessionName string) error {
-	logger.WithField("session", sessionName).Info("Starting Gemini CLI in tmux session")
+	logger.WithField("session", sessionName).Info("starting-gemini-cli-in-tmux-session")
 
 	// Start Gemini CLI
 	// TODO: Verify the exact command to start Gemini CLI
@@ -336,6 +336,6 @@ func (g *GeminiAdapter) startGemini(sessionName string) error {
 		return fmt.Errorf("failed to start Gemini CLI: %w (output: %s)", err, string(output))
 	}
 
-	logger.WithField("session", sessionName).Info("Gemini CLI started")
+	logger.WithField("session", sessionName).Info("gemini-cli-started")
 	return nil
 }
