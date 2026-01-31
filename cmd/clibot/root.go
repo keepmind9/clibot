@@ -27,4 +27,5 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(hookCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(versionCmd)
 }

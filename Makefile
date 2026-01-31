@@ -5,7 +5,9 @@
 BINARY_NAME=clibot
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+GIT_BRANCH=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+GIT_COMMIT=$(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME) -X main.GitBranch=$(GIT_BRANCH) -X main.GitCommit=$(GIT_COMMIT)"
 
 # Directories
 CMD_DIR=./cmd/$(BINARY_NAME)
