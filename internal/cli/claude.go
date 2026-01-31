@@ -113,30 +113,45 @@ func (c *ClaudeAdapter) HandleHookData(data []byte) (string, string, string, err
 		return "", "", "", fmt.Errorf("missing transcript_path in hook data")
 	}
 
+	// Extract hook_event_name to check if this is a notification event
+	hookEventName := ""
+	if v, ok := hookData["hook_event_name"].(string); ok {
+		hookEventName = v
+	}
+
 	logger.WithFields(logrus.Fields{
 		"cwd":             cwd,
 		"transcript_path": transcriptPath,
+		"hook_event_name": hookEventName,
 	}).Debug("hook-data-parsed")
 
-	var lastUserPrompt = ""
-	// Try to extract response from transcript
-	response, err := extractFromTranscriptFile(transcriptPath)
-	if response == "" || err != nil{
-		// Extract last user prompt for tmux filtering
+	var lastUserPrompt string
+	var response string
+	var err error
+
+	// Only extract response for non-notification events
+	// Notification events don't have assistant responses to extract
+	if !strings.EqualFold(hookEventName, "Notification") {
+		response, err = extractFromTranscriptFile(transcriptPath)
+		if err != nil {
+			// Don't fail the hook - transcript parsing errors are not critical
+			logger.WithFields(logrus.Fields{
+				"transcript": transcriptPath,
+				"error":      err,
+			}).Warn("failed-to-extract-response-from-transcript")
+		}
+	} else {
+		logger.WithField("hook_event_name", hookEventName).Debug("skipping-response-extraction-for-notification-event")
+	}
+
+	// Extract user prompt for tmux filtering when response is empty or extraction failed
+	if response == "" || err != nil {
 		lastUserPrompt, err = extractLastUserPrompt(transcriptPath)
 		if err != nil {
 			logger.WithField("error", err).Debug("failed-to-extract-last-user-prompt")
 		} else {
 			logger.WithField("last_user_prompt", lastUserPrompt).Debug("extracted-last-user-prompt")
 		}
-	}
-	if err != nil {
-		// Don't fail the hook - transcript parsing errors are not critical
-		logger.WithFields(logrus.Fields{
-			"transcript": transcriptPath,
-			"error":      err,
-		}).Warn("failed-to-extract-response-from-transcript")
-		return cwd, lastUserPrompt, "", nil
 	}
 
 	logger.WithFields(logrus.Fields{
