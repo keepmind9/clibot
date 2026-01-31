@@ -28,7 +28,10 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 
 	// Expand environment variables
-	expandedData := expandEnv(string(data))
+	expandedData, err := expandEnv(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand environment variables: %w", err)
+	}
 
 	// Parse YAML
 	var config Config
@@ -45,14 +48,23 @@ func LoadConfig(configPath string) (*Config, error) {
 }
 
 // expandEnv replaces ${VAR_NAME} patterns with environment variable values
-func expandEnv(input string) string {
-	return os.Expand(input, func(key string) string {
-		// Support both ${VAR} and $VAR formats
+func expandEnv(input string) (string, error) {
+	var missingVars []string
+
+	result := os.Expand(input, func(key string) string {
 		if val := os.Getenv(key); val != "" {
 			return val
 		}
-		return "${" + key + "}"
+		missingVars = append(missingVars, key)
+		return "" // Return empty string to let config parsing fail
 	})
+
+	if len(missingVars) > 0 {
+		return "", fmt.Errorf("missing required environment variables: %s",
+			strings.Join(missingVars, ", "))
+	}
+
+	return result, nil
 }
 
 // validateConfig performs basic validation on the configuration
@@ -148,26 +160,39 @@ func (c *Config) GetCLIAdapterConfig(cliType string) (CLIAdapterConfig, error) {
 	}
 
 	// Expand home directory in paths
-	adapter.HistoryDir = expandHome(adapter.HistoryDir)
-	adapter.HistoryDB = expandHome(adapter.HistoryDB)
-	adapter.HistoryFile = expandHome(adapter.HistoryFile)
+	var err error
+	if adapter.HistoryDir != "" {
+		adapter.HistoryDir, err = expandHome(adapter.HistoryDir)
+		if err != nil {
+			return CLIAdapterConfig{}, fmt.Errorf("invalid history_dir: %w", err)
+		}
+	}
+	if adapter.HistoryDB != "" {
+		adapter.HistoryDB, err = expandHome(adapter.HistoryDB)
+		if err != nil {
+			return CLIAdapterConfig{}, fmt.Errorf("invalid history_db: %w", err)
+		}
+	}
+	if adapter.HistoryFile != "" {
+		adapter.HistoryFile, err = expandHome(adapter.HistoryFile)
+		if err != nil {
+			return CLIAdapterConfig{}, fmt.Errorf("invalid history_file: %w", err)
+		}
+	}
 
 	return adapter, nil
 }
 
 // expandHome expands ~ to user's home directory
-func expandHome(path string) string {
+func expandHome(path string) (string, error) {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			// If we can't get home directory, return original path
-			// This allows the system to continue with potentially invalid paths
-			// that will be caught by actual usage
-			return path
+			return "", fmt.Errorf("failed to get home directory: %w", err)
 		}
-		return home + path[1:]
+		return home + path[1:], nil
 	}
-	return path
+	return path, nil
 }
 
 // GetSessionConfig retrieves configuration for a specific session

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -107,10 +108,10 @@ var (
 					feishuBot := bot.NewFeishuBot(botConfig.AppID, botConfig.AppSecret)
 					// Set optional encryption fields if provided
 					if botConfig.EncryptKey != "" {
-						feishuBot.EncryptKey = botConfig.EncryptKey
+						feishuBot.SetEncryptKey(botConfig.EncryptKey)
 					}
 					if botConfig.VerificationToken != "" {
-						feishuBot.VerificationToken = botConfig.VerificationToken
+						feishuBot.SetVerificationToken(botConfig.VerificationToken)
 					}
 					engine.RegisterBotAdapter(botType, feishuBot)
 					log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
@@ -135,13 +136,31 @@ var (
 			sigChan := make(chan os.Signal, 1)
 			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+			// Create context for cancellation
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			// Start engine in a goroutine
 			engineErrChan := make(chan error, 1)
 			go func() {
 				fmt.Println("clibot engine starting...")
 				fmt.Println("Press Ctrl+C to stop")
-				engineErrChan <- engine.Run()
+				engineErrChan <- engine.Run(ctx)
 			}()
+
+			// Wait for signal or engine error
+			select {
+			case sig := <-sigChan:
+				log.Printf("\nReceived signal: %v, shutting down gracefully...", sig)
+				cancel() // Cancel context to stop event loop
+				if err := engine.Stop(); err != nil {
+					log.Printf("Error during shutdown: %v", err)
+				}
+			case err := <-engineErrChan:
+				if err != nil {
+					log.Fatalf("Engine error: %v", err)
+				}
+			}
 
 			// Wait for signal or engine error
 			select {

@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
@@ -13,43 +14,48 @@ import (
 
 // DingTalkBot implements BotAdapter interface for DingTalk using WebSocket long connection
 type DingTalkBot struct {
-	ClientID        string
-	ClientSecret    string
-	StreamClient    *client.StreamClient
-	messageHandler  func(BotMessage)
-	ctx             context.Context
-	cancel          context.CancelFunc
+	mu               sync.RWMutex
+	clientID         string
+	clientSecret     string
+	streamClient     *client.StreamClient
+	messageHandler   func(BotMessage)
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 // NewDingTalkBot creates a new DingTalk bot instance
 func NewDingTalkBot(clientID, clientSecret string) *DingTalkBot {
 	return &DingTalkBot{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
+		clientID:     clientID,
+		clientSecret: clientSecret,
 	}
 }
 
 // Start establishes WebSocket long connection to DingTalk and begins listening for messages
 func (d *DingTalkBot) Start(messageHandler func(BotMessage)) error {
-	d.messageHandler = messageHandler
+	d.SetMessageHandler(messageHandler)
 	d.ctx, d.cancel = context.WithCancel(context.Background())
 
 	logger.WithFields(logrus.Fields{
-		"client_id": maskClientID(d.ClientID),
+		"client_id": maskClientID(d.clientID),
 	}).Info("starting-dingtalk-bot-with-websocket-long-connection")
 
 	// Create stream client with credentials
-	credential := client.NewAppCredentialConfig(d.ClientID, d.ClientSecret)
-	d.StreamClient = client.NewStreamClient(client.WithAppCredential(credential))
+	credential := client.NewAppCredentialConfig(d.clientID, d.clientSecret)
+
+	d.mu.Lock()
+	d.streamClient = client.NewStreamClient(client.WithAppCredential(credential))
+	streamClient := d.streamClient
+	d.mu.Unlock()
 
 	// Register chatbot message callback
-	d.StreamClient.RegisterChatBotCallbackRouter(d.handleMessageReceive)
+	streamClient.RegisterChatBotCallbackRouter(d.handleMessageReceive)
 
 	// Start long connection
 	go func() {
-		if err := d.StreamClient.Start(d.ctx); err != nil {
+		if err := streamClient.Start(d.ctx); err != nil {
 			logger.WithFields(logrus.Fields{
-				"client_id": d.ClientID,
+				"client_id": d.clientID,
 				"error":     err,
 			}).Error("dingtalk-websocket-connection-failed")
 		}
@@ -91,8 +97,9 @@ func (d *DingTalkBot) handleMessageReceive(ctx context.Context, data *chatbot.Bo
 	}
 
 	// Call the handler with BotMessage
-	if d.messageHandler != nil {
-		d.messageHandler(BotMessage{
+	handler := d.GetMessageHandler()
+	if handler != nil {
+		handler(BotMessage{
 			Platform:  "dingtalk",
 			UserID:    data.SenderStaffId, // Use staffId as user identifier
 			Channel:   data.ConversationId,
@@ -138,13 +145,32 @@ func (d *DingTalkBot) Stop() error {
 		d.cancel()
 	}
 
-	if d.StreamClient != nil {
-		d.StreamClient.Close()
+	d.mu.Lock()
+	streamClient := d.streamClient
+	d.streamClient = nil
+	d.mu.Unlock()
+
+	if streamClient != nil {
+		streamClient.Close()
 		logger.Info("dingtalk-websocket-connection-stopped")
 	}
 
 	logger.Info("dingtalk-bot-stopped")
 	return nil
+}
+
+// SetMessageHandler sets the message handler in a thread-safe manner
+func (d *DingTalkBot) SetMessageHandler(handler func(BotMessage)) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.messageHandler = handler
+}
+
+// GetMessageHandler gets the message handler in a thread-safe manner
+func (d *DingTalkBot) GetMessageHandler() func(BotMessage) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.messageHandler
 }
 
 // maskClientID masks sensitive client ID information for logging

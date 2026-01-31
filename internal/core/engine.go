@@ -24,14 +24,16 @@ const(
 
 // Engine is the core scheduling engine that manages CLI sessions and bot connections
 type Engine struct {
-	config      *Config
-	cliAdapters map[string]cli.CLIAdapter  // CLI type -> adapter
-	activeBots  map[string]bot.BotAdapter  // Bot type -> adapter
-	sessions    map[string]*Session        // Session name -> Session
-	sessionMu   sync.RWMutex               // Mutex for session access
-	messageChan chan bot.BotMessage        // Bot message channel
-	hookServer  *http.Server               // HTTP server for hooks
-	sessionChannels map[string]BotChannel  // Session name -> active bot channel (for routing responses)
+	config          *Config
+	cliAdapters     map[string]cli.CLIAdapter  // CLI type -> adapter
+	activeBots      map[string]bot.BotAdapter  // Bot type -> adapter
+	sessions        map[string]*Session        // Session name -> Session
+	sessionMu       sync.RWMutex               // Mutex for session access
+	messageChan     chan bot.BotMessage        // Bot message channel
+	hookServer      *http.Server               // HTTP server for hooks
+	sessionChannels map[string]BotChannel      // Session name -> active bot channel (for routing responses)
+	ctx             context.Context            // Context for cancellation
+	cancel          context.CancelFunc         // Cancel function for graceful shutdown
 }
 
 // BotChannel represents a bot channel for sending responses
@@ -42,13 +44,16 @@ type BotChannel struct {
 
 // NewEngine creates a new Engine instance
 func NewEngine(config *Config) *Engine {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
-		config:         config,
-		cliAdapters:    make(map[string]cli.CLIAdapter),
-		activeBots:     make(map[string]bot.BotAdapter),
-		sessions:       make(map[string]*Session),
-		messageChan:    make(chan bot.BotMessage, 100),
+		config:          config,
+		cliAdapters:     make(map[string]cli.CLIAdapter),
+		activeBots:      make(map[string]bot.BotAdapter),
+		sessions:        make(map[string]*Session),
+		messageChan:     make(chan bot.BotMessage, 100),
 		sessionChannels: make(map[string]BotChannel),
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -109,7 +114,7 @@ func (e *Engine) initializeSessions() error {
 }
 
 // Run starts the engine and begins processing messages
-func (e *Engine) Run() error {
+func (e *Engine) Run(ctx context.Context) error {
 	logger.Info("starting-clibot-engine")
 
 	// Initialize sessions
@@ -134,24 +139,38 @@ func (e *Engine) Run() error {
 
 		log.Printf("Starting %s bot...", botType)
 		go func(bt string, ba bot.BotAdapter) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.WithFields(logrus.Fields{
+						"bot_type": bt,
+						"panic":    r,
+					}).Error("bot-start-panic-recovered")
+				}
+			}()
 			if err := ba.Start(e.HandleBotMessage); err != nil {
-				log.Printf("Failed to start %s bot: %v", bt, err)
+				logger.WithFields(logrus.Fields{
+					"bot_type": bt,
+					"error":    err,
+				}).Error("failed-to-start-bot")
 			}
 		}(botType, botAdapter)
 	}
 
 	// Start main event loop
-	e.runEventLoop()
+	e.runEventLoop(ctx)
 
 	return nil
 }
 
 // runEventLoop runs the main event loop for processing messages
-func (e *Engine) runEventLoop() {
+func (e *Engine) runEventLoop(ctx context.Context) {
 	logger.Info("engine-event-loop-started")
 
 	for {
 		select {
+		case <-ctx.Done():
+			logger.Info("event-loop-shutting-down")
+			return
 		case msg := <-e.messageChan:
 			e.HandleUserMessage(msg)
 		}
@@ -232,7 +251,22 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		e.updateSessionState(session.Name, StateProcessing)
 
 		// Resume watchdog monitoring
-		go e.startWatchdog(session)
+		go func(s *Session) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.WithFields(logrus.Fields{
+						"session": s.Name,
+						"panic":   r,
+					}).Error("watchdog-panic-recovered")
+				}
+			}()
+			if err := e.startWatchdog(s); err != nil {
+				logger.WithFields(logrus.Fields{
+					"session": s.Name,
+					"error":   err,
+				}).Error("watchdog-failed")
+			}
+		}(session)
 
 		return
 	}
@@ -257,7 +291,22 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	e.updateSessionState(session.Name, StateProcessing)
 
 	// Start watchdog monitoring (for detecting interactive prompts)
-	go e.startWatchdog(session)
+	go func(s *Session) {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.WithFields(logrus.Fields{
+					"session": s.Name,
+					"panic":   r,
+				}).Error("watchdog-panic-recovered")
+			}
+		}()
+		if err := e.startWatchdog(s); err != nil {
+			logger.WithFields(logrus.Fields{
+				"session": s.Name,
+				"error":   err,
+			}).Error("watchdog-failed")
+		}
+	}(session)
 }
 
 // HandleSpecialCommand handles special clibot commands
@@ -465,9 +514,11 @@ func (e *Engine) SendToAllBots(message string) {
 }
 
 // startWatchdog starts monitoring for CLI interactive prompts
-func (e *Engine) startWatchdog(session *Session) {
+func (e *Engine) startWatchdog(session *Session) error {
 	// TODO: Implement watchdog monitoring logic
-	log.Printf("Watchdog started for session %s", session.Name)
+	// Issue: https://github.com/keepmind9/clibot/issues/123
+	logger.WithField("session", session.Name).Warn("watchdog-not-implemented")
+	return nil
 }
 
 // startHookServer starts the HTTP hook server
@@ -706,6 +757,11 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 // Stop gracefully stops the engine
 func (e *Engine) Stop() error {
 	logger.Info("stopping-clibot-engine")
+
+	// Cancel context to stop event loop
+	if e.cancel != nil {
+		e.cancel()
+	}
 
 	// Stop hook server with graceful shutdown
 	if e.hookServer != nil {

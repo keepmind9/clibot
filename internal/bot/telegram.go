@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
@@ -12,8 +13,9 @@ import (
 
 // TelegramBot implements BotAdapter interface for Telegram using long polling
 type TelegramBot struct {
-	Token          string
-	Bot            *tgbotapi.BotAPI
+	mu             sync.RWMutex
+	token          string
+	bot            *tgbotapi.BotAPI
 	messageHandler func(BotMessage)
 	ctx            context.Context
 	cancel         context.CancelFunc
@@ -22,21 +24,21 @@ type TelegramBot struct {
 // NewTelegramBot creates a new Telegram bot instance
 func NewTelegramBot(token string) *TelegramBot {
 	return &TelegramBot{
-		Token: token,
+		token: token,
 	}
 }
 
 // Start establishes long polling connection to Telegram and begins listening for messages
 func (t *TelegramBot) Start(messageHandler func(BotMessage)) error {
-	t.messageHandler = messageHandler
+	t.SetMessageHandler(messageHandler)
 	t.ctx, t.cancel = context.WithCancel(context.Background())
 
 	logger.WithFields(logrus.Fields{
-		"token": maskToken(t.Token),
+		"token": maskToken(t.token),
 	}).Info("starting-telegram-bot-with-long-polling")
 
 	// Initialize Telegram bot
-	bot, err := tgbotapi.NewBotAPI(t.Token)
+	bot, err := tgbotapi.NewBotAPI(t.token)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"error": err,
@@ -44,7 +46,9 @@ func (t *TelegramBot) Start(messageHandler func(BotMessage)) error {
 		return fmt.Errorf("failed to initialize Telegram bot: %w", err)
 	}
 
-	t.Bot = bot
+	t.mu.Lock()
+	t.bot = bot
+	t.mu.Unlock()
 
 	logger.WithFields(logrus.Fields{
 		"bot_username": bot.Self.UserName,
@@ -124,8 +128,9 @@ func (t *TelegramBot) handleMessage(message *tgbotapi.Message) {
 	// Only process text messages
 	if message.Text != "" {
 		// Call the handler with BotMessage
-		if t.messageHandler != nil {
-			t.messageHandler(BotMessage{
+		handler := t.GetMessageHandler()
+		if handler != nil {
+			handler(BotMessage{
 				Platform:  "telegram",
 				UserID:    userID,
 				Channel:   chatID,
@@ -138,7 +143,11 @@ func (t *TelegramBot) handleMessage(message *tgbotapi.Message) {
 
 // SendMessage sends a message to a Telegram chat
 func (t *TelegramBot) SendMessage(chatID, message string) error {
-	if t.Bot == nil {
+	t.mu.RLock()
+	bot := t.bot
+	t.mu.RUnlock()
+
+	if bot == nil {
 		return fmt.Errorf("telegram bot not initialized")
 	}
 
@@ -167,7 +176,7 @@ func (t *TelegramBot) SendMessage(chatID, message string) error {
 	msg.ParseMode = "Markdown" // Support markdown formatting
 
 	// Send message
-	_, err := t.Bot.Send(msg)
+	_, err := bot.Send(msg)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"chat_id": chatID,
@@ -186,11 +195,30 @@ func (t *TelegramBot) Stop() error {
 		t.cancel()
 	}
 
-	if t.Bot != nil {
-		t.Bot.StopReceivingUpdates()
+	t.mu.Lock()
+	bot := t.bot
+	t.bot = nil
+	t.mu.Unlock()
+
+	if bot != nil {
+		bot.StopReceivingUpdates()
 		logger.Info("telegram-long-polling-stopped")
 	}
 
 	logger.Info("telegram-bot-stopped")
 	return nil
+}
+
+// SetMessageHandler sets the message handler in a thread-safe manner
+func (t *TelegramBot) SetMessageHandler(handler func(BotMessage)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.messageHandler = handler
+}
+
+// GetMessageHandler gets the message handler in a thread-safe manner
+func (t *TelegramBot) GetMessageHandler() func(BotMessage) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.messageHandler
 }

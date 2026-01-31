@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,39 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/sirupsen/logrus"
 )
+
+const (
+	defaultHookTimeout = 5 * time.Second
+)
+
+// HookNotifier handles HTTP notifications with timeout and cancellation
+type HookNotifier struct {
+	timeout time.Duration
+}
+
+// Notify sends hook data to the engine with timeout control
+func (h *HookNotifier) Notify(ctx context.Context, url string, data []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, h.timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	return nil
+}
 
 var (
 	cliType  string
@@ -63,6 +97,8 @@ Examples:
 			// Forward raw data to Engine asynchronously (non-blocking)
 			// This allows Claude Code to continue without waiting for engine response
 			go func() {
+				// Create a context that outlives the main process
+				ctx := context.Background()
 				url := fmt.Sprintf("http://localhost:%d/hook?cli_type=%s", hookPort, cliType)
 
 				logger.WithFields(logrus.Fields{
@@ -71,30 +107,18 @@ Examples:
 					"size":     len(stdinData),
 				}).Debug("forwarding-hook-data-to-engine-async")
 
-				resp, err := http.Post(url, "application/octet-stream", bytes.NewBuffer(stdinData))
-				if err != nil {
+				notifier := &HookNotifier{timeout: defaultHookTimeout}
+				if err := notifier.Notify(ctx, url, stdinData); err != nil {
 					logger.WithFields(logrus.Fields{
 						"cli_type": cliType,
 						"error":    err,
-					}).Error("hook-request-failed-async")
-					// Don't print to stderr - we've already returned
+					}).Error("hook-notification-failed")
 					return
 				}
-				defer resp.Body.Close()
 
-				if resp.StatusCode == 200 {
-					logger.WithFields(logrus.Fields{
-						"cli_type":    cliType,
-						"status_code": resp.StatusCode,
-					}).Info("hook-notification-succeeded-async")
-				} else {
-					body, _ := io.ReadAll(resp.Body)
-					logger.WithFields(logrus.Fields{
-						"cli_type":     cliType,
-						"status_code":  resp.StatusCode,
-						"response":     string(body),
-					}).Warn("hook-notification-failed-non-200-status-async")
-				}
+				logger.WithFields(logrus.Fields{
+					"cli_type": cliType,
+				}).Info("hook-notification-succeeded")
 			}()
 
 			// Light-weight delay to allow HTTP request to be sent

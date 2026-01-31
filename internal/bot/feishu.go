@@ -2,7 +2,9 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
@@ -16,57 +18,66 @@ import (
 
 // FeishuBot implements BotAdapter interface for Feishu (Lark) using WebSocket long connection
 type FeishuBot struct {
-	AppID           string
-	AppSecret       string
-	EncryptKey      string // Optional, for encrypted events
-	VerificationToken string // Optional, for event verification
-	WSClient        *ws.Client
-	LarkClient      *lark.Client
-	Dispatcher      *dispatcher.EventDispatcher
-	messageHandler  func(BotMessage)
-	ctx             context.Context
-	cancel          context.CancelFunc
+	mu                sync.RWMutex
+	appID             string
+	appSecret         string
+	encryptKey        string // Optional, for encrypted events
+	verificationToken string // Optional, for event verification
+	wsClient          *ws.Client
+	larkClient        *lark.Client
+	dispatcher        *dispatcher.EventDispatcher
+	messageHandler    func(BotMessage)
+	ctx               context.Context
+	cancel            context.CancelFunc
 }
 
 // NewFeishuBot creates a new Feishu bot instance
 func NewFeishuBot(appID, appSecret string) *FeishuBot {
 	return &FeishuBot{
-		AppID:      appID,
-		AppSecret:  appSecret,
-		LarkClient: lark.NewClient(appID, appSecret),
+		appID:       appID,
+		appSecret:   appSecret,
+		larkClient:  lark.NewClient(appID, appSecret),
 	}
 }
 
 // Start establishes WebSocket long connection to Feishu and begins listening for messages
 func (f *FeishuBot) Start(messageHandler func(BotMessage)) error {
-	f.messageHandler = messageHandler
+	f.SetMessageHandler(messageHandler)
 	f.ctx, f.cancel = context.WithCancel(context.Background())
 
 	// Log bot startup
 	logger.WithFields(logrus.Fields{
-		"app_id": maskAppID(f.AppID),
+		"app_id": maskAppID(f.appID),
 	}).Info("starting-feishu-bot-with-websocket-long-connection")
 
 	// Create event dispatcher
-	f.Dispatcher = dispatcher.NewEventDispatcher(f.VerificationToken, f.EncryptKey)
+	f.mu.Lock()
+	f.dispatcher = dispatcher.NewEventDispatcher(f.verificationToken, f.encryptKey)
+	f.mu.Unlock()
 
 	// Register message received event handler
-	f.Dispatcher.OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+	f.mu.RLock()
+	dispatcher := f.dispatcher
+	f.mu.RUnlock()
+	dispatcher.OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 		return f.handleMessageReceive(ctx, event)
 	})
 
 	// Create WebSocket client
-	f.WSClient = ws.NewClient(f.AppID, f.AppSecret,
-		ws.WithEventHandler(f.Dispatcher),
+	f.mu.Lock()
+	f.wsClient = ws.NewClient(f.appID, f.appSecret,
+		ws.WithEventHandler(dispatcher),
 		ws.WithLogLevel(larkcore.LogLevelInfo),
 		ws.WithAutoReconnect(true),
 	)
+	wsClient := f.wsClient
+	f.mu.Unlock()
 
 	// Start long connection (this blocks)
 	go func() {
-		if err := f.WSClient.Start(f.ctx); err != nil {
+		if err := wsClient.Start(f.ctx); err != nil {
 			logger.WithFields(logrus.Fields{
-				"app_id": f.AppID,
+				"app_id": f.appID,
 				"error":  err,
 			}).Error("feishu-websocket-connection-failed")
 		}
@@ -142,8 +153,9 @@ func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2Me
 	}).Info("received-feishu-message-event-parsed")
 
 	// Call the handler with BotMessage
-	if f.messageHandler != nil {
-		f.messageHandler(BotMessage{
+	handler := f.GetMessageHandler()
+	if handler != nil {
+		handler(BotMessage{
 			Platform:  "feishu",
 			UserID:    senderID,
 			Channel:   chatID,
@@ -157,7 +169,12 @@ func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2Me
 
 // SendMessage sends a message to a Feishu chat
 func (f *FeishuBot) SendMessage(chatID, message string) error {
-	if f.LarkClient == nil {
+	f.mu.RLock()
+	larkClient := f.larkClient
+	ctx := f.ctx
+	f.mu.RUnlock()
+
+	if larkClient == nil {
 		return fmt.Errorf("feishu client not initialized")
 	}
 
@@ -191,7 +208,7 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 		Build()
 
 	// Send message
-	resp, err := f.LarkClient.Im.Message.Create(f.ctx, req)
+	resp, err := larkClient.Im.Message.Create(ctx, req)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"chat_id": chatID,
@@ -220,14 +237,40 @@ func (f *FeishuBot) Stop() error {
 		f.cancel()
 	}
 
-	if f.WSClient != nil {
-		// Note: ws.Client doesn't have a Stop method in v3.5.3
-		// The connection is managed by the context
-		logger.Info("feishu-websocket-connection-stopped")
-	}
+	f.mu.Lock()
+	f.wsClient = nil
+	f.mu.Unlock()
 
 	logger.Info("feishu-bot-stopped")
 	return nil
+}
+
+// SetMessageHandler sets the message handler in a thread-safe manner
+func (f *FeishuBot) SetMessageHandler(handler func(BotMessage)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.messageHandler = handler
+}
+
+// GetMessageHandler gets the message handler in a thread-safe manner
+func (f *FeishuBot) GetMessageHandler() func(BotMessage) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.messageHandler
+}
+
+// SetEncryptKey sets the encryption key for event verification
+func (f *FeishuBot) SetEncryptKey(key string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.encryptKey = key
+}
+
+// SetVerificationToken sets the verification token for event verification
+func (f *FeishuBot) SetVerificationToken(token string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.verificationToken = token
 }
 
 // maskAppID masks sensitive app ID information for logging
@@ -238,36 +281,21 @@ func maskAppID(appID string) string {
 	return appID[:4] + "***" + appID[len(appID)-4:]
 }
 
+// TextContent represents the JSON structure of Feishu text message content
+type TextContent struct {
+	Text string `json:"text"`
+}
+
 // extractTextContent extracts actual text from Feishu message content
 // Feishu text message format: {"text":"actual message"}
 func extractTextContent(content string) string {
-	// Simple JSON parsing to extract text field
-	// In production, should use proper JSON unmarshaling
-	if len(content) > 10 && content[:1] == "{" {
-		// Try to find "text":"..." pattern
-		textStart := findInString(content, `"text":"`, 0)
-		if textStart > 0 {
-			textStart += 8 // len(`"text":"`)
-			textEnd := findInString(content, `"`, textStart)
-			if textEnd > textStart {
-				return content[textStart:textEnd]
-			}
-		}
+	var tc TextContent
+	if err := json.Unmarshal([]byte(content), &tc); err != nil {
+		// If parsing fails, return original content
+		logger.WithField("error", err).Debug("failed-to-parse-text-content-json")
+		return content
 	}
-	return content
-}
-
-// findInString finds substring in string starting from index
-func findInString(s, substr string, start int) int {
-	if start >= len(s) {
-		return -1
-	}
-	for i := start; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
+	return tc.Text
 }
 
 // escapeJSONString escapes special characters for JSON string content

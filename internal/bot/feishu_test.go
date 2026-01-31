@@ -22,7 +22,7 @@ func TestExtractTextContent(t *testing.T) {
 		{
 			name:     "text with special chars",
 			content:  `{"text":"hello\nworld"}`,
-			expected: "hello\\nworld",
+			expected: "hello\nworld", // JSON unescape \n to actual newline
 		},
 		{
 			name:     "plain text without JSON",
@@ -32,7 +32,12 @@ func TestExtractTextContent(t *testing.T) {
 		{
 			name:     "empty JSON",
 			content:  `{}`,
-			expected: "{}",
+			expected: "", // Empty text field returns empty string
+		},
+		{
+			name:     "invalid JSON",
+			content:  `{invalid}`,
+			expected: "{invalid}", // Returns original content on parse failure
 		},
 	}
 
@@ -138,9 +143,9 @@ func TestFeishuBot_HandleMessageReceive(t *testing.T) {
 	}
 
 	messagesReceived := []BotMessage{}
-	bot.messageHandler = func(msg BotMessage) {
+	bot.SetMessageHandler(func(msg BotMessage) {
 		messagesReceived = append(messagesReceived, msg)
-	}
+	})
 
 	// Handle the message
 	err := bot.handleMessageReceive(context.Background(), event)

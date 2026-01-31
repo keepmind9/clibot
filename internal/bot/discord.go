@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -25,38 +26,39 @@ type DiscordSessionInterface interface {
 
 // DiscordBot implements BotAdapter interface for Discord
 type DiscordBot struct {
-	Token          string
-	ChannelID      string
-	Session        DiscordSessionInterface
+	mu             sync.RWMutex
+	token          string
+	channelID      string
+	session        DiscordSessionInterface
 	messageHandler func(BotMessage)
 }
 
 // NewDiscordBot creates a new Discord bot instance
 func NewDiscordBot(token, channelID string) *DiscordBot {
 	return &DiscordBot{
-		Token:     token,
-		ChannelID: channelID,
-		Session:   nil, // Will be created in Start()
+		token:     token,
+		channelID: channelID,
+		session:   nil, // Will be created in Start()
 	}
 }
 
 // Start establishes connection to Discord and begins listening for messages
 func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
-	d.messageHandler = messageHandler
+	d.SetMessageHandler(messageHandler)
 
 	// Log bot startup
 	logger.WithFields(logrus.Fields{
-		"token":   maskToken(d.Token),
-		"channel": d.ChannelID,
+		"token":   maskToken(d.token),
+		"channel": d.channelID,
 	}).Info("starting-discord-bot")
 
 	// Create Discord session
-	session, err := discordgo.New("Bot " + d.Token)
+	session, err := discordgo.New("Bot " + d.token)
 	if err != nil {
 		return fmt.Errorf("failed to create discord session: %w", err)
 	}
 
-	d.Session = session
+	d.session = session
 
 	// Register message handler
 	session.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -75,8 +77,9 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 		}).Debug("received-discord-message")
 
 		// Call the handler with BotMessage
-		if d.messageHandler != nil {
-			d.messageHandler(BotMessage{
+		handler := d.GetMessageHandler()
+		if handler != nil {
+			handler(BotMessage{
 				Platform:  "discord",
 				UserID:    m.Author.ID,
 				Channel:   m.ChannelID,
@@ -102,14 +105,19 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 
 // SendMessage sends a message to a Discord channel
 func (d *DiscordBot) SendMessage(channel, message string) error {
-	if d.Session == nil {
+	d.mu.RLock()
+	session := d.session
+	channelID := d.channelID
+	d.mu.RUnlock()
+
+	if session == nil {
 		return fmt.Errorf("discord session not initialized")
 	}
 
 	// Use configured channel if not specified
 	targetChannel := channel
 	if targetChannel == "" {
-		targetChannel = d.ChannelID
+		targetChannel = channelID
 	}
 
 	// Discord limit: 4000 characters
@@ -123,7 +131,7 @@ func (d *DiscordBot) SendMessage(channel, message string) error {
 		message = "..." + message[len(message)-maxDiscordLength+3:]
 	}
 
-	_, err := d.Session.ChannelMessageSend(targetChannel, message)
+	_, err := session.ChannelMessageSend(targetChannel, message)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"channel": targetChannel,
@@ -138,11 +146,16 @@ func (d *DiscordBot) SendMessage(channel, message string) error {
 
 // Stop closes the Discord connection and cleans up resources
 func (d *DiscordBot) Stop() error {
-	if d.Session == nil {
+	d.mu.Lock()
+	session := d.session
+	d.session = nil
+	d.mu.Unlock()
+
+	if session == nil {
 		return nil
 	}
 
-	if err := d.Session.Close(); err != nil {
+	if err := session.Close(); err != nil {
 		return fmt.Errorf("failed to close discord session: %w", err)
 	}
 
@@ -155,4 +168,18 @@ func maskToken(token string) string {
 		return "***"
 	}
 	return token[:7] + "***" + token[len(token)-4:]
+}
+
+// SetMessageHandler sets the message handler in a thread-safe manner
+func (d *DiscordBot) SetMessageHandler(handler func(BotMessage)) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.messageHandler = handler
+}
+
+// GetMessageHandler gets the message handler in a thread-safe manner
+func (d *DiscordBot) GetMessageHandler() func(BotMessage) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.messageHandler
 }
