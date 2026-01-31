@@ -120,7 +120,12 @@ var (
 					engine.RegisterBotAdapter(botType, dingtalkBot)
 					log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
 
-				// TODO: Add other bot adapters (telegram) when implemented
+				case "telegram":
+					telegramBot := bot.NewTelegramBot(botConfig.Token)
+					engine.RegisterBotAdapter(botType, telegramBot)
+					log.Printf("Registered %s bot adapter (long polling)", botType)
+
+				// TODO: Add other bot adapters when implemented
 				default:
 					log.Printf("Warning: Bot type '%s' not implemented yet", botType)
 				}
