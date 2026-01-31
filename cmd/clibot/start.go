@@ -115,6 +115,11 @@ var (
 					engine.RegisterBotAdapter(botType, feishuBot)
 					log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
 
+				case "dingtalk":
+					dingtalkBot := bot.NewDingTalkBot(botConfig.AppID, botConfig.AppSecret)
+					engine.RegisterBotAdapter(botType, dingtalkBot)
+					log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
+
 				// TODO: Add other bot adapters (telegram) when implemented
 				default:
 					log.Printf("Warning: Bot type '%s' not implemented yet", botType)
