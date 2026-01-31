@@ -362,9 +362,10 @@ func (g *GeminiAdapter) CheckInteractive(sessionName string) (bool, string, erro
 func (g *GeminiAdapter) startGemini(sessionName string) error {
 	logger.WithField("session", sessionName).Info("starting-gemini-cli-in-tmux-session")
 
-	// Start Gemini CLI
-	// TODO: Verify the exact command to start Gemini CLI
-	// This might be "gemini chat", "gemini", or something else
+	// Start Gemini CLI using "gemini" command
+	// Note: The exact command may vary depending on Gemini CLI installation.
+	// Common variants are "gemini", "gemini chat", or "gemini-cli".
+	// Update this if the default command doesn't work with your setup.
 	cmd := exec.Command("tmux", "send-keys", "-t", sessionName, "gemini", "C-m")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to start Gemini CLI: %w (output: %s)", err, string(output))

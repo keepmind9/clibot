@@ -1,3 +1,35 @@
+// Package cli provides adapters for AI-powered CLI tools.
+//
+// This package implements a unified interface for interacting with various AI CLI
+// tools such as Claude Code, Gemini CLI, and others. Each adapter handles:
+//
+//   - Session management via tmux
+//   - Input delivery to the CLI
+//   - Response extraction from history files or hooks
+//   - Interactive state detection
+//
+// # Supported CLIs
+//
+//   - Claude Code (claude): Anthropic's AI programming assistant
+//   - Gemini (gemini): Google's AI assistant
+//
+// # Architecture
+//
+// The CLI adapter pattern separates the transport layer (HTTP, file I/O, tmux)
+// from the protocol logic. Each adapter:
+//
+//   1. Creates/manages tmux sessions for the CLI
+//   2. Sends user input via tmux send-keys
+//   3. Receives responses via two mechanisms:
+//      - Hook data: Real-time notifications when CLI completes a task
+//      - History files: Fallback for reading past responses
+//   4. Detects interactive states (prompts, confirmations)
+//
+// # Thread Safety
+//
+// CLI adapters are not thread-safe and should not be accessed concurrently.
+// The engine ensures serialized access to each adapter.
+//
 package cli
 
 // CLIAdapter defines the interface for CLI adapters

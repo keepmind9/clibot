@@ -452,12 +452,15 @@ func (e *Engine) captureTmux(msg bot.BotMessage, parts []string) {
 }
 
 // GetActiveSession gets the active session for a channel
+// Currently returns the default session. Per-channel session mapping is not yet implemented.
+//
+// Future enhancement: Map each bot channel to a specific session for multi-tenancy support.
+// See: https://github.com/keepmind9/clibot/issues/124
 func (e *Engine) GetActiveSession(channel string) *Session {
 	e.sessionMu.RLock()
 	defer e.sessionMu.RUnlock()
 
-	// For now, return the default session
-	// TODO: Implement per-channel session mapping
+	// Return the default session
 	if session, exists := e.sessions[e.config.DefaultSession]; exists {
 		return session
 	}
@@ -515,10 +518,12 @@ func (e *Engine) SendToAllBots(message string) {
 }
 
 // startWatchdog starts monitoring for CLI interactive prompts
+//
+// Note: This is a placeholder for future watchdog monitoring functionality.
+// The current implementation uses hook-based retry mechanism in handleHookRequest.
+// Full watchdog implementation is tracked at: https://github.com/keepmind9/clibot/issues/123
 func (e *Engine) startWatchdog(session *Session) error {
-	// TODO: Implement watchdog monitoring logic
-	// Issue: https://github.com/keepmind9/clibot/issues/123
-	logger.WithField("session", session.Name).Warn("watchdog-not-implemented")
+	logger.WithField("session", session.Name).Debug("watchdog-placeholder-called")
 	return nil
 }
 
@@ -807,12 +812,11 @@ func (e *Engine) Stop() error {
 }
 
 // normalizePath normalizes a path for comparison
-// Removes trailing slashes and expands relative paths if needed
+// Removes trailing slashes from the path.
+//
+// Note: Relative path expansion is not yet implemented. Paths are compared
+// as-is after removing trailing slashes. This works for most cases where both
+// paths are either absolute or both relative to the same location.
 func normalizePath(path string) string {
-	// Remove trailing slash
-	path = strings.TrimSuffix(path, "/")
-
-	// TODO: Expand relative paths to absolute paths
-	// For now, just return the cleaned path
-	return path
+	return strings.TrimSuffix(path, "/")
 }

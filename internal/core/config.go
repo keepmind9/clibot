@@ -1,3 +1,47 @@
+// Package core provides the central engine and configuration management for clibot.
+//
+// The core package implements the main orchestration logic that connects IM platforms
+// with AI CLI tools. It handles:
+//
+//   - Configuration loading and validation (from YAML files)
+//   - Session management for CLI tools
+//   - Message routing between bots and CLI adapters
+//   - HTTP hook server for receiving CLI notifications
+//   - Graceful shutdown and cleanup
+//
+// # Main Components
+//
+//   - Engine: Central orchestration engine
+//   - Config: Configuration structure and loading
+//   - Session: CLI session state management
+//
+// # Configuration
+//
+// Configuration is loaded from a YAML file with the following main sections:
+//
+//   - hook_server: HTTP server settings
+//   - sessions: CLI tool sessions to manage
+//   - bots: IM platform bot configurations
+//   - cli_adapters: CLI tool adapter configurations
+//   - security: Access control and whitelisting
+//   - logging: Log configuration
+//
+// # Example Configuration
+//
+//   hook_server:
+//     port: 8080
+//   sessions:
+//     - name: "my-session"
+//       cli_type: "claude"
+//       work_dir: "/path/to/project"
+//   bots:
+//     discord:
+//       enabled: true
+//       token: "your-bot-token"
+//   cli_adapters:
+//     claude:
+//       history_dir: "~/.config/claude"
+//
 package core
 
 import (

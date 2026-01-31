@@ -364,8 +364,9 @@ func ParseTranscript(filePath string) ([]TranscriptMessage, error) {
 
 // ExtractLastAssistantResponse extracts all assistant messages after the last user message
 //
-// Currently only attempts to parse from transcript file.
-// TODO: Add tmux fallback with session name
+// This function attempts to parse the response from the transcript file.
+// If transcript parsing fails, consider implementing a tmux capture fallback
+// using the session name to directly capture pane output.
 //
 // If no text response is found (e.g., assistant is still thinking), returns empty string.
 func ExtractLastAssistantResponse(transcriptPath string) (string, error) {

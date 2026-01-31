@@ -1,3 +1,42 @@
+// Package logger provides structured logging configuration for clibot.
+//
+// This package initializes and configures logrus for structured logging with support for:
+//
+//   - Multiple log levels (debug, info, warn, error)
+//   - File output with automatic log rotation
+//   - Console output with color formatting
+//   - JSON format for production environments
+//
+// # Configuration
+//
+// Logging behavior is configured through the Config struct:
+//
+//   - Level: Minimum log level to capture (default: "info")
+//   - File: Path to log file (optional)
+//   - MaxSize: Maximum size of single log file in MB (default: 100)
+//   - MaxBackups: Maximum number of old log files to keep (default: 5)
+//   - MaxAge: Maximum number of days to retain old logs (default: 30)
+//   - Compress: Whether to compress rotated logs (default: true)
+//   - EnableStdout: Also output to stdout (default: true)
+//
+// # Usage
+//
+//   // Initialize logger with configuration
+//   config := logger.Config{
+//       Level: "debug",
+//       File: "/var/log/clibot/app.log",
+//       EnableStdout: true,
+//   }
+//   if err := logger.InitLogger(config); err != nil {
+//       log.Fatal(err)
+//   }
+//
+//   // Use structured logging
+//   logger.WithFields(logrus.Fields{
+//       "user": "alice",
+//       "action": "login",
+//   }).Info("User logged in")
+//
 package logger
 
 import (

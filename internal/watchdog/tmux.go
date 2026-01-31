@@ -1,3 +1,38 @@
+// Package watchdog provides tmux session monitoring and output parsing capabilities.
+//
+// The watchdog package handles two main concerns:
+//
+// 1. Low-level tmux operations: CapturePane, SendKeys, StripANSI, IsSessionAlive
+// 2. Content parsing and filtering: ExtractContentAfterPrompt, IsThinking, RemoveUIStatusLines
+//
+// # Tmux Operations
+//
+// This package wraps tmux commands for session management:
+//
+//   - CapturePane: Capture output from a tmux session
+//   - SendKeys: Send keystrokes to a tmux session
+//   - IsSessionAlive: Check if a session exists
+//   - ListSessions: List all active sessions
+//
+// # Content Parsing
+//
+// The parser provides utilities for extracting relevant content from tmux output:
+//
+//   - ExtractContentAfterPrompt: Filters tmux output to show only the latest AI response
+//   - IsThinking: Detects if the AI is still processing (shows "thinking" indicators)
+//   - RemoveUIStatusLines: Removes UI artifacts like "ESC to interrupt"
+//   - StripANSI: Removes ANSI escape codes for clean text
+//
+// # Example Usage
+//
+//   // Capture and parse tmux output
+//   output, err := watchdog.CapturePane("my-session", 100)
+//   if err != nil {
+//       log.Fatal(err)
+//   }
+//   clean := watchdog.StripANSI(output)
+//   filtered := watchdog.ExtractContentAfterPrompt(clean, "my prompt")
+//
 package watchdog
 
 import (

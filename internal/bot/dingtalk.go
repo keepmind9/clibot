@@ -129,9 +129,10 @@ func (d *DingTalkBot) SendMessage(conversationID, message string) error {
 		message = message[:maxDingTalkLength]
 	}
 
-	// TODO: Need SessionWebhook from message context to reply
-	// The replier needs a session webhook URL to send messages
-	// This is a limitation - we need to store the webhook URL per conversation
+	// Note: DingTalk requires session-specific webhook URLs for sending messages.
+	// The webhook URL is received in each incoming message but needs to be stored
+	// and reused for replies. This implementation limitation is tracked at:
+	// https://github.com/keepmind9/clibot/issues/125
 	logger.WithFields(logrus.Fields{
 		"conversation_id": conversationID,
 		"message_length":  len(message),
