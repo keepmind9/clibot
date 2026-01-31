@@ -20,7 +20,6 @@ import (
 const(
 	capturePaneLine = 200
 	tmuxCapturePaneLine = 20
-	promptLen = 30
 )
 
 // Engine is the core scheduling engine that manages CLI sessions and bot connections
