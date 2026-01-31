@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	cliType string
+	cliType  string
+	hookPort int
 
 	hookCmd = &cobra.Command{
 		Use:   "hook --cli-type <type>",
@@ -31,7 +32,8 @@ This command uses an asynchronous notification strategy:
 
 Examples:
   echo '{"session":"my-session","event":"completed"}' | clibot hook --cli-type claude
-  cat hook-data.json | clibot hook --cli-type gemini`,
+  cat hook-data.json | clibot hook --cli-type gemini
+  cat hook-data.json | clibot hook --cli-type claude --port 9000`,
 		Run: func(cmd *cobra.Command, args []string) {
 			// Read raw data from stdin (forward as-is, no parsing)
 			stdinData, err := io.ReadAll(os.Stdin)
@@ -61,7 +63,7 @@ Examples:
 			// Forward raw data to Engine asynchronously (non-blocking)
 			// This allows Claude Code to continue without waiting for engine response
 			go func() {
-				url := fmt.Sprintf("http://localhost:8080/hook?cli_type=%s", cliType)
+				url := fmt.Sprintf("http://localhost:%d/hook?cli_type=%s", hookPort, cliType)
 
 				logger.WithFields(logrus.Fields{
 					"cli_type": cliType,
@@ -114,4 +116,5 @@ Examples:
 func init() {
 	hookCmd.Flags().StringVar(&cliType, "cli-type", "", "CLI type (claude/gemini/opencode)")
 	hookCmd.MarkFlagRequired("cli-type")
+	hookCmd.Flags().IntVarP(&hookPort, "port", "p", 8080, "Hook server port")
 }
