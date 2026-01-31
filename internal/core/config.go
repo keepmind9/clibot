@@ -17,6 +17,13 @@ const (
 	DefaultLogMaxAge      = 30  // days
 	DefaultLogCompress    = true
 	DefaultLogEnableStdout = true
+
+	// Default timeout values
+	DefaultWatchdogMaxRetries   = 10
+	DefaultWatchdogInitialDelay = "500ms"
+	DefaultWatchdogRetryDelay   = "800ms"
+	DefaultTimeout             = "2s"
+	DefaultPollTimeout         = "60s"
 )
 
 // LoadConfig loads configuration from file and expands environment variables
@@ -97,6 +104,28 @@ func validateConfig(config *Config) error {
 	}
 	if !config.Logging.EnableStdout {
 		config.Logging.EnableStdout = DefaultLogEnableStdout
+	}
+
+	// Set default watchdog configuration
+	if config.Watchdog.MaxRetries == 0 {
+		config.Watchdog.MaxRetries = DefaultWatchdogMaxRetries
+	}
+	if config.Watchdog.InitialDelay == "" {
+		config.Watchdog.InitialDelay = DefaultWatchdogInitialDelay
+	}
+	if config.Watchdog.RetryDelay == "" {
+		config.Watchdog.RetryDelay = DefaultWatchdogRetryDelay
+	}
+
+	// Set default timeout values for CLI adapters
+	for cliType, adapter := range config.CLIAdapters {
+		if adapter.Timeout == "" {
+			adapter.Timeout = DefaultTimeout
+		}
+		if adapter.PollTimeout == "" {
+			adapter.PollTimeout = DefaultPollTimeout
+		}
+		config.CLIAdapters[cliType] = adapter
 	}
 
 	// Validate security settings

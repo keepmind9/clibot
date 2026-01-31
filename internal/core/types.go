@@ -56,6 +56,9 @@ type WatchdogConfig struct {
 	Enabled        bool     `yaml:"enabled"`
 	CheckIntervals []string `yaml:"check_intervals"`
 	Timeout        string   `yaml:"timeout"`
+	MaxRetries     int      `yaml:"max_retries"`
+	InitialDelay   string   `yaml:"initial_delay"`
+	RetryDelay     string   `yaml:"retry_delay"`
 }
 
 // SessionConfig represents a session configuration
@@ -79,11 +82,13 @@ type BotConfig struct {
 
 // CLIAdapterConfig represents CLI adapter configuration
 type CLIAdapterConfig struct {
-	HistoryDir  string            `yaml:"history_dir"`
-	HistoryDB   string            `yaml:"history_db"`
-	HistoryFile string            `yaml:"history_file"`
-	HookCommand string            `yaml:"hook_command"`
-	Interactive InteractiveConfig `yaml:"interactive"`
+	HistoryDir   string            `yaml:"history_dir"`
+	HistoryDB    string            `yaml:"history_db"`
+	HistoryFile  string            `yaml:"history_file"`
+	HookCommand  string            `yaml:"hook_command"`
+	Interactive  InteractiveConfig `yaml:"interactive"`
+	Timeout      string            `yaml:"timeout"`      // Connection timeout (e.g., "2s")
+	PollTimeout  string            `yaml:"poll_timeout"` // Long poll timeout (e.g., "60s")
 }
 
 // InteractiveConfig represents interactive detection configuration

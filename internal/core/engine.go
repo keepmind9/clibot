@@ -644,9 +644,21 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 		}).Info("using-tmux-capture-as-fallback-with-user-prompt-filtering")
 
 		// Retry mechanism: wait for Claude to finish thinking
-		const maxRetries = constants.MaxHookRetries
-		const initialDelay = constants.DefaultInitialDelay // Initial delay to let UI render
-		const retryDelay = constants.DefaultRetryDelay     // Delay between retry attempts
+		maxRetries := e.config.Watchdog.MaxRetries
+		if maxRetries == 0 {
+			maxRetries = constants.MaxHookRetries
+		}
+
+		initialDelay, err := time.ParseDuration(e.config.Watchdog.InitialDelay)
+		if err != nil {
+			initialDelay = constants.DefaultInitialDelay
+		}
+
+		retryDelay, err := time.ParseDuration(e.config.Watchdog.RetryDelay)
+		if err != nil {
+			retryDelay = constants.DefaultRetryDelay
+		}
+
 		var lastResponse string
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {

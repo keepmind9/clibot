@@ -58,78 +58,14 @@ var (
 			// Create engine
 			engine := core.NewEngine(config)
 
-			// Register CLI adapters
-			for cliType, cliConfig := range config.CLIAdapters {
-				switch cliType {
-				case "claude":
-					claudeAdapter, err := cli.NewClaudeAdapter(cli.ClaudeAdapterConfig{
-						HistoryDir: cliConfig.HistoryDir,
-						CheckLines: cliConfig.Interactive.CheckLines,
-						Patterns:   cliConfig.Interactive.Patterns,
-					})
-					if err != nil {
-						log.Fatalf("Failed to create Claude CLI adapter: %v", err)
-					}
-					engine.RegisterCLIAdapter(cliType, claudeAdapter)
-					log.Printf("Registered %s CLI adapter", cliType)
-
-				case "gemini":
-					geminiAdapter, err := cli.NewGeminiAdapter(cli.GeminiAdapterConfig{
-						HistoryDir: cliConfig.HistoryDir,
-						CheckLines: cliConfig.Interactive.CheckLines,
-						Patterns:   cliConfig.Interactive.Patterns,
-					})
-					if err != nil {
-						log.Fatalf("Failed to create Gemini CLI adapter: %v", err)
-					}
-					engine.RegisterCLIAdapter(cliType, geminiAdapter)
-					log.Printf("Registered %s CLI adapter", cliType)
-
-				// Add other CLI adapters (opencode) when implemented
-				default:
-					log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
-				}
+			// Register CLI adapters using factory pattern
+			if err := registerCLIAdapters(engine, config); err != nil {
+				log.Fatalf("Failed to register CLI adapters: %v", err)
 			}
 
-			// Register bot adapters
-			for botType, botConfig := range config.Bots {
-				if !botConfig.Enabled {
-					log.Printf("Bot %s is disabled, skipping", botType)
-					continue
-				}
-
-				switch botType {
-				case "discord":
-					discordBot := bot.NewDiscordBot(botConfig.Token, botConfig.ChannelID)
-					engine.RegisterBotAdapter(botType, discordBot)
-					log.Printf("Registered %s bot adapter", botType)
-
-				case "feishu":
-					feishuBot := bot.NewFeishuBot(botConfig.AppID, botConfig.AppSecret)
-					// Set optional encryption fields if provided
-					if botConfig.EncryptKey != "" {
-						feishuBot.SetEncryptKey(botConfig.EncryptKey)
-					}
-					if botConfig.VerificationToken != "" {
-						feishuBot.SetVerificationToken(botConfig.VerificationToken)
-					}
-					engine.RegisterBotAdapter(botType, feishuBot)
-					log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
-
-				case "dingtalk":
-					dingtalkBot := bot.NewDingTalkBot(botConfig.AppID, botConfig.AppSecret)
-					engine.RegisterBotAdapter(botType, dingtalkBot)
-					log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
-
-				case "telegram":
-					telegramBot := bot.NewTelegramBot(botConfig.Token)
-					engine.RegisterBotAdapter(botType, telegramBot)
-					log.Printf("Registered %s bot adapter (long polling)", botType)
-
-				// TODO: Add other bot adapters when implemented
-				default:
-					log.Printf("Warning: Bot type '%s' not implemented yet", botType)
-				}
+			// Register bot adapters using factory pattern
+			if err := registerBotAdapters(engine, config); err != nil {
+				log.Fatalf("Failed to register bot adapters: %v", err)
 			}
 
 			// Setup signal handling for graceful shutdown
@@ -182,4 +118,84 @@ var (
 
 func init() {
 	startCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file path")
+}
+
+// registerCLIAdapters registers all configured CLI adapters using factory pattern
+func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
+	for cliType, cliConfig := range config.CLIAdapters {
+		var adapter cli.CLIAdapter
+		var err error
+
+		switch cliType {
+		case "claude":
+			adapter, err = cli.NewClaudeAdapter(cli.ClaudeAdapterConfig{
+				HistoryDir: cliConfig.HistoryDir,
+				CheckLines: cliConfig.Interactive.CheckLines,
+				Patterns:   cliConfig.Interactive.Patterns,
+			})
+		case "gemini":
+			adapter, err = cli.NewGeminiAdapter(cli.GeminiAdapterConfig{
+				HistoryDir: cliConfig.HistoryDir,
+				CheckLines: cliConfig.Interactive.CheckLines,
+				Patterns:   cliConfig.Interactive.Patterns,
+			})
+		default:
+			log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
+			continue
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to create %s CLI adapter: %w", cliType, err)
+		}
+
+		engine.RegisterCLIAdapter(cliType, adapter)
+		log.Printf("Registered %s CLI adapter", cliType)
+	}
+
+	return nil
+}
+
+// registerBotAdapters registers all configured bot adapters using factory pattern
+func registerBotAdapters(engine *core.Engine, config *core.Config) error {
+	for botType, botConfig := range config.Bots {
+		if !botConfig.Enabled {
+			log.Printf("Bot %s is disabled, skipping", botType)
+			continue
+		}
+
+		var botAdapter bot.BotAdapter
+
+		switch botType {
+		case "discord":
+			botAdapter = bot.NewDiscordBot(botConfig.Token, botConfig.ChannelID)
+			log.Printf("Registered %s bot adapter", botType)
+
+		case "feishu":
+			feishuBot := bot.NewFeishuBot(botConfig.AppID, botConfig.AppSecret)
+			if botConfig.EncryptKey != "" {
+				feishuBot.SetEncryptKey(botConfig.EncryptKey)
+			}
+			if botConfig.VerificationToken != "" {
+				feishuBot.SetVerificationToken(botConfig.VerificationToken)
+			}
+			botAdapter = feishuBot
+			log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
+
+		case "dingtalk":
+			botAdapter = bot.NewDingTalkBot(botConfig.AppID, botConfig.AppSecret)
+			log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
+
+		case "telegram":
+			botAdapter = bot.NewTelegramBot(botConfig.Token)
+			log.Printf("Registered %s bot adapter (long polling)", botType)
+
+		default:
+			log.Printf("Warning: Bot type '%s' not implemented yet", botType)
+			continue
+		}
+
+		engine.RegisterBotAdapter(botType, botAdapter)
+	}
+
+	return nil
 }
