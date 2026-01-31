@@ -17,6 +17,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const(
+	capturePaneLine = 200
+	tmuxCapturePaneLine = 20
+	promptLen = 30
+)
+
 // Engine is the core scheduling engine that manages CLI sessions and bot connections
 type Engine struct {
 	config      *Config
@@ -259,18 +265,28 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
 	log.Printf("Special command: %s", cmd)
 
-	// Parse command
-	// For now, implement basic commands
-	switch cmd {
+	// Parse command and arguments
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ Empty command")
+		return
+	}
+
+	command := parts[0]
+
+	// Handle commands with arguments
+	switch command {
 	case "sessions":
 		e.listSessions(msg)
 	case "status":
 		e.showStatus(msg)
 	case "whoami":
 		e.showWhoami(msg)
+	case "tmux":
+		e.captureTmux(msg, parts)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Unknown command: %s\nAvailable commands: sessions, status, whoami", cmd))
+			fmt.Sprintf("❌ Unknown command: %s\nAvailable commands:\n  sessions - List all sessions\n  status - Show session status\n  whoami - Show current session\n  tmux [lines] - Capture tmux pane (default: 50 lines)", command))
 	}
 }
 
@@ -320,6 +336,70 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 	response := fmt.Sprintf("Current Session:\n  Name: %s\n  CLI: %s\n  State: %s\n  WorkDir: %s",
 		session.Name, session.CLIType, session.State, session.WorkDir)
 	e.SendToBot(msg.Platform, msg.Channel, response)
+}
+
+// captureTmux captures and displays tmux pane content
+// Usage: tmux [lines]
+// If lines is not provided, defaults to 50
+func (e *Engine) captureTmux(msg bot.BotMessage, parts []string) {
+	// Parse line count parameter (default: 50)
+	lines := tmuxCapturePaneLine
+	if len(parts) >= 2 {
+		if _, err := fmt.Sscanf(parts[1], "%d", &lines); err != nil {
+			e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Invalid line count: %s\nUsage: tmux [lines]", parts[1]))
+			return
+		}
+		// Limit to reasonable range (1-1000)
+		if lines < 1 {
+			lines = 1
+		}
+		if lines > 1000 {
+			lines = 1000
+		}
+	}
+
+	// Get current active session
+	session := e.GetActiveSession(msg.Channel)
+	if session == nil {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ No active session")
+		return
+	}
+
+	// Check if session is alive
+	adapter, exists := e.cliAdapters[session.CLIType]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ CLI adapter not found: %s", session.CLIType))
+		return
+	}
+
+	if !adapter.IsSessionAlive(session.Name) {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Session is not running: %s", session.Name))
+		return
+	}
+
+	// Capture tmux pane content
+	output, err := watchdog.CapturePane(session.Name, lines)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": session.Name,
+			"lines":   lines,
+			"error":   err,
+		}).Error("failed-to-capture-tmux-pane")
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to capture tmux pane: %v", err))
+		return
+	}
+
+	// Strip ANSI codes for cleaner output
+	cleanOutput := watchdog.StripANSI(output)
+	// Send response with header
+	response := fmt.Sprintf("📺 Tmux Capture (%s, last %d lines):\n```\n%s\n```", session.Name, lines, cleanOutput)
+	e.SendToBot(msg.Platform, msg.Channel, response)
+
+	logger.WithFields(logrus.Fields{
+		"session":        session.Name,
+		"lines_requested": lines,
+		"output_length":  len(cleanOutput),
+	}).Info("tmux-capture-command-executed")
 }
 
 // GetActiveSession gets the active session for a channel
@@ -514,16 +594,21 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 
 		// Retry mechanism: wait for Claude to finish thinking
 		const maxRetries = 10
+		const initialDelay = 500 * time.Millisecond  // Initial delay to let UI render
 		const retryDelay = 800 * time.Millisecond  // 0.8 seconds (async hook: faster response expected)
 		var lastResponse string
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-			if attempt > 1 {
+			if attempt == 1 {
+				// Initial delay before first capture to let UI render
+				logger.WithField("delay", initialDelay).Debug("initial-delay-before-first-tmux-capture")
+				time.Sleep(initialDelay)
+			} else {
 				logger.WithField("attempt", attempt).Info("retrying-tmux-capture")
 				time.Sleep(retryDelay)
 			}
 
-			tmuxOutput, err := watchdog.CapturePane(session.Name, 200)
+			tmuxOutput, err := watchdog.CapturePane(session.Name, capturePaneLine)
 			if err != nil {
 				logger.WithField("error", err).Warn("failed-to-capture-tmux-pane")
 				break
@@ -693,6 +778,20 @@ func isPromptOrCommand(line string) bool {
 	return false
 }
 
+func canSkip(line string) bool {
+	if line == ""{
+		return true
+	}
+	// Detect and skip UI borders (box drawing characters)
+	for _, runeValue := range line{
+		if strings.ContainsRune("─│┌└┐┘├┤ ╭╮╰╯", runeValue){
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 // extractLastAssistantContent extracts the last meaningful assistant response from tmux output
 // Filters out UI borders, prompts, and system messages
 func extractLastAssistantContent(output string) string {
@@ -700,34 +799,11 @@ func extractLastAssistantContent(output string) string {
 
 	// Filter out borders and UI elements
 	var contentLines []string
-	skipBorder := false
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-
-		// Skip empty lines
-		if trimmed == "" {
+		if canSkip(trimmed){
 			continue
-		}
-
-		// Detect and skip UI borders (box drawing characters)
-		if strings.Contains(trimmed, "─") || strings.Contains(trimmed, "│") ||
-		   strings.Contains(trimmed, "┌") || strings.Contains(trimmed, "└") ||
-		   strings.Contains(trimmed, "┐") || strings.Contains(trimmed, "┘") ||
-		   strings.Contains(trimmed, "├") || strings.Contains(trimmed, "┤") {
-			if strings.Contains(trimmed, "Claude Code") {
-				skipBorder = true
-			}
-			continue
-		}
-
-		// Skip while we're in the border area
-		if skipBorder {
-			if !strings.Contains(trimmed, "─") && !strings.Contains(trimmed, "│") {
-				skipBorder = false
-			} else {
-				continue
-			}
 		}
 
 		// Skip prompts and commands
@@ -749,31 +825,69 @@ func extractLastAssistantContent(output string) string {
 	return result
 }
 
+func hasPromptCharacterPrefix(line string) bool {
+	prefix := []string{
+		"> ",
+		"❯ ",
+		">>>",
+	}
+	for _, pattern := range prefix {
+		if strings.HasPrefix(line, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func eqPromptCharacterData(line string, userPrompt string) bool {
+	prefix := []string{
+		"> ",
+		"❯ ",
+		">>>",
+	}
+	for _, pattern := range prefix {
+		if line == pattern + userPrompt {
+			return true
+		}
+	}
+	return false
+}
+
 // extractContentAfterPrompt extracts content appearing after the user's prompt
 // Searches from the END to find the LAST occurrence of the prompt
 // This filters out historical messages and only returns the latest response
 func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
-	if userPrompt == "" {
-		// No prompt available, use basic extraction
-		return extractLastAssistantContent(tmuxOutput)
-	}
+	// if userPrompt == "" {
+	// 	// No prompt available, use basic extraction
+	// 	return extractLastAssistantContent(tmuxOutput)
+	// }
 
 	lines := strings.Split(tmuxOutput, "\n")
 
 	// Search from the end to find the last occurrence of user prompt
 	promptIndex := -1
 	promptPrefix := userPrompt
-	if len(userPrompt) > 30 {
+	if len(userPrompt) > promptLen {
 		// Use first 30 chars as prefix for matching long prompts
-		promptPrefix = userPrompt[:30]
+		promptPrefix = userPrompt[:promptLen]
 	}
 
 	// Search backwards for the prompt with improved matching logic
 	for i := len(lines) - 1; i >= 0; i-- {
 		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == ""{
+			continue
+		}
+		if userPrompt == "" {
+			if hasPromptCharacterPrefix(trimmed){
+				promptIndex = i
+				break
+			}
+			continue
+		}
 
 		// Priority 1: Exact match (most reliable)
-		if trimmed == userPrompt || trimmed == "❯ "+userPrompt {
+		if trimmed == userPrompt || eqPromptCharacterData(trimmed, userPrompt){
 			promptIndex = i
 			logger.WithFields(logrus.Fields{
 				"line_index":     i,
@@ -784,7 +898,7 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 		}
 
 		// Priority 2: Match with cursor prefix
-		if strings.HasPrefix(trimmed, "❯ ") && strings.Contains(trimmed, userPrompt) {
+		if hasPromptCharacterPrefix(trimmed) && strings.Contains(trimmed, userPrompt) {
 			// Verify it's the actual user prompt, not AI content
 			if isLikelyUserPromptLine(trimmed, userPrompt) {
 				promptIndex = i
@@ -812,7 +926,7 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 		}
 
 		// Priority 4: Prefix match for long prompts
-		if len(userPrompt) > 30 && strings.Contains(trimmed, promptPrefix) {
+		if len(userPrompt) > promptLen && strings.Contains(trimmed, promptPrefix) {
 			if isLikelyUserPromptLine(trimmed, userPrompt) {
 				promptIndex = i
 				logger.WithFields(logrus.Fields{
@@ -833,33 +947,13 @@ func extractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 
 	// Collect content AFTER the prompt (forward from promptIndex + 1)
 	var contentLines []string
-	skipBorder := false
 
 	for i := promptIndex + 1; i < len(lines); i++ {
 		trimmed := strings.TrimSpace(lines[i])
-
-		// Skip empty lines
-		if trimmed == "" {
-			continue
-		}
-
 		// Detect and skip UI borders
-		if strings.Contains(trimmed, "─") || strings.Contains(trimmed, "│") ||
-		   strings.Contains(trimmed, "┌") || strings.Contains(trimmed, "└") {
-			if strings.Contains(trimmed, "Claude Code") {
-				skipBorder = true
-			}
+		if canSkip(trimmed){
 			continue
 		}
-
-		if skipBorder {
-			if !strings.Contains(trimmed, "─") && !strings.Contains(trimmed, "│") {
-				skipBorder = false
-			} else {
-				continue
-			}
-		}
-
 		// Skip prompts and commands
 		if isPromptOrCommand(trimmed) {
 			continue
@@ -921,32 +1015,6 @@ func isThinking(output string) bool {
 			}).Debug("detected-thinking-state-in-recent-lines")
 			return true
 		}
-	}
-
-	return false
-}
-
-// looksLikeIncompleteResponse checks if the response seems incomplete
-func looksLikeIncompleteResponse(response string) bool {
-	// Very short responses might be incomplete
-	if len(response) < 50 {
-		// Check if it ends abruptly without proper punctuation
-		lastChar := response[len(response)-1:]
-		if lastChar != "." && lastChar != "!" && lastChar != "?" &&
-		   lastChar != "。" && lastChar != "！" && lastChar != "？" &&
-		   lastChar != "\n" && lastChar != "`" {
-			return true
-		}
-	}
-
-	// Check for code blocks that might be incomplete
-	if strings.HasSuffix(response, "```") {
-		return true // Incomplete code block
-	}
-
-	// Check for incomplete lists
-	if strings.HasSuffix(response, "-") || strings.HasSuffix(response, "*") {
-		return true
 	}
 
 	return false
