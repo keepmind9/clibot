@@ -51,7 +51,7 @@ func TestIsSpecialCommand_ExactMatch(t *testing.T) {
 			expectedArgs:  nil,
 		},
 
-		// === View command with arguments ===
+		// === View command with numeric arguments ===
 		{
 			name:          "view with single number",
 			input:         "view 100",
@@ -93,6 +93,36 @@ func TestIsSpecialCommand_ExactMatch(t *testing.T) {
 			expectedCmd:   "view",
 			expectedIsCmd: true,
 			expectedArgs:  []string{"50"},
+		},
+
+		// === View command with non-numeric arguments (normal input) ===
+		{
+			name:          "view with help argument - normal input",
+			input:         "view help",
+			expectedCmd:   "",
+			expectedIsCmd: false,
+			expectedArgs:  nil,
+		},
+		{
+			name:          "view with text argument - normal input",
+			input:         "view explain",
+			expectedCmd:   "",
+			expectedIsCmd: false,
+			expectedArgs:  nil,
+		},
+		{
+			name:          "view with negative number",
+			input:         "view -100",
+			expectedCmd:   "view",
+			expectedIsCmd: true,
+			expectedArgs:  []string{"-100"},
+		},
+		{
+			name:          "view with float - normal input",
+			input:         "view 1.5",
+			expectedCmd:   "",
+			expectedIsCmd: false,
+			expectedArgs:  nil,
 		},
 
 		// === Normal input (should NOT match) ===
@@ -258,6 +288,50 @@ func TestIsSpecialCommand_ExactMatch(t *testing.T) {
 			expectedIsCmd: false,
 			expectedArgs:  nil,
 		},
+
+		// === Security: Input length validation (DoS protection) ===
+		{
+			name:          "view with extremely large number - out of range",
+			input:         "view 999999999999999999",
+			expectedCmd:   "",
+			expectedIsCmd: false,
+			expectedArgs:  nil,
+		},
+		{
+			name:          "view with very large positive number - out of range",
+			input:         "view 10001",
+			expectedCmd:   "",
+			expectedIsCmd: false,
+			expectedArgs:  nil,
+		},
+		{
+			name:          "view with very large negative number - out of range",
+			input:         "view -10001",
+			expectedCmd:   "",
+			expectedIsCmd: false,
+			expectedArgs:  nil,
+		},
+		{
+			name:          "view at max range boundary",
+			input:         "view 10000",
+			expectedCmd:   "view",
+			expectedIsCmd: true,
+			expectedArgs:  []string{"10000"},
+		},
+		{
+			name:          "view at negative max range boundary",
+			input:         "view -10000",
+			expectedCmd:   "view",
+			expectedIsCmd: true,
+			expectedArgs:  []string{"-10000"},
+		},
+		{
+			name:          "view with one past max range - normal input",
+			input:         "view 10001",
+			expectedCmd:   "",
+			expectedIsCmd: false,
+			expectedArgs:  nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -344,28 +418,28 @@ func TestIsSpecialCommand_ViewArgsParsing(t *testing.T) {
 			expectMatch:  true,
 		},
 		{
-			name:        "view with word argument",
+			name:        "view with non-numeric argument - normal input",
 			input:       "view help",
-			expectedArgs: []string{"help"},
-			expectMatch:  true,
+			expectedArgs:  nil,
+			expectMatch:  false,
 		},
 		{
-			name:        "view with multiple args",
+			name:        "view with multiple numeric args - only first used",
 			input:       "view 100 200",
-			expectedArgs: []string{"100", "200"},
+			expectedArgs: []string{"100"},  // Only first arg is used
 			expectMatch:  true,
 		},
 		{
-			name:        "view with multiple words",
+			name:        "view with multiple words - normal input",
 			input:       "view help me",
-			expectedArgs: []string{"help", "me"},
-			expectMatch:  true,
+			expectedArgs:  nil,
+			expectMatch:  false,
 		},
 		{
-			name:        "view with leading space - trimmed and matched",
+			name:        "view with leading space - not matched (no trim)",
 			input:       " view 100",
-			expectedArgs: []string{"100"},
-			expectMatch:  true,
+			expectedArgs:  nil,
+			expectMatch:  false,
 		},
 		{
 			name:        "view with trailing space",

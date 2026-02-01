@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,14 @@ import (
 const (
 	capturePaneLine    = constants.DefaultCaptureLines
 	tmuxCapturePaneLine = constants.DefaultManualCaptureLines
+
+	// maxSpecialCommandInputLength is the maximum allowed input length for special commands.
+	// This prevents DoS attacks from extremely long inputs.
+	maxSpecialCommandInputLength = 10000 // 10KB
+
+	// maxViewLines is the maximum allowed line count for the view command.
+	// This prevents integer overflow and excessive resource usage.
+	maxViewLines = 10000
 )
 
 // specialCommands defines commands that can be used without a prefix.
@@ -46,25 +55,39 @@ var specialCommands = map[string]struct{}{
 //
 // Performance characteristics:
 //   - Common case (exact match): 1 map lookup, O(1)
-//   - View with args: HasPrefix + TrimSpace, O(n) where n = input length
+//   - View with args: HasPrefix + Fields, O(n) where n = input length
 //   - Not a command: 1 map lookup, O(1)
 func isSpecialCommand(input string) (string, bool, []string) {
+	// Security: Reject extremely long inputs early (DoS protection)
+	if len(input) > maxSpecialCommandInputLength {
+		return "", false, nil
+	}
+
 	// Fast path: exact match for commands without arguments.
 	// This covers 95% of cases with a single O(1) map lookup.
 	if _, exists := specialCommands[input]; exists {
 		return input, true, nil
 	}
 
-	// Special case: view command with arguments (e.g., "view 100", "view 50")
+	// Special case: view command with numeric arguments (e.g., "view 100", "view 50")
 	// This is the only command that supports arguments.
-	// Trim leading whitespace first, then check "view " prefix.
-	trimmed := strings.TrimLeft(input, " \t\r\n")
-	if len(trimmed) > 4 && trimmed[:4] == "view" {
+	// Arguments must be numeric to avoid false positives (e.g., "view help" → normal input)
+	if len(input) >= 5 && input[:4] == "view" {
 		// Check if 5th character is whitespace (space or tab)
-		if len(trimmed) > 4 && (trimmed[4] == ' ' || trimmed[4] == '\t') {
-			args := strings.Fields(trimmed[5:])
-			if len(args) > 0 {
-				return "view", true, args
+		if input[4] == ' ' || input[4] == '\t' {
+			// Split into fields and use only the first argument
+			fields := strings.Fields(input[5:])
+			if len(fields) > 0 {
+				arg := fields[0]
+				// Validate argument is numeric and within safe range
+				num, err := strconv.Atoi(arg)
+				if err == nil {
+					// Security: Validate range to prevent integer overflow
+					if num >= -maxViewLines && num <= maxViewLines {
+						return "view", true, []string{arg}
+					}
+				}
+				// Not a valid number or out of range → treat as normal input (e.g., "view help", "view abc")
 			}
 		}
 	}
