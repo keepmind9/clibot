@@ -23,6 +23,55 @@ const (
 	tmuxCapturePaneLine = constants.DefaultManualCaptureLines
 )
 
+// specialCommands defines commands that can be used without a prefix.
+// These are matched exactly (case-sensitive) for optimal performance.
+//
+// Performance: O(1) map lookup for exact match commands.
+// Only "view" command supports arguments (special case).
+var specialCommands = map[string]struct{}{
+	"help":     {},
+	"status":   {},
+	"sessions": {},
+	"whoami":   {},
+	"view":     {},
+}
+
+// isSpecialCommand checks if input is a special command.
+//
+// Matching strategy (exact match for maximum performance):
+//   - Exact match: "help", "status", "sessions", "whoami", "view"
+//   - View with args: "view 100", "view 50" (only "view" supports args)
+//
+// Returns: (commandName, isCommand, remainingArgs)
+//
+// Performance characteristics:
+//   - Common case (exact match): 1 map lookup, O(1)
+//   - View with args: HasPrefix + TrimSpace, O(n) where n = input length
+//   - Not a command: 1 map lookup, O(1)
+func isSpecialCommand(input string) (string, bool, []string) {
+	// Fast path: exact match for commands without arguments.
+	// This covers 95% of cases with a single O(1) map lookup.
+	if _, exists := specialCommands[input]; exists {
+		return input, true, nil
+	}
+
+	// Special case: view command with arguments (e.g., "view 100", "view 50")
+	// This is the only command that supports arguments.
+	// Trim leading whitespace first, then check "view " prefix.
+	trimmed := strings.TrimLeft(input, " \t\r\n")
+	if len(trimmed) > 4 && trimmed[:4] == "view" {
+		// Check if 5th character is whitespace (space or tab)
+		if len(trimmed) > 4 && (trimmed[4] == ' ' || trimmed[4] == '\t') {
+			args := strings.Fields(trimmed[5:])
+			if len(args) > 0 {
+				return "view", true, args
+			}
+		}
+	}
+
+	return "", false, nil
+}
+
 // Engine is the core scheduling engine that manages CLI sessions and bot connections
 type Engine struct {
 	config          *Config
@@ -203,15 +252,16 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 
 	logger.WithField("user", msg.UserID).Debug("user-authorized")
 
-	// Step 1: Check if it's a special command
-	prefix := e.config.CommandPrefix
-	if len(msg.Content) > len(prefix) && msg.Content[:len(prefix)] == prefix {
-		cmd := msg.Content[len(prefix):]
+	// Step 1: Check if it's a special command (no prefix required)
+	// Commands are matched exactly for optimal performance
+	input := strings.TrimSpace(msg.Content)
+	if cmd, isCmd, args := isSpecialCommand(input); isCmd {
 		logger.WithFields(logrus.Fields{
 			"command": cmd,
+			"args":    args,
 			"user":    msg.UserID,
 		}).Info("special-command-received")
-		e.HandleSpecialCommand(cmd, msg)
+		e.HandleSpecialCommandWithArgs(cmd, args, msg)
 		return
 	}
 
@@ -221,8 +271,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		logger.WithFields(logrus.Fields{
 			"channel": msg.Channel,
 		}).Warn("no-active-session-found-for-channel")
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ No active session. Use '%ssessions' to list available sessions", prefix))
+		e.SendToBot(msg.Platform, msg.Channel, "❌ No active session. Use 'sessions' to list available sessions")
 		return
 	}
 
@@ -371,18 +420,20 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 
 // HandleSpecialCommand handles special clibot commands
 func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
-	log.Printf("Special command: %s", cmd)
-
-	// Parse command and arguments
+	// Parse command and arguments for backward compatibility
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		e.SendToBot(msg.Platform, msg.Channel, "❌ Empty command")
 		return
 	}
+	e.HandleSpecialCommandWithArgs(parts[0], parts[1:], msg)
+}
 
-	command := parts[0]
+// HandleSpecialCommandWithArgs handles special commands with pre-parsed arguments
+// This is more efficient as it avoids re-parsing the command string
+func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg bot.BotMessage) {
+	logger.WithField("command", command).Info("handling-special-command")
 
-	// Handle commands with arguments
 	switch command {
 	case "help":
 		e.showHelp(msg)
@@ -393,10 +444,12 @@ func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
 	case "whoami":
 		e.showWhoami(msg)
 	case "view":
+		// Reconstruct parts for captureView (expects full parts array)
+		parts := append([]string{command}, args...)
 		e.captureView(msg, parts)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Unknown command: %s\nUse '%shelp' to see available commands", command, e.config.CommandPrefix))
+			fmt.Sprintf("❌ Unknown command: %s\nUse 'help' to see available commands", command))
 	}
 }
 
@@ -450,18 +503,16 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 
 // showHelp displays help information about available commands and keywords
 func (e *Engine) showHelp(msg bot.BotMessage) {
-	prefix := e.config.CommandPrefix
+	help := `📖 **clibot Help**
 
-	help := fmt.Sprintf(`📖 **clibot Help**
+**Special Commands** (no prefix required):
+  help         - Show this help message
+  sessions     - List all available sessions
+  status       - Show status of all sessions
+  whoami       - Show current session info
+  view [n]     - View CLI output (default: 20 lines)
 
-**Special Commands** (use %s prefix):
-  %ssessions    - List all available sessions
-  %sstatus      - Show status of all sessions
-  %swhoami      - Show current session info
-  %sview [n]    - View CLI output (default: 20 lines)
-  %shelp        - Show this help message
-
-**Special Keywords** (send directly, no prefix):
+**Special Keywords** (exact match, case-insensitive):
   tab          - Send Tab key
   esc          - Send Escape key
   stab/s-tab   - Send Shift+Tab
@@ -469,17 +520,17 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   ctrlc/ctrl-c - Send Ctrl+C (interrupt)
 
 **Usage Examples:**
-  %ssessions          → List sessions
-  tab                 → Send Tab key to CLI
-  ctrl-c              → Interrupt current process
-  %sview 100          → View last 100 lines of output
+  help              → Show help
+  status            → Show status
+  tab               → Send Tab key to CLI
+  ctrl-c            → Interrupt current process
+  view 100          → View last 100 lines of output
 
 **Tips:**
-  - Special keywords are case-insensitive (TAB, Tab, tab all work)
-  - Special keywords must match entire input
-  - Use %shelp anytime to see this message`,
-		prefix, prefix, prefix, prefix, prefix, prefix,
-		prefix, prefix, prefix)
+  - Special commands are exact match (case-sensitive)
+  - Special keywords are case-insensitive
+  - Any other input will be sent to the CLI
+  - Use "help" anytime to see this message`
 
 	e.SendToBot(msg.Platform, msg.Channel, help)
 }
