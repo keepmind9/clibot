@@ -1,0 +1,391 @@
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/internal/watchdog"
+	"github.com/sirupsen/logrus"
+)
+
+// OpenCodeAdapterConfig configuration for OpenCode adapter
+type OpenCodeAdapterConfig struct {
+	HistoryDir string   // Directory containing conversation JSON files
+	CheckLines int      // Number of lines to check for interactive prompts
+	Patterns   []string // Regex patterns for interactive prompts
+}
+
+// OpenCodeAdapter implements CLIAdapter for OpenCode
+type OpenCodeAdapter struct {
+	historyDir string           // Expanded path to conversation history directory
+	checkLines int              // Number of lines to check for prompts
+	patterns   []*regexp.Regexp // Compiled regex patterns
+}
+
+// NewOpenCodeAdapter creates a new OpenCode adapter
+// Returns an error if any of the regex patterns fail to compile
+func NewOpenCodeAdapter(config OpenCodeAdapterConfig) (*OpenCodeAdapter, error) {
+	// Expand home directory in historyDir
+	historyDir := expandHome(config.HistoryDir)
+
+	// Compile regex patterns
+	patterns := make([]*regexp.Regexp, len(config.Patterns))
+	for i, pattern := range config.Patterns {
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile pattern '%s': %w", pattern, err)
+		}
+		patterns[i] = compiled
+	}
+
+	return &OpenCodeAdapter{
+		historyDir: historyDir,
+		checkLines: config.CheckLines,
+		patterns:   patterns,
+	}, nil
+}
+
+// SendInput sends input to OpenCode via tmux
+func (o *OpenCodeAdapter) SendInput(sessionName, input string) error {
+	logger.WithFields(logrus.Fields{
+		"session": sessionName,
+		"input":   input,
+		"length":  len(input),
+	}).Debug("sending-input-to-tmux-session")
+
+	if err := watchdog.SendKeys(sessionName, input); err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": sessionName,
+			"error":   err,
+		}).Error("failed-to-send-input-to-tmux")
+		return err
+	}
+
+	return nil
+}
+
+// GetLastResponse retrieves the last assistant response from conversation history
+// This is the fallback method when hook doesn't provide transcript_path
+func (o *OpenCodeAdapter) GetLastResponse(sessionName string) (string, error) {
+	// Try to get from conversation history files (fallback)
+	content, err := GetLastOpenCodeResponse(o.historyDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to get last response: %w", err)
+	}
+
+	return content, nil
+}
+
+// HandleHookData handles raw hook data from OpenCode
+// Expected data format (JSON):
+//   {"cwd": "/path/to/workdir", "session_id": "...", "transcript_path": "...", ...}
+//
+// This returns the cwd as the session identifier, which will be matched against
+// the configured session's work_dir in the engine.
+//
+// Parameter data: raw hook data (JSON bytes)
+// Returns: (cwd, lastUserPrompt, response, error)
+func (o *OpenCodeAdapter) HandleHookData(data []byte) (string, string, string, error) {
+	// Parse JSON
+	var hookData map[string]interface{}
+	if err := json.Unmarshal(data, &hookData); err != nil {
+		logger.WithField("error", err).Error("failed-to-parse-hook-json-data")
+		return "", "", "", fmt.Errorf("failed to parse JSON data: %w", err)
+	}
+
+	// Extract cwd (current working directory) - used to match the tmux session
+	cwd, ok := hookData["cwd"].(string)
+	if !ok {
+		logger.Warn("missing-cwd-in-hook-data")
+		return "", "", "", fmt.Errorf("missing cwd in hook data")
+	}
+
+	// Extract transcript_path (contains the conversation history)
+	transcriptPath, ok := hookData["transcript_path"].(string)
+	if !ok {
+		logger.Warn("missing-transcript-path-in-hook-data")
+		return "", "", "", fmt.Errorf("missing transcript_path in hook data")
+	}
+
+	// Extract hook_event_name to check if this is a notification event
+	hookEventName := ""
+	if v, ok := hookData["hook_event_name"].(string); ok {
+		hookEventName = v
+	}
+
+	logger.WithFields(logrus.Fields{
+		"cwd":             cwd,
+		"transcript_path": transcriptPath,
+		"hook_event_name": hookEventName,
+	}).Debug("hook-data-parsed")
+
+	var lastUserPrompt string
+	var response string
+	var err error
+
+	// Only extract response for non-notification events
+	// Notification events don't have assistant responses to extract
+	if !strings.EqualFold(hookEventName, "Notification") {
+		response, err = extractFromOpenCodeTranscript(transcriptPath)
+		if err != nil {
+			// Don't fail the hook - transcript parsing errors are not critical
+			logger.WithFields(logrus.Fields{
+				"transcript": transcriptPath,
+				"error":      err,
+			}).Warn("failed-to-extract-response-from-transcript")
+		}
+	} else {
+		logger.WithField("hook_event_name", hookEventName).Debug("skipping-response-extraction-for-notification-event")
+	}
+
+	// Extract user prompt for tmux filtering when response is empty or extraction failed
+	if response == "" || err != nil {
+		lastUserPrompt, err = extractLastUserPromptFromTranscript(transcriptPath)
+		if err != nil {
+			logger.WithField("error", err).Debug("failed-to-extract-last-user-prompt")
+		} else {
+			logger.WithField("last_user_prompt", lastUserPrompt).Debug("extracted-last-user-prompt")
+		}
+	}
+
+	logger.WithFields(logrus.Fields{
+		"cwd":          cwd,
+		"response_len": len(response),
+	}).Info("response-extracted-from-transcript")
+
+	return cwd, lastUserPrompt, response, nil
+}
+
+// IsSessionAlive checks if the tmux session is still running
+func (o *OpenCodeAdapter) IsSessionAlive(sessionName string) bool {
+	return watchdog.IsSessionAlive(sessionName)
+}
+
+// CreateSession creates a new tmux session and starts OpenCode
+func (o *OpenCodeAdapter) CreateSession(sessionName, cliType, workDir string) error {
+	// Create tmux session
+	args := []string{"new-session", "-d", "-s", sessionName}
+
+	// Set working directory if specified
+	if workDir != "" {
+		workDir = expandHome(workDir)
+		args = append(args, "-c", workDir)
+	}
+
+	cmd := exec.Command("tmux", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create tmux session %s: %w (output: %s)", sessionName, err, string(output))
+	}
+
+	// Start OpenCode in the session
+	if err := o.startOpenCode(sessionName); err != nil {
+		return fmt.Errorf("failed to start OpenCode: %w", err)
+	}
+
+	return nil
+}
+
+// CheckInteractive checks if OpenCode is waiting for user input
+func (o *OpenCodeAdapter) CheckInteractive(sessionName string) (bool, string, error) {
+	// Capture last N lines from tmux session
+	output, err := watchdog.CapturePane(sessionName, o.checkLines)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to capture pane: %w", err)
+	}
+
+	// Split into lines
+	lines := strings.Split(output, "\n")
+
+	// Check last N lines for interactive prompts
+	// Only check the last checkLines lines to avoid false positives
+	startIdx := len(lines) - o.checkLines
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	relevantLines := lines[startIdx:]
+
+	// Check each line for patterns
+	for _, line := range relevantLines {
+		// Strip ANSI codes
+		clean := watchdog.StripANSI(line)
+
+		// Check against all patterns
+		for _, pattern := range o.patterns {
+			if pattern.MatchString(clean) {
+				return true, clean, nil
+			}
+		}
+	}
+
+	return false, "", nil
+}
+
+// startOpenCode starts OpenCode in the specified tmux session
+func (o *OpenCodeAdapter) startOpenCode(sessionName string) error {
+	logger.WithField("session", sessionName).Info("starting-opencode-cli-in-tmux-session")
+
+	// Start OpenCode using "opencode" command
+	// Note: The exact command may vary depending on OpenCode installation.
+	// Common variants are "opencode", "opencode-cli", or "cursor".
+	// Update this if the default command doesn't work with your setup.
+	cmd := exec.Command("tmux", "send-keys", "-t", sessionName, "opencode", "C-m")
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to start OpenCode CLI: %w (output: %s)", err, string(output))
+	}
+
+	logger.WithField("session", sessionName).Info("opencode-cli-started-successfully")
+	return nil
+}
+
+// ========== OpenCode Transcript Parsing ==========
+
+// OpenCodeTranscript represents the structure of OpenCode's conversation history
+// OpenCode stores conversations in JSON files similar to Claude's format
+type OpenCodeTranscript struct {
+	Messages []OpenCodeMessage `json:"messages"`
+}
+
+// OpenCodeMessage represents a single message in OpenCode's transcript
+type OpenCodeMessage struct {
+	Type    string `json:"type"`     // "user", "assistant", "progress", "error"
+	Content string `json:"content"`   // Message content
+	Metadata Metadata              `json:"metadata,omitempty"`
+}
+
+// Metadata represents additional message metadata
+type Metadata struct {
+	SessionID   string `json:"session_id"`
+	Timestamp   string `json:"timestamp"`
+	Model       string `json:"model,omitempty"`
+}
+
+// extractFromOpenCodeTranscript extracts the last assistant response from OpenCode's transcript file
+func extractFromOpenCodeTranscript(transcriptPath string) (string, error) {
+	logger.WithField("transcript", transcriptPath).Debug("starting-opencode-transcript-extraction")
+
+	// Read transcript file
+	file, err := os.Open(transcriptPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open transcript file: %w", err)
+	}
+	defer file.Close()
+
+	// Parse JSON
+	var transcript OpenCodeTranscript
+	if err := json.NewDecoder(file).Decode(&transcript); err != nil {
+		return "", fmt.Errorf("failed to parse transcript JSON: %w", err)
+	}
+
+	// Find last assistant message
+	var lastAssistantContent string
+	for i := len(transcript.Messages) - 1; i >= 0; i-- {
+		msg := transcript.Messages[i]
+		if msg.Type == "assistant" && msg.Content != "" {
+			lastAssistantContent = msg.Content
+			break
+		}
+	}
+
+	if lastAssistantContent == "" {
+		return "", fmt.Errorf("no assistant message found in transcript")
+	}
+
+	logger.WithFields(logrus.Fields{
+		"transcript":    transcriptPath,
+		"response_len":  len(lastAssistantContent),
+	}).Info("opencode-response-extracted-from-transcript")
+
+	return lastAssistantContent, nil
+}
+
+// extractLastUserPromptFromTranscript extracts the last user message from OpenCode's transcript
+// This is used for filtering tmux output to show only the latest response
+func extractLastUserPromptFromTranscript(transcriptPath string) (string, error) {
+	file, err := os.Open(transcriptPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open transcript file: %w", err)
+	}
+	defer file.Close()
+
+	var transcript OpenCodeTranscript
+	if err := json.NewDecoder(file).Decode(&transcript); err != nil {
+		return "", fmt.Errorf("failed to parse transcript JSON: %w", err)
+	}
+
+	// Find last user message
+	for i := len(transcript.Messages) - 1; i >= 0; i-- {
+		msg := transcript.Messages[i]
+		if msg.Type == "user" && msg.Content != "" {
+			// Extract first line or first 50 chars for matching
+			prompt := msg.Content
+			if strings.Contains(prompt, "\n") {
+				prompt = strings.Split(prompt, "\n")[0]
+			}
+			if len(prompt) > 50 {
+				prompt = prompt[:50]
+			}
+			return prompt, nil
+		}
+	}
+
+	return "", fmt.Errorf("no user message found in transcript")
+}
+
+// GetLastOpenCodeResponse retrieves the latest assistant response from OpenCode history files
+// This scans the history directory for the most recent conversation file
+func GetLastOpenCodeResponse(historyDir string) (string, error) {
+	logger.WithField("history_dir", historyDir).Debug("scanning-opencode-history-directory")
+
+	// Find all JSON files in history directory
+	entries, err := os.ReadDir(historyDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to read history directory: %w", err)
+	}
+
+	// Helper structure to hold file info with mod time
+	type jsonFile struct {
+		name    string
+		modTime time.Time
+	}
+
+	var jsonFiles []jsonFile
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			info, err := entry.Info()
+			if err != nil {
+				logger.WithField("file", entry.Name()).Warn("failed-to-get-file-info")
+				continue
+			}
+			jsonFiles = append(jsonFiles, jsonFile{
+				name:    entry.Name(),
+				modTime: info.ModTime(),
+			})
+		}
+	}
+
+	if len(jsonFiles) == 0 {
+		return "", fmt.Errorf("no JSON files found in history directory")
+	}
+
+	// Sort by modification time, newest first
+	sort.Slice(jsonFiles, func(i, j int) bool {
+		return jsonFiles[i].modTime.After(jsonFiles[j].modTime)
+	})
+
+	// Try the most recent file
+	mostRecent := jsonFiles[0]
+	transcriptPath := historyDir + "/" + mostRecent.name
+
+	logger.WithField("transcript", mostRecent.name).Debug("extracting-from-latest-opencode-transcript")
+
+	return extractFromOpenCodeTranscript(transcriptPath)
+}

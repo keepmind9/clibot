@@ -139,6 +139,12 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 				CheckLines: cliConfig.Interactive.CheckLines,
 				Patterns:   cliConfig.Interactive.Patterns,
 			})
+		case "opencode":
+			adapter, err = cli.NewOpenCodeAdapter(cli.OpenCodeAdapterConfig{
+				HistoryDir: cliConfig.HistoryDir,
+				CheckLines: cliConfig.Interactive.CheckLines,
+				Patterns:   cliConfig.Interactive.Patterns,
+			})
 		default:
 			log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
 			continue
