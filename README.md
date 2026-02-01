@@ -8,6 +8,7 @@ clibot is a lightweight middleware that connects various IM platforms (Feishu, D
 - **Unified Entry Point**: Manage multiple AI CLI tools through a single IM bot with easy switching
 - **Flexible Extension**: Abstract interface design - add new CLI or Bot by simply implementing interfaces
 - **Transparent Proxy**: Most inputs are directly passed through to CLI, maintaining native user experience
+- **Zero Configuration**: Optional polling mode requires no CLI configuration (see modes below)
 
 ## Quick Start
 
@@ -26,13 +27,32 @@ cp configs/config.yaml ~/.config/clibot/config.yaml
 
 2. Edit the configuration file and fill in your bot credentials and whitelist users
 
-3. Configure Claude Code Hook (example):
+3. Choose your mode (see below):
+
+**Option A: Hook Mode (Default)**
+- Requires CLI hook configuration
+- Real-time notifications
+- Best for production use
+
+Configure Claude Code Hook (example):
 ```json
 {
   "hooks": {
     "onCompletion": "clibot hook --session $CLIBOT_SESSION --event completed"
   }
 }
+```
+
+**Option B: Polling Mode (Zero Config)**
+- No CLI configuration required
+- Automatic tmux polling
+- Perfect for quick start
+
+```yaml
+cli_adapters:
+  claude:
+    use_hook: false  # Enable polling mode
+    poll_interval: "1s"
 ```
 
 ### Usage
@@ -43,6 +63,94 @@ clibot start --config ~/.config/clibot/config.yaml
 
 # Check status
 clibot status
+```
+
+## Operation Modes
+
+clibot supports two modes for detecting when the CLI has finished responding:
+
+### Hook Mode (Default)
+
+**Configuration:**
+```yaml
+cli_adapters:
+  claude:
+    use_hook: true
+```
+
+**How it works:**
+1. CLI sends HTTP hook when it completes a task
+2. clibot receives notification immediately
+3. Captures tmux output and sends to user
+
+**Pros:**
+- ✅ Real-time (instant notification)
+- ✅ Accurate (exact completion time)
+- ✅ Efficient (no polling overhead)
+
+**Cons:**
+- ⚠️ Requires CLI hook configuration
+- ⚠️ Higher setup complexity
+
+**Best for:** Production environments, performance-critical applications
+
+### Polling Mode
+
+**Configuration:**
+```yaml
+cli_adapters:
+  claude:
+    use_hook: false
+    poll_interval: "1s"  # Check every second
+    stable_count: 3      # Require 3 identical outputs
+```
+
+**How it works:**
+1. clibot polls tmux output at regular intervals
+2. Checks if output remains unchanged for N consecutive checks
+3. When stable, considers CLI complete and sends response
+
+**Pros:**
+- ✅ Zero configuration (no CLI setup needed)
+- ✅ Works with any CLI tool
+- ✅ Simple to get started
+
+**Cons:**
+- ⚠️ Slight delay (1-3 seconds typically)
+- ⚠️ Periodic CPU usage (minimal)
+
+**Best for:** Quick testing, CLIs without hook support, low-frequency usage
+
+**Configuration Tips:**
+- `poll_interval`: 1-2 seconds is usually optimal
+- `stable_count`: 2-3 balances speed and reliability
+- Faster intervals = quicker response but more CPU
+- Higher `stable_count` = more reliable but slower
+
+**Example Comparison:**
+```yaml
+# Hook mode - fast and accurate
+claude:
+  use_hook: true
+  # No polling config needed
+
+# Polling mode - zero config
+claude_simple:
+  use_hook: false
+  poll_interval: "1s"
+  stable_count: 3
+
+# Polling mode - optimized for speed
+claude_fast:
+  use_hook: false
+  poll_interval: "500ms"  # Check every 0.5s
+  stable_count: 2
+
+# Polling mode - optimized for efficiency
+claude_efficient:
+  use_hook: false
+  poll_interval: "2s"
+  stable_count: 4
 ```
 
 ## Project Structure

@@ -1,5 +1,7 @@
 package core
 
+import "context"
+
 // SessionState represents the current state of a session
 type SessionState string
 
@@ -12,11 +14,12 @@ const (
 
 // Session represents a tmux session with its metadata
 type Session struct {
-	Name      string       // tmux session name
-	CLIType   string       // claude/gemini/opencode
-	WorkDir   string       // Working directory
-	State     SessionState // Current state
-	CreatedAt string       // Creation timestamp
+	Name      string                // tmux session name
+	CLIType   string                // claude/gemini/opencode
+	WorkDir   string                // Working directory
+	State     SessionState         // Current state
+	CreatedAt string                // Creation timestamp
+	cancelCtx context.CancelFunc // Cancel function for active watchdog goroutine
 }
 
 // ResponseEvent represents a CLI response event
@@ -87,8 +90,13 @@ type CLIAdapterConfig struct {
 	HistoryFile  string            `yaml:"history_file"`
 	HookCommand  string            `yaml:"hook_command"`
 	Interactive  InteractiveConfig `yaml:"interactive"`
-	Timeout      string            `yaml:"timeout"`      // Connection timeout (e.g., "2s")
-	PollTimeout  string            `yaml:"poll_timeout"` // Long poll timeout (e.g., "60s")
+	Timeout      string            `yaml:"timeout"`       // Connection timeout (e.g., "2s")
+	PollTimeout  string            `yaml:"poll_timeout"`  // Long poll timeout (e.g., "60s")
+
+	// Polling mode configuration (alternative to hook mode)
+	UseHook      bool   `yaml:"use_hook"`       // Use hook mode (true) or polling mode (false). Default: true
+	PollInterval string `yaml:"poll_interval"`  // Polling interval (e.g., "1s"). Default: "1s"
+	StableCount   int    `yaml:"stable_count"`   // Consecutive stable checks required. Default: 3
 }
 
 // InteractiveConfig represents interactive detection configuration

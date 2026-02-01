@@ -46,8 +46,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// tmuxSemaphore limits concurrent tmux operations to prevent system overload
+// Max 50 concurrent tmux operations allowed
+var tmuxSemaphore = make(chan struct{}, 50)
+
 // CapturePane captures the last N lines from a tmux session
 func CapturePane(sessionName string, lines int) (string, error) {
+	// Acquire semaphore slot (blocks if 50 operations are already running)
+	tmuxSemaphore <- struct{}{}
+	defer func() { <-tmuxSemaphore }()
+
 	// Build tmux command to capture pane
 	// Use -S flag for start line (negative means from end)
 	// Format: -S -N captures N lines from the end

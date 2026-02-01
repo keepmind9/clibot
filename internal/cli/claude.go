@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/keepmind9/clibot/internal/watchdog"
@@ -19,6 +20,12 @@ type ClaudeAdapterConfig struct {
 	HistoryDir string   // Directory containing conversation JSON files
 	CheckLines int      // Number of lines to check for interactive prompts
 	Patterns   []string // Regex patterns for interactive prompts
+
+	// Polling mode configuration (when UseHook = false)
+	UseHook      bool          // Use hook mode (true) or polling mode (false). Default: true
+	PollInterval time.Duration // Polling interval. Default: 1s
+	StableCount  int           // Consecutive stable checks required. Default: 3
+	PollTimeout  time.Duration // Maximum time to wait. Default: 120s
 }
 
 // ClaudeAdapter implements CLIAdapter for Claude Code
@@ -26,6 +33,12 @@ type ClaudeAdapter struct {
 	historyDir string           // Expanded path to conversation history directory
 	checkLines int              // Number of lines to check for prompts
 	patterns   []*regexp.Regexp // Compiled regex patterns
+
+	// Polling mode configuration
+	useHook      bool
+	pollInterval time.Duration
+	stableCount  int
+	pollTimeout  time.Duration
 }
 
 // NewClaudeAdapter creates a new Claude Code adapter
@@ -47,10 +60,22 @@ func NewClaudeAdapter(config ClaudeAdapterConfig) (*ClaudeAdapter, error) {
 		patterns[i] = compiled
 	}
 
+	// Set defaults for polling config
+	useHook := config.UseHook
+	// Note: Default value is set in config.go validation
+	// If not specified in YAML, use_hook defaults to true (hook mode)
+
+	pollInterval, stableCount, pollTimeout := normalizePollingConfig(
+		config.PollInterval, config.StableCount, config.PollTimeout)
+
 	return &ClaudeAdapter{
-		historyDir: historyDir,
-		checkLines: config.CheckLines,
-		patterns:   patterns,
+		historyDir:   historyDir,
+		checkLines:   config.CheckLines,
+		patterns:     patterns,
+		useHook:      useHook,
+		pollInterval: pollInterval,
+		stableCount:  stableCount,
+		pollTimeout:  pollTimeout,
 	}, nil
 }
 
@@ -232,6 +257,26 @@ func (c *ClaudeAdapter) CheckInteractive(sessionName string) (bool, string, erro
 	}
 
 	return false, "", nil
+}
+
+// UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
+func (c *ClaudeAdapter) UseHook() bool {
+	return c.useHook
+}
+
+// GetPollInterval returns the polling interval for polling mode
+func (c *ClaudeAdapter) GetPollInterval() time.Duration {
+	return c.pollInterval
+}
+
+// GetStableCount returns the number of consecutive stable checks required
+func (c *ClaudeAdapter) GetStableCount() int {
+	return c.stableCount
+}
+
+// GetPollTimeout returns the maximum time to wait for completion
+func (c *ClaudeAdapter) GetPollTimeout() time.Duration {
+	return c.pollTimeout
 }
 
 // startClaude starts Claude Code in the specified tmux session

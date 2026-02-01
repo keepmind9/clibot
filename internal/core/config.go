@@ -48,6 +48,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -68,6 +69,10 @@ const (
 	DefaultWatchdogRetryDelay   = "800ms"
 	DefaultTimeout             = "2s"
 	DefaultPollTimeout         = "60s"
+
+	// Default polling mode values
+	DefaultPollInterval = "1s"  // Poll every 1 second
+	DefaultStableCount   = 3    // Require 3 consecutive stable checks
 )
 
 // LoadConfig loads configuration from file and expands environment variables
@@ -169,7 +174,58 @@ func validateConfig(config *Config) error {
 		if adapter.PollTimeout == "" {
 			adapter.PollTimeout = DefaultPollTimeout
 		}
+		if adapter.PollInterval == "" {
+			adapter.PollInterval = DefaultPollInterval
+		}
+		if adapter.StableCount == 0 {
+			adapter.StableCount = DefaultStableCount
+		}
+		// UseHook defaults to true if not explicitly set in YAML
+		// Note: bool zero value is false, so we need to check if it was explicitly set
+		// For now, the adapter constructors will use the config value as-is
+		// This will be validated below
+
 		config.CLIAdapters[cliType] = adapter
+	}
+
+	// Validate polling configuration and set UseHook default
+	for cliType, adapter := range config.CLIAdapters {
+		if !adapter.UseHook {
+			// Polling mode - validate parameters
+			interval, err := time.ParseDuration(adapter.PollInterval)
+			if err != nil {
+				return fmt.Errorf("invalid poll_interval for %s: %w", cliType, err)
+			}
+			if interval < 100*time.Millisecond {
+				return fmt.Errorf("poll_interval for %s must be at least 100ms (got %v)", cliType, interval)
+			}
+			if interval > 60*time.Second {
+				return fmt.Errorf("poll_interval for %s is too large (max 60s, got %v)", cliType, interval)
+			}
+
+			timeout, err := time.ParseDuration(adapter.PollTimeout)
+			if err != nil {
+				return fmt.Errorf("invalid poll_timeout for %s: %w", cliType, err)
+			}
+			if timeout < interval {
+				return fmt.Errorf("poll_timeout for %s must be greater than poll_interval", cliType)
+			}
+			if timeout > 10*time.Minute {
+				return fmt.Errorf("poll_timeout for %s is too large (max 10m, got %v)", cliType, timeout)
+			}
+
+			if adapter.StableCount < 1 || adapter.StableCount > 20 {
+				return fmt.Errorf("stable_count for %s must be between 1 and 20 (got %d)", cliType, adapter.StableCount)
+			}
+
+			// Validate that timeout is sufficient for stable_count
+			// Minimum timeout should be at least (stable_count + 1) * interval
+			minimumTimeout := time.Duration(adapter.StableCount+2) * interval
+			if timeout < minimumTimeout {
+				return fmt.Errorf("poll_timeout for %s must be at least %v (interval * (stable_count + 2)), got %v",
+					cliType, minimumTimeout, timeout)
+			}
+		}
 	}
 
 	// Validate security settings

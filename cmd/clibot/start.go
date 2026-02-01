@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/cli"
@@ -126,24 +127,47 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 		var adapter cli.CLIAdapter
 		var err error
 
+		// Parse polling configuration
+		pollInterval, err := time.ParseDuration(cliConfig.PollInterval)
+		if err != nil {
+			return fmt.Errorf("failed to parse poll_interval for %s: %w", cliType, err)
+		}
+
+		pollTimeout, err := time.ParseDuration(cliConfig.PollTimeout)
+		if err != nil {
+			return fmt.Errorf("failed to parse poll_timeout for %s: %w", cliType, err)
+		}
+
 		switch cliType {
 		case "claude":
 			adapter, err = cli.NewClaudeAdapter(cli.ClaudeAdapterConfig{
-				HistoryDir: cliConfig.HistoryDir,
-				CheckLines: cliConfig.Interactive.CheckLines,
-				Patterns:   cliConfig.Interactive.Patterns,
+				HistoryDir:   cliConfig.HistoryDir,
+				CheckLines:   cliConfig.Interactive.CheckLines,
+				Patterns:     cliConfig.Interactive.Patterns,
+				UseHook:      cliConfig.UseHook,
+				PollInterval: pollInterval,
+				StableCount:  cliConfig.StableCount,
+				PollTimeout:  pollTimeout,
 			})
 		case "gemini":
 			adapter, err = cli.NewGeminiAdapter(cli.GeminiAdapterConfig{
-				HistoryDir: cliConfig.HistoryDir,
-				CheckLines: cliConfig.Interactive.CheckLines,
-				Patterns:   cliConfig.Interactive.Patterns,
+				HistoryDir:   cliConfig.HistoryDir,
+				CheckLines:   cliConfig.Interactive.CheckLines,
+				Patterns:     cliConfig.Interactive.Patterns,
+				UseHook:      cliConfig.UseHook,
+				PollInterval: pollInterval,
+				StableCount:  cliConfig.StableCount,
+				PollTimeout:  pollTimeout,
 			})
 		case "opencode":
 			adapter, err = cli.NewOpenCodeAdapter(cli.OpenCodeAdapterConfig{
-				HistoryDir: cliConfig.HistoryDir,
-				CheckLines: cliConfig.Interactive.CheckLines,
-				Patterns:   cliConfig.Interactive.Patterns,
+				HistoryDir:   cliConfig.HistoryDir,
+				CheckLines:   cliConfig.Interactive.CheckLines,
+				Patterns:     cliConfig.Interactive.Patterns,
+				UseHook:      cliConfig.UseHook,
+				PollInterval: pollInterval,
+				StableCount:  cliConfig.StableCount,
+				PollTimeout:  pollTimeout,
 			})
 		default:
 			log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
@@ -155,7 +179,13 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 		}
 
 		engine.RegisterCLIAdapter(cliType, adapter)
-		log.Printf("Registered %s CLI adapter", cliType)
+
+		// Log mode
+		mode := "hook"
+		if !cliConfig.UseHook {
+			mode = "polling"
+		}
+		log.Printf("Registered %s CLI adapter (mode: %s)", cliType, mode)
 	}
 
 	return nil

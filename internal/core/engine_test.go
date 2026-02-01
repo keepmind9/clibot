@@ -68,6 +68,22 @@ func (m *MockCLIAdapter) CheckInteractive(sessionName string) (bool, string, err
 	return m.checkInteractive.Waiting, m.checkInteractive.Prompt, m.checkInteractive.Err
 }
 
+func (m *MockCLIAdapter) UseHook() bool {
+	return true // Default to hook mode for tests
+}
+
+func (m *MockCLIAdapter) GetPollInterval() time.Duration {
+	return 1 * time.Second
+}
+
+func (m *MockCLIAdapter) GetStableCount() int {
+	return 3
+}
+
+func (m *MockCLIAdapter) GetPollTimeout() time.Duration {
+	return 120 * time.Second
+}
+
 func (m *MockCLIAdapter) HandleHookData(data []byte) (string, string, string, error) {
 	// Mock implementation for testing
 	return "mock-cwd", "mock-prompt", "mock-response", nil

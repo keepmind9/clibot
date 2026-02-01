@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/keepmind9/clibot/internal/watchdog"
@@ -21,6 +22,12 @@ type GeminiAdapterConfig struct {
 	HistoryDir string   // Base directory for Gemini data
 	CheckLines int      // Number of lines to check for interactive prompts
 	Patterns   []string // Regex patterns for interactive prompts
+
+	// Polling mode configuration (when UseHook = false)
+	UseHook      bool          // Use hook mode (true) or polling mode (false). Default: true
+	PollInterval time.Duration // Polling interval. Default: 1s
+	StableCount  int           // Consecutive stable checks required. Default: 3
+	PollTimeout  time.Duration // Maximum time to wait. Default: 120s
 }
 
 // GeminiAdapter implements CLIAdapter for Gemini CLI
@@ -28,6 +35,12 @@ type GeminiAdapter struct {
 	historyDir string           // Base directory for Gemini data
 	checkLines int              // Number of lines to check for prompts
 	patterns   []*regexp.Regexp // Compiled regex patterns
+
+	// Polling mode configuration
+	useHook      bool
+	pollInterval time.Duration
+	stableCount  int
+	pollTimeout  time.Duration
 }
 
 // NewGeminiAdapter creates a new Gemini CLI adapter
@@ -49,10 +62,22 @@ func NewGeminiAdapter(config GeminiAdapterConfig) (*GeminiAdapter, error) {
 		patterns[i] = compiled
 	}
 
+	// Set defaults for polling config
+	useHook := config.UseHook
+	// Note: Default value is set in config.go validation
+	// If not specified in YAML, use_hook defaults to true (hook mode)
+
+	pollInterval, stableCount, pollTimeout := normalizePollingConfig(
+		config.PollInterval, config.StableCount, config.PollTimeout)
+
 	return &GeminiAdapter{
-		historyDir: historyDir,
-		checkLines: config.CheckLines,
-		patterns:   patterns,
+		historyDir:   historyDir,
+		checkLines:   config.CheckLines,
+		patterns:     patterns,
+		useHook:      useHook,
+		pollInterval: pollInterval,
+		stableCount:  stableCount,
+		pollTimeout:  pollTimeout,
 	}, nil
 }
 
@@ -363,6 +388,26 @@ func (g *GeminiAdapter) CheckInteractive(sessionName string) (bool, string, erro
 	}
 
 	return false, "", nil
+}
+
+// UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
+func (g *GeminiAdapter) UseHook() bool {
+	return g.useHook
+}
+
+// GetPollInterval returns the polling interval for polling mode
+func (g *GeminiAdapter) GetPollInterval() time.Duration {
+	return g.pollInterval
+}
+
+// GetStableCount returns the number of consecutive stable checks required
+func (g *GeminiAdapter) GetStableCount() int {
+	return g.stableCount
+}
+
+// GetPollTimeout returns the maximum time to wait for completion
+func (g *GeminiAdapter) GetPollTimeout() time.Duration {
+	return g.pollTimeout
 }
 
 // startGemini starts Gemini CLI in a tmux session

@@ -241,7 +241,12 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	e.sessionMu.Unlock()
 
 	// Step 3: If session is waiting for input (interactive state), pass directly
-	if session.State == StateWaitingInput {
+	// Use read lock to prevent race condition with session state updates
+	e.sessionMu.RLock()
+	isWaitingInput := session.State == StateWaitingInput
+	e.sessionMu.RUnlock()
+
+	if isWaitingInput {
 		// Process key words before sending
 		processedContent := watchdog.ProcessKeyWords(msg.Content)
 		if processedContent != msg.Content {
@@ -253,6 +258,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 
 		adapter := e.cliAdapters[session.CLIType]
 		if err := adapter.SendInput(session.Name, processedContent); err != nil {
+			// Don't update state on error - keep it in waiting input state
 			e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send input: %v", err))
 			return
 		}
@@ -260,23 +266,39 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		// Update session state
 		e.updateSessionState(session.Name, StateProcessing)
 
+		// Start new watchdog for this session
+		ctx, cleanup := e.startNewWatchdogForSession(session.Name)
+
 		// Resume watchdog monitoring
-		go func(s *Session) {
+		go func(sessionName string, watchdogCtx context.Context) {
 			defer func() {
 				if r := recover(); r != nil {
 					logger.WithFields(logrus.Fields{
-						"session": s.Name,
+						"session": sessionName,
 						"panic":   r,
 					}).Error("watchdog-panic-recovered")
 				}
+				// Clear the cancel function when done
+				cleanup()
 			}()
-			if err := e.startWatchdog(s); err != nil {
+
+			// Re-fetch session under lock to avoid race condition
+			e.sessionMu.RLock()
+			session, exists := e.sessions[sessionName]
+			e.sessionMu.RUnlock()
+
+			if !exists {
+				logger.WithField("session", sessionName).Warn("session-no-longer-exists")
+				return
+			}
+
+			if err := e.startWatchdogWithContext(watchdogCtx, session); err != nil {
 				logger.WithFields(logrus.Fields{
-					"session": s.Name,
+					"session": sessionName,
 					"error":   err,
 				}).Error("watchdog-failed")
 			}
-		}(session)
+		}(session.Name, ctx)
 
 		return
 	}
@@ -298,6 +320,8 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 			"session": session.Name,
 			"error":   err,
 		}).Error("failed-to-send-input-to-cli")
+		// Restore session state to idle on error
+		e.updateSessionState(session.Name, StateIdle)
 		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send input: %v", err))
 		return
 	}
@@ -310,23 +334,39 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	// Update session state
 	e.updateSessionState(session.Name, StateProcessing)
 
+	// Start new watchdog for this session
+	ctx, cleanup := e.startNewWatchdogForSession(session.Name)
+
 	// Start watchdog monitoring (for detecting interactive prompts)
-	go func(s *Session) {
+	go func(sessionName string, watchdogCtx context.Context) {
 		defer func() {
 			if r := recover(); r != nil {
 				logger.WithFields(logrus.Fields{
-					"session": s.Name,
+					"session": sessionName,
 					"panic":   r,
 				}).Error("watchdog-panic-recovered")
 			}
+			// Clear the cancel function when done
+			cleanup()
 		}()
-		if err := e.startWatchdog(s); err != nil {
+
+		// Re-fetch session under lock to avoid race condition
+		e.sessionMu.RLock()
+		session, exists := e.sessions[sessionName]
+		e.sessionMu.RUnlock()
+
+		if !exists {
+			logger.WithField("session", sessionName).Warn("session-no-longer-exists")
+			return
+		}
+
+		if err := e.startWatchdogWithContext(watchdogCtx, session); err != nil {
 			logger.WithFields(logrus.Fields{
-				"session": s.Name,
+				"session": sessionName,
 				"error":   err,
 			}).Error("watchdog-failed")
 		}
-	}(session)
+	}(session.Name, ctx)
 }
 
 // HandleSpecialCommand handles special clibot commands
@@ -546,6 +586,56 @@ func (e *Engine) updateSessionState(sessionName string, newState SessionState) {
 	}
 }
 
+// startNewWatchdogForSession cancels any existing watchdog and creates a new context.
+// This prevents goroutine leaks when multiple messages are sent rapidly.
+//
+// Returns the new context and a cleanup function to be called when done.
+// The cleanup function must be called to clear the session's cancelCtx.
+func (e *Engine) startNewWatchdogForSession(sessionName string) (context.Context, func()) {
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+
+	session, exists := e.sessions[sessionName]
+	if !exists {
+		// Session doesn't exist, return a cancelled context
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		return ctx, func() {}
+	}
+
+	// Cancel any existing watchdog
+	if session.cancelCtx != nil {
+		logger.WithField("session", session.Name).Debug("cancelling-previous-watchdog")
+		session.cancelCtx()
+		session.cancelCtx = nil
+	}
+
+	// Check if engine context is already cancelled
+	select {
+	case <-e.ctx.Done():
+		// Engine is shutting down, return cancelled context
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		return ctx, func() {}
+	default:
+	}
+
+	// Create new context for this watchdog
+	ctx, cancel := context.WithCancel(e.ctx)
+	session.cancelCtx = cancel
+
+	// Return cleanup function
+	cleanup := func() {
+		e.sessionMu.Lock()
+		defer e.sessionMu.Unlock()
+		if session, exists := e.sessions[sessionName]; exists {
+			session.cancelCtx = nil
+		}
+	}
+
+	return ctx, cleanup
+}
+
 // SendToBot sends a message to a specific bot
 func (e *Engine) SendToBot(platform, channel, message string) {
 	if botAdapter, exists := e.activeBots[platform]; exists {
@@ -579,9 +669,144 @@ func (e *Engine) SendToAllBots(message string) {
 // Note: This is a placeholder for future watchdog monitoring functionality.
 // The current implementation uses hook-based retry mechanism in handleHookRequest.
 // Full watchdog implementation is tracked at: https://github.com/keepmind9/clibot/issues/123
+// startWatchdog starts monitoring the CLI session for completion
+// It uses either hook mode (real-time notifications) or polling mode (periodic checks)
 func (e *Engine) startWatchdog(session *Session) error {
-	logger.WithField("session", session.Name).Debug("watchdog-placeholder-called")
+	adapter := e.cliAdapters[session.CLIType]
+
+	// Check which mode to use
+	if adapter.UseHook() {
+		logger.WithField("session", session.Name).Debug("using-hook-mode")
+		return e.runWatchdogWithHook(session)
+	} else {
+		logger.WithField("session", session.Name).Debug("using-polling-mode")
+		return e.runWatchdogPolling(session)
+	}
+}
+
+// startWatchdogWithContext starts monitoring with a cancellable context
+// This prevents goroutine leaks when multiple messages are sent rapidly
+func (e *Engine) startWatchdogWithContext(ctx context.Context, session *Session) error {
+	adapter := e.cliAdapters[session.CLIType]
+
+	// Check which mode to use
+	if adapter.UseHook() {
+		logger.WithField("session", session.Name).Debug("using-hook-mode")
+		return e.runWatchdogWithHook(session)
+	} else {
+		logger.WithField("session", session.Name).Debug("using-polling-mode")
+		return e.runWatchdogPollingWithContext(ctx, session)
+	}
+}
+
+// runWatchdogWithHook implements hook-based monitoring (real-time, requires CLI configuration)
+func (e *Engine) runWatchdogWithHook(session *Session) error {
+	logger.WithField("session", session.Name).Debug("hook-mode-watchdog-started")
+
+	// Hook mode is event-driven
+	// The engine waits for hook notifications via HTTP
+	// This is a placeholder - actual hook handling is done in handleHookRequest
+	logger.WithField("session", session.Name).Debug("hook-mode-watchdog-waiting")
+
+	// In hook mode, we just wait for the hook to trigger
+	// The actual processing happens when the hook is received
 	return nil
+}
+
+// runWatchdogPolling implements polling-based monitoring (no CLI configuration required)
+func (e *Engine) runWatchdogPolling(session *Session) error {
+	return e.runWatchdogPollingWithContext(e.ctx, session)
+}
+
+// runWatchdogPollingWithContext implements polling-based monitoring with cancellable context
+// This prevents goroutine leaks when multiple messages are sent rapidly
+func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Session) error {
+	adapter := e.cliAdapters[session.CLIType]
+
+	// Get polling configuration
+	pollingConfig := watchdog.PollingConfig{
+		Interval:    adapter.GetPollInterval(),
+		StableCount: adapter.GetStableCount(),
+		Timeout:     adapter.GetPollTimeout(),
+	}
+
+	logger.WithFields(logrus.Fields{
+		"session":     session.Name,
+		"interval":    pollingConfig.Interval,
+		"stableCount": pollingConfig.StableCount,
+		"timeout":     pollingConfig.Timeout,
+	}).Info("polling-mode-watchdog-started")
+
+	// Wait for CLI to complete (polling mode)
+	content, err := watchdog.WaitForCompletion(session.Name, pollingConfig, ctx)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": session.Name,
+			"error":   err,
+		}).Error("polling-failed")
+
+		// Update session state
+		e.updateSessionState(session.Name, StateIdle)
+
+		return err
+	}
+
+	// Check if we need to switch to waiting for user input
+	isInteractive, prompt, err := adapter.CheckInteractive(session.Name)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": session.Name,
+			"error":   err,
+		}).Warn("failed-to-check-interactive-state")
+	}
+
+	if isInteractive {
+		logger.WithFields(logrus.Fields{
+			"session": session.Name,
+			"prompt":  prompt,
+		}).Info("interactive-prompt-detected-switching-to-waiting-input-state")
+
+		// Send response and switch to waiting state
+		e.sendResponseToUser(session.Name, content)
+		e.updateSessionState(session.Name, StateWaitingInput)
+		return nil
+	}
+
+	// Send response to user
+	logger.WithFields(logrus.Fields{
+		"session":        session.Name,
+		"response_length": len(content),
+	}).Info("response-completed-sending-to-user")
+
+	e.sendResponseToUser(session.Name, content)
+
+	// Update session state
+	e.updateSessionState(session.Name, StateIdle)
+
+	return nil
+}
+
+// sendResponseToUser sends the CLI response to the user via bot
+func (e *Engine) sendResponseToUser(sessionName string, content string) {
+	// Get the channel for this session
+	e.sessionMu.RLock()
+	botChannel, exists := e.sessionChannels[sessionName]
+	e.sessionMu.RUnlock()
+
+	if !exists {
+		logger.WithField("session", sessionName).Warn("no-bot-channel-found-for-session")
+		return
+	}
+
+	// Send response
+	logger.WithFields(logrus.Fields{
+		"session":        sessionName,
+		"platform":       botChannel.Platform,
+		"channel":        botChannel.Channel,
+		"response_length": len(content),
+	}).Info("sending-response-to-user")
+
+	e.SendToBot(botChannel.Platform, botChannel.Channel, content)
 }
 
 // startHookServer starts the HTTP hook server
