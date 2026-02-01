@@ -101,7 +101,7 @@ func canSkip(line string) bool {
 	}
 	// Detect and skip UI borders (box drawing characters)
 	for _, runeValue := range line {
-		if strings.ContainsRune("─│┌└┐┘├┤ ╭╮╰╯", runeValue) {
+		if strings.ContainsRune("─│┌└┐┘├┤ ╭╮╰╯_", runeValue) {
 			continue
 		}
 		return false
@@ -371,13 +371,7 @@ func RemoveUIStatusLines(output string) string {
 	}
 
 	result := strings.Join(filteredLines, "\n")
-
-	// Clean up multiple consecutive newlines
-	for strings.Contains(result, "\n\n\n") {
-		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
-	}
-
-	return result
+	return cleanContent(result)
 }
 
 // ExtractLastAssistantContent is a public wrapper for extractLastAssistantContent
