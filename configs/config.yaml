@@ -2,9 +2,6 @@
 hook_server:
   port: 8080
 
-# 特殊命令前缀
-command_prefix: "!!"
-
 # ========== 安全配置（白名单机制） ==========
 # clibot 本质上是远程代码执行工具，必须启用用户白名单
 security:

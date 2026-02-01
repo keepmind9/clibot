@@ -32,7 +32,6 @@ type ResponseEvent struct {
 // Config represents the complete clibot configuration structure
 type Config struct {
 	HookServer    HookServerConfig        `yaml:"hook_server"`
-	CommandPrefix string                  `yaml:"command_prefix"`
 	Security      SecurityConfig          `yaml:"security"`
 	Watchdog      WatchdogConfig          `yaml:"watchdog"`
 	Sessions      []SessionConfig         `yaml:"sessions"`

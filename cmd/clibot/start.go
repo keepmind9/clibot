@@ -33,7 +33,6 @@ var (
 
 			fmt.Printf("Starting clibot with config: %s\n", configFile)
 			fmt.Printf("Hook server port: %d\n", config.HookServer.Port)
-			fmt.Printf("Command prefix: %s\n", config.CommandPrefix)
 			fmt.Printf("Whitelist enabled: %v\n", config.Security.WhitelistEnabled)
 
 			// Initialize logger

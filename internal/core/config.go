@@ -55,7 +55,6 @@ import (
 
 const (
 	DefaultHookPort       = 8080
-	DefaultCommandPrefix  = "!!"
 	DefaultLogLevel       = "info"
 	DefaultLogMaxSize     = 100 // MB
 	DefaultLogMaxBackups  = 5
@@ -128,11 +127,6 @@ func validateConfig(config *Config) error {
 	// Validate hook server port
 	if config.HookServer.Port == 0 {
 		config.HookServer.Port = DefaultHookPort
-	}
-
-	// Validate command prefix
-	if config.CommandPrefix == "" {
-		config.CommandPrefix = DefaultCommandPrefix
 	}
 
 	// Set default logging configuration

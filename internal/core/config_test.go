@@ -12,7 +12,7 @@ func TestLoadConfig_ValidConfig_ReturnsConfigStruct(t *testing.T) {
 	configContent := `
 hook_server:
   port: 8080
-command_prefix: "!!"
+
 security:
   whitelist_enabled: true
   allowed_users:
@@ -58,7 +58,6 @@ cli_adapters:
 	// Assert
 	assert.NoError(t, err)
 	assert.Equal(t, 8080, config.HookServer.Port)
-	assert.Equal(t, "!!", config.CommandPrefix)
 	assert.True(t, config.Security.WhitelistEnabled)
 	assert.Len(t, config.Sessions, 1)
 	assert.Equal(t, "test-session", config.Sessions[0].Name)
@@ -69,7 +68,7 @@ func TestLoadConfig_EnvExpansion_ExpandsVariables(t *testing.T) {
 	configContent := `
 hook_server:
   port: 8080
-command_prefix: "!!"
+
 security:
   whitelist_enabled: false
 sessions:
@@ -119,7 +118,7 @@ func TestLoadConfig_HomeDirectoryExpansion_DeprecatedFieldNoLongerProcessed(t *t
 	configContent := `
 hook_server:
   port: 8080
-command_prefix: "!!"
+
 security:
   whitelist_enabled: false
 sessions:
@@ -363,7 +362,7 @@ func TestValidateConfig_MissingBot_ReturnsError(t *testing.T) {
 	configContent := `
 hook_server:
   port: 8080
-command_prefix: "!!"
+
 security:
   whitelist_enabled: false
 sessions:
@@ -405,7 +404,7 @@ func TestValidateConfig_MissingSession_ReturnsError(t *testing.T) {
 	configContent := `
 hook_server:
   port: 8080
-command_prefix: "!!"
+
 security:
   whitelist_enabled: false
 sessions: []
@@ -470,7 +469,7 @@ func TestValidateConfig_DefaultSessionNotExists_ReturnsError(t *testing.T) {
 	configContent := `
 hook_server:
   port: 8080
-command_prefix: "!!"
+
 security:
   whitelist_enabled: false
 sessions:
@@ -515,7 +514,7 @@ func TestValidateConfig_DefaultSessionExists_Succeeds(t *testing.T) {
 	configContent := `
 hook_server:
   port: 8080
-command_prefix: "!!"
+
 security:
   whitelist_enabled: false
 sessions:
