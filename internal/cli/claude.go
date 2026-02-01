@@ -32,7 +32,10 @@ type ClaudeAdapter struct {
 // Returns an error if any of the regex patterns fail to compile
 func NewClaudeAdapter(config ClaudeAdapterConfig) (*ClaudeAdapter, error) {
 	// Expand home directory in historyDir
-	historyDir := expandHome(config.HistoryDir)
+	historyDir, err := expandHome(config.HistoryDir)
+	if err != nil {
+		return nil, fmt.Errorf("invalid history_dir: %w", err)
+	}
 
 	// Compile regex patterns
 	patterns := make([]*regexp.Regexp, len(config.Patterns))
@@ -174,7 +177,11 @@ func (c *ClaudeAdapter) CreateSession(sessionName, cliType, workDir string) erro
 
 	// Set working directory if specified
 	if workDir != "" {
-		workDir = expandHome(workDir)
+		var err error
+		workDir, err = expandHome(workDir)
+		if err != nil {
+			return fmt.Errorf("invalid work_dir: %w", err)
+		}
 		args = append(args, "-c", workDir)
 	}
 
@@ -438,7 +445,11 @@ func extractFromTranscriptFile(transcriptPath string) (string, error) {
 
 func (c *ClaudeAdapter) GetLastResponseFromTranscript(transcriptPath string) (string, error) {
 	// Expand home directory in path
-	transcriptPath = expandHome(transcriptPath)
+	var err error
+	transcriptPath, err = expandHome(transcriptPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to expand transcript path: %w", err)
+	}
 
 	// Extract response from transcript
 	response, err := ExtractLastAssistantResponse(transcriptPath)
@@ -452,7 +463,11 @@ func (c *ClaudeAdapter) GetLastResponseFromTranscript(transcriptPath string) (st
 // extractLastUserPrompt extracts the last user's prompt from transcript
 // This is used to filter tmux output to only show the latest response
 func extractLastUserPrompt(transcriptPath string) (string, error) {
-	transcriptPath = expandHome(transcriptPath)
+	var err error
+	transcriptPath, err = expandHome(transcriptPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to expand transcript path: %w", err)
+	}
 
 	messages, err := ParseTranscript(transcriptPath)
 	if err != nil {

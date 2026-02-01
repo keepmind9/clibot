@@ -335,7 +335,7 @@ func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
 		e.captureView(msg, parts)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Unknown command: %s\nAvailable commands:\n  sessions - List all sessions\n  status - Show session status\n  whoami - Show current session\n  view [lines] - View CLI output (default: 50 lines)", command))
+			fmt.Sprintf("❌ Unknown command: %s\nAvailable commands:\n  sessions - List all sessions\n  status - Show session status\n  whoami - Show current session\n  view [lines] - View CLI output (default: 20 lines)", command))
 	}
 }
 
@@ -389,9 +389,9 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 
 // captureView captures and displays CLI tool output
 // Usage: view [lines]
-// If lines is not provided, defaults to 50
+// If lines is not provided, defaults to 20 (DefaultManualCaptureLines)
 func (e *Engine) captureView(msg bot.BotMessage, parts []string) {
-	// Parse line count parameter (default: 50)
+	// Parse line count parameter (default: 20)
 	lines := tmuxCapturePaneLine
 	if len(parts) >= 2 {
 		if _, err := fmt.Sscanf(parts[1], "%d", &lines); err != nil {

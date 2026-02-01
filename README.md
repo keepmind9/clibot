@@ -73,7 +73,7 @@ clibot/
 !!new <name> <cli>      # Create new session
 !!whoami                # Display current session info
 !!status                # Display all session status
-!!view [lines]          # View CLI output (default: 50 lines)
+!!view [lines]          # View CLI output (default: 20 lines)
 !!help                  # Help information
 ```
 

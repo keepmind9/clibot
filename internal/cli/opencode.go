@@ -33,7 +33,10 @@ type OpenCodeAdapter struct {
 // Returns an error if any of the regex patterns fail to compile
 func NewOpenCodeAdapter(config OpenCodeAdapterConfig) (*OpenCodeAdapter, error) {
 	// Expand home directory in historyDir
-	historyDir := expandHome(config.HistoryDir)
+	historyDir, err := expandHome(config.HistoryDir)
+	if err != nil {
+		return nil, fmt.Errorf("invalid history_dir: %w", err)
+	}
 
 	// Compile regex patterns
 	patterns := make([]*regexp.Regexp, len(config.Patterns))
@@ -175,7 +178,10 @@ func (o *OpenCodeAdapter) CreateSession(sessionName, cliType, workDir string) er
 
 	// Set working directory if specified
 	if workDir != "" {
-		workDir = expandHome(workDir)
+		workDir, err := expandHome(workDir)
+		if err != nil {
+			return fmt.Errorf("invalid work_dir: %w", err)
+		}
 		args = append(args, "-c", workDir)
 	}
 

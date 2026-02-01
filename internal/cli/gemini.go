@@ -34,7 +34,10 @@ type GeminiAdapter struct {
 // Returns an error if any of the regex patterns fail to compile
 func NewGeminiAdapter(config GeminiAdapterConfig) (*GeminiAdapter, error) {
 	// Expand home directory in historyDir
-	historyDir := expandHome(config.HistoryDir)
+	historyDir, err := expandHome(config.HistoryDir)
+	if err != nil {
+		return nil, fmt.Errorf("invalid history_dir: %w", err)
+	}
 
 	// Compile regex patterns
 	patterns := make([]*regexp.Regexp, len(config.Patterns))
@@ -297,7 +300,11 @@ func (g *GeminiAdapter) CreateSession(sessionName, cliType, workDir string) erro
 
 	// Set working directory if specified
 	if workDir != "" {
-		workDir = expandHome(workDir)
+		var err error
+		workDir, err = expandHome(workDir)
+		if err != nil {
+			return fmt.Errorf("invalid work_dir: %w", err)
+		}
 		args = append(args, "-c", workDir)
 	}
 
