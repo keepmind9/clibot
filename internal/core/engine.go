@@ -331,11 +331,11 @@ func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
 		e.showStatus(msg)
 	case "whoami":
 		e.showWhoami(msg)
-	case "tmux":
-		e.captureTmux(msg, parts)
+	case "view":
+		e.captureView(msg, parts)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Unknown command: %s\nAvailable commands:\n  sessions - List all sessions\n  status - Show session status\n  whoami - Show current session\n  tmux [lines] - Capture tmux pane (default: 50 lines)", command))
+			fmt.Sprintf("❌ Unknown command: %s\nAvailable commands:\n  sessions - List all sessions\n  status - Show session status\n  whoami - Show current session\n  view [lines] - View CLI output (default: 50 lines)", command))
 	}
 }
 
@@ -387,15 +387,15 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 	e.SendToBot(msg.Platform, msg.Channel, response)
 }
 
-// captureTmux captures and displays tmux pane content
-// Usage: tmux [lines]
+// captureView captures and displays CLI tool output
+// Usage: view [lines]
 // If lines is not provided, defaults to 50
-func (e *Engine) captureTmux(msg bot.BotMessage, parts []string) {
+func (e *Engine) captureView(msg bot.BotMessage, parts []string) {
 	// Parse line count parameter (default: 50)
 	lines := tmuxCapturePaneLine
 	if len(parts) >= 2 {
 		if _, err := fmt.Sscanf(parts[1], "%d", &lines); err != nil {
-			e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Invalid line count: %s\nUsage: tmux [lines]", parts[1]))
+			e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Invalid line count: %s\nUsage: view [lines]", parts[1]))
 			return
 		}
 		// Limit to reasonable range
@@ -426,22 +426,22 @@ func (e *Engine) captureTmux(msg bot.BotMessage, parts []string) {
 		return
 	}
 
-	// Capture tmux pane content
+	// Capture CLI output from tmux pane
 	output, err := watchdog.CapturePane(session.Name, lines)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
 			"lines":   lines,
 			"error":   err,
-		}).Error("failed-to-capture-tmux-pane")
-		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to capture tmux pane: %v", err))
+		}).Error("failed-to-capture-cli-output")
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to capture CLI output: %v", err))
 		return
 	}
 
 	// Strip ANSI codes for cleaner output
 	cleanOutput := watchdog.StripANSI(output)
 	// Send response with header
-	response := fmt.Sprintf("📺 Tmux Capture (%s, last %d lines):\n```\n%s\n```", session.Name, lines, cleanOutput)
+	response := fmt.Sprintf("📺 CLI Output (%s, last %d lines):\n```\n%s\n```", session.Name, lines, cleanOutput)
 	e.SendToBot(msg.Platform, msg.Channel, response)
 
 	logger.WithFields(logrus.Fields{

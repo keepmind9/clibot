@@ -138,6 +138,9 @@ func TestCapturePane_WithNegativeLines_CapturesAllLines(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires actual tmux session")
 	}
+	if !IsSessionAlive("test-session") {
+		t.Skip("test-session does not exist, skipping integration test")
+	}
 	// Negative lines should capture all lines (using -S -)
 	output, err := CapturePane("test-session", -1)
 	// Should succeed and capture all lines
