@@ -74,8 +74,25 @@ clibot/
 !!whoami                # Display current session info
 !!status                # Display all session status
 !!view [lines]          # View CLI output (default: 20 lines)
-!!help                  # Help information
+!!help                  # Show help information
 ```
+
+## Special Keywords
+
+Send special keys directly to the CLI tool (no prefix needed):
+
+```
+tab          # Send Tab key (for autocomplete)
+esc          # Send Escape key
+stab/s-tab   # Send Shift+Tab
+enter        # Send Enter key
+ctrlc/ctrl-c # Send Ctrl+C (interrupt)
+```
+
+**Examples:**
+- `tab` → Trigger autocomplete in CLI
+- `s-tab` → Navigate back through suggestions
+- `ctrl-c` → Interrupt current process
 
 ## Security
 

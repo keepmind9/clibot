@@ -344,6 +344,8 @@ func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
 
 	// Handle commands with arguments
 	switch command {
+	case "help":
+		e.showHelp(msg)
 	case "sessions":
 		e.listSessions(msg)
 	case "status":
@@ -354,7 +356,7 @@ func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
 		e.captureView(msg, parts)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Unknown command: %s\nAvailable commands:\n  sessions - List all sessions\n  status - Show session status\n  whoami - Show current session\n  view [lines] - View CLI output (default: 20 lines)", command))
+			fmt.Sprintf("❌ Unknown command: %s\nUse '%shelp' to see available commands", command, e.config.CommandPrefix))
 	}
 }
 
@@ -404,6 +406,42 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 	response := fmt.Sprintf("Current Session:\n  Name: %s\n  CLI: %s\n  State: %s\n  WorkDir: %s",
 		session.Name, session.CLIType, session.State, session.WorkDir)
 	e.SendToBot(msg.Platform, msg.Channel, response)
+}
+
+// showHelp displays help information about available commands and keywords
+func (e *Engine) showHelp(msg bot.BotMessage) {
+	prefix := e.config.CommandPrefix
+
+	help := fmt.Sprintf(`📖 **clibot Help**
+
+**Special Commands** (use %s prefix):
+  %ssessions    - List all available sessions
+  %sstatus      - Show status of all sessions
+  %swhoami      - Show current session info
+  %sview [n]    - View CLI output (default: 20 lines)
+  %shelp        - Show this help message
+
+**Special Keywords** (send directly, no prefix):
+  tab          - Send Tab key
+  esc          - Send Escape key
+  stab/s-tab   - Send Shift+Tab
+  enter        - Send Enter key
+  ctrlc/ctrl-c - Send Ctrl+C (interrupt)
+
+**Usage Examples:**
+  %ssessions          → List sessions
+  tab                 → Send Tab key to CLI
+  ctrl-c              → Interrupt current process
+  %sview 100          → View last 100 lines of output
+
+**Tips:**
+  - Special keywords are case-insensitive (TAB, Tab, tab all work)
+  - Special keywords must match entire input
+  - Use %shelp anytime to see this message`,
+		prefix, prefix, prefix, prefix, prefix, prefix,
+		prefix, prefix, prefix)
+
+	e.SendToBot(msg.Platform, msg.Channel, help)
 }
 
 // captureView captures and displays CLI tool output

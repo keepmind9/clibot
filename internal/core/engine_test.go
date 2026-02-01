@@ -749,6 +749,45 @@ func TestHandleSpecialCommand_WhoamiCommand(t *testing.T) {
 	}
 }
 
+// Test HandleSpecialCommand handles help command
+func TestHandleSpecialCommand_HelpCommand(t *testing.T) {
+	mockBot := &MockBotAdapter{}
+
+	engine := NewEngine(&Config{
+		CommandPrefix: "!!",
+	})
+	engine.RegisterBotAdapter("discord", mockBot)
+
+	msg := bot.BotMessage{
+		Platform: "discord",
+		Channel:  "test-channel",
+		UserID:   "user1",
+		Content:  "!!help",
+	}
+
+	engine.HandleSpecialCommand("help", msg)
+
+	calls := mockBot.GetSendMessageCalls()
+	if len(calls) != 1 {
+		t.Fatalf("Expected 1 message sent, got %d", len(calls))
+	}
+
+	// Check that response contains help information
+	response := calls[0].Message
+	if !contains(response, "clibot Help") {
+		t.Errorf("Expected response to contain 'clibot Help', got: %s", response)
+	}
+	if !contains(response, "Special Commands") {
+		t.Errorf("Expected response to contain 'Special Commands', got: %s", response)
+	}
+	if !contains(response, "Special Keywords") {
+		t.Errorf("Expected response to contain 'Special Keywords', got: %s", response)
+	}
+	if !contains(response, "tab") {
+		t.Errorf("Expected response to contain 'tab', got: %s", response)
+	}
+}
+
 // Test HandleSpecialCommand handles unknown command
 func TestHandleSpecialCommand_UnknownCommand(t *testing.T) {
 	mockBot := &MockBotAdapter{}
@@ -772,10 +811,13 @@ func TestHandleSpecialCommand_UnknownCommand(t *testing.T) {
 		t.Fatalf("Expected 1 message sent, got %d", len(calls))
 	}
 
-	// Check that response contains error message
+	// Check that response contains error message and help suggestion
 	response := calls[0].Message
 	if !contains(response, "Unknown command") {
 		t.Errorf("Expected response to contain 'Unknown command', got: %s", response)
+	}
+	if !contains(response, "help") {
+		t.Errorf("Expected response to suggest using 'help', got: %s", response)
 	}
 }
 
