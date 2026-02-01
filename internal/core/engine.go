@@ -14,8 +14,8 @@ import (
 	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/cli"
 	"github.com/keepmind9/clibot/internal/logger"
-	"github.com/keepmind9/clibot/pkg/constants"
 	"github.com/keepmind9/clibot/internal/watchdog"
+	"github.com/keepmind9/clibot/pkg/constants"
 	"github.com/sirupsen/logrus"
 )
 
@@ -908,7 +908,13 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	adapter, exists := e.cliAdapters[cliType]
 	if !exists {
 		logger.WithField("cli_type", cliType).Warn("no-adapter-found-for-cli-type")
-		http.Error(w, "CLI adapter not found", http.StatusInternalServerError)
+		http.Error(w, "CLI adapter not found", http.StatusBadRequest)
+		return
+	}
+
+	if !adapter.UseHook(){
+		logger.WithField("cli_type", cliType).Warn("no-usehook-for-cli-type")
+		http.Error(w, "CLI adapter can't useHook", http.StatusBadRequest)
 		return
 	}
 

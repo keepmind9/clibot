@@ -66,7 +66,6 @@ const (
 	DefaultWatchdogMaxRetries   = 10
 	DefaultWatchdogInitialDelay = "500ms"
 	DefaultWatchdogRetryDelay   = "800ms"
-	DefaultTimeout             = "2s"
 	DefaultPollTimeout         = "60s"
 
 	// Default polling mode values
@@ -162,9 +161,6 @@ func validateConfig(config *Config) error {
 
 	// Set default timeout values for CLI adapters
 	for cliType, adapter := range config.CLIAdapters {
-		if adapter.Timeout == "" {
-			adapter.Timeout = DefaultTimeout
-		}
 		if adapter.PollTimeout == "" {
 			adapter.PollTimeout = DefaultPollTimeout
 		}

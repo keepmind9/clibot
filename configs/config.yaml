@@ -87,13 +87,8 @@ cli_adapters:
     # stable_count: 3         # 需要连续几次稳定输出才算完成（默认: 3）
     # poll_timeout: "120s"    # 最大等待时间（默认: 120s）
 
-    # ========== 连接配置 ==========
-    timeout: "2s"             # 连接超时（用于某些 CLI 连接检查）
-    # poll_timeout: "60s"     # 轮询模式超时（独立于 timeout）
-
   gemini:
     use_hook: true
-    timeout: "2s"
     # Polling 模式配置（如需要）
     # poll_interval: "2s"
     # stable_count: 4
@@ -101,7 +96,6 @@ cli_adapters:
 
   opencode:
     use_hook: true
-    timeout: "2s"
     # Polling 模式配置（如需要）
     # poll_interval: "1s"
     # stable_count: 3

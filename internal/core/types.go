@@ -89,8 +89,7 @@ type CLIAdapterConfig struct {
 	HistoryDB   string `yaml:"history_db"`   // Deprecated: Not used anymore
 	HistoryFile string `yaml:"history_file"` // Deprecated: Not used anymore
 
-	Timeout     string `yaml:"timeout"`      // Connection timeout (e.g., "2s")
-	PollTimeout string `yaml:"poll_timeout"` // Long poll timeout (e.g., "60s")
+	PollTimeout string `yaml:"poll_timeout"` // Polling mode timeout (e.g., "60s")
 
 	// Polling mode configuration (alternative to hook mode)
 	UseHook      bool   `yaml:"use_hook"`      // Use hook mode (true) or polling mode (false). Default: true
