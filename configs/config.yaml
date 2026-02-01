@@ -80,39 +80,35 @@ bots:
 # CLI 适配器配置
 cli_adapters:
   claude:
-    history_dir: "~/.claude/conversations"
-    hook_command: "clibot hook --session $SESSION --event completed"
+    # ========== 响应模式选择 ==========
+    # hook 模式（推荐）：需要 CLI 配置 hook 命令，实时响应
+    # polling 模式：无需 CLI 配置，通过轮询 tmux 输出来检测完成
+    use_hook: true  # 默认: true（hook 模式）
 
-    # ========== 交互检测配置 ==========
-    interactive:
-      enabled: true
-      check_lines: 3              # 检查最后几行
-      patterns:                   # 用户可以添加自定义模式
-        - "\\? [y/N]"
-        - "Confirm\\?"
-        - "Press Enter"
+    # ========== Polling 模式配置（仅当 use_hook: false 时使用）==========
+    # poll_interval: "1s"     # 轮询间隔（默认: 1s）
+    # stable_count: 3         # 需要连续几次稳定输出才算完成（默认: 3）
+    # poll_timeout: "120s"    # 最大等待时间（默认: 120s）
+
+    # ========== 连接配置 ==========
+    timeout: "2s"             # 连接超时（用于某些 CLI 连接检查）
+    # poll_timeout: "60s"     # 轮询模式超时（独立于 timeout）
 
   gemini:
-    history_db: "~/.gemini/history.sqlite"
-    hook_command: "clibot hook --session $SESSION --event completed"
-
-    interactive:
-      enabled: true
-      check_lines: 5              # Gemini 可能需要更多行
-      patterns:
-        - "⚠️ .* \\? \\(yes/no\\)"
-        - "Select an option"
+    use_hook: true
+    timeout: "2s"
+    # Polling 模式配置（如需要）
+    # poll_interval: "2s"
+    # stable_count: 4
+    # poll_timeout: "120s"
 
   opencode:
-    history_file: "~/.opencode/sessions.log"
-    hook_command: "clibot hook --session $SESSION --event completed"
-
-    interactive:
-      enabled: true
-      check_lines: 3
-      patterns:
-        - "\\[Y/n\\]"
-        - "Continue\\?"
+    use_hook: true
+    timeout: "2s"
+    # Polling 模式配置（如需要）
+    # poll_interval: "1s"
+    # stable_count: 3
+    # poll_timeout: "120s"
 
 # 日志配置
 logging:

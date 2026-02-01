@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,10 +18,6 @@ import (
 
 // GeminiAdapterConfig configuration for Gemini CLI adapter
 type GeminiAdapterConfig struct {
-	HistoryDir string   // Base directory for Gemini data
-	CheckLines int      // Number of lines to check for interactive prompts
-	Patterns   []string // Regex patterns for interactive prompts
-
 	// Polling mode configuration (when UseHook = false)
 	UseHook      bool          // Use hook mode (true) or polling mode (false). Default: true
 	PollInterval time.Duration // Polling interval. Default: 1s
@@ -32,10 +27,6 @@ type GeminiAdapterConfig struct {
 
 // GeminiAdapter implements CLIAdapter for Gemini CLI
 type GeminiAdapter struct {
-	historyDir string           // Base directory for Gemini data
-	checkLines int              // Number of lines to check for prompts
-	patterns   []*regexp.Regexp // Compiled regex patterns
-
 	// Polling mode configuration
 	useHook      bool
 	pollInterval time.Duration
@@ -44,36 +35,17 @@ type GeminiAdapter struct {
 }
 
 // NewGeminiAdapter creates a new Gemini CLI adapter
-// Returns an error if any of the regex patterns fail to compile
 func NewGeminiAdapter(config GeminiAdapterConfig) (*GeminiAdapter, error) {
-	// Expand home directory in historyDir
-	historyDir, err := expandHome(config.HistoryDir)
-	if err != nil {
-		return nil, fmt.Errorf("invalid history_dir: %w", err)
-	}
-
-	// Compile regex patterns
-	patterns := make([]*regexp.Regexp, len(config.Patterns))
-	for i, pattern := range config.Patterns {
-		compiled, err := regexp.Compile(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compile pattern '%s': %w", pattern, err)
-		}
-		patterns[i] = compiled
-	}
-
-	// Set defaults for polling config
+	// Default to hook mode (true) if not explicitly configured
 	useHook := config.UseHook
-	// Note: Default value is set in config.go validation
-	// If not specified in YAML, use_hook defaults to true (hook mode)
+	if !useHook && config.PollInterval == 0 && config.PollTimeout == 0 {
+		useHook = true
+	}
 
 	pollInterval, stableCount, pollTimeout := normalizePollingConfig(
 		config.PollInterval, config.StableCount, config.PollTimeout)
 
 	return &GeminiAdapter{
-		historyDir:   historyDir,
-		checkLines:   config.CheckLines,
-		patterns:     patterns,
 		useHook:      useHook,
 		pollInterval: pollInterval,
 		stableCount:  stableCount,
@@ -99,18 +71,6 @@ func (g *GeminiAdapter) SendInput(sessionName, input string) error {
 	}
 
 	return nil
-}
-
-// GetLastResponse retrieves the last assistant response from conversation history
-// This is the fallback method when hook doesn't provide transcript_path
-func (g *GeminiAdapter) GetLastResponse(sessionName string) (string, error) {
-	// Try to get from conversation history files (fallback)
-	content, err := GetLastAssistantContent(g.historyDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to get last response: %w", err)
-	}
-
-	return content, nil
 }
 
 // HandleHookData handles raw hook data from Gemini CLI
@@ -344,50 +304,6 @@ func (g *GeminiAdapter) CreateSession(sessionName, cliType, workDir string) erro
 	}
 
 	return nil
-}
-
-// CheckInteractive checks if Gemini CLI is waiting for user input
-func (g *GeminiAdapter) CheckInteractive(sessionName string) (bool, string, error) {
-	// Capture last N lines from tmux session
-	output, err := watchdog.CapturePane(sessionName, g.checkLines)
-	if err != nil {
-		return false, "", fmt.Errorf("failed to capture pane: %w", err)
-	}
-
-	// Split into lines
-	lines := strings.Split(output, "\n")
-
-	// Check last N lines for interactive prompts
-	startIdx := len(lines) - g.checkLines
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	relevantLines := lines[startIdx:]
-
-	// Check each line for patterns
-	for _, line := range relevantLines {
-		trimmed := strings.TrimSpace(line)
-
-		// Skip empty lines
-		if trimmed == "" {
-			continue
-		}
-
-		// Check against regex patterns
-		for _, pattern := range g.patterns {
-			if pattern.MatchString(trimmed) {
-				logger.WithFields(logrus.Fields{
-					"session":  sessionName,
-					"pattern":  pattern.String(),
-					"line":     trimmed,
-				}).Info("interactive-prompt-detected")
-				return true, trimmed, nil
-			}
-		}
-	}
-
-	return false, "", nil
 }
 
 // UseHook returns whether this adapter uses hook mode (true) or polling mode (false)

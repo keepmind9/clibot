@@ -825,27 +825,6 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 		return err
 	}
 
-	// Check if we need to switch to waiting for user input
-	isInteractive, prompt, err := adapter.CheckInteractive(session.Name)
-	if err != nil {
-		logger.WithFields(logrus.Fields{
-			"session": session.Name,
-			"error":   err,
-		}).Warn("failed-to-check-interactive-state")
-	}
-
-	if isInteractive {
-		logger.WithFields(logrus.Fields{
-			"session": session.Name,
-			"prompt":  prompt,
-		}).Info("interactive-prompt-detected-switching-to-waiting-input-state")
-
-		// Send response and switch to waiting state
-		e.sendResponseToUser(session.Name, content)
-		e.updateSessionState(session.Name, StateWaitingInput)
-		return nil
-	}
-
 	// Send response to user
 	logger.WithFields(logrus.Fields{
 		"session":        session.Name,

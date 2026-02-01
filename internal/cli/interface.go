@@ -40,9 +40,6 @@ type CLIAdapter interface {
 	// SendInput sends input to the CLI (via tmux send-keys)
 	SendInput(sessionName, input string) error
 
-	// GetLastResponse retrieves the latest complete response (reads CLI history files)
-	GetLastResponse(sessionName string) (string, error)
-
 	// HandleHookData handles raw hook data from the CLI
 	// The adapter is responsible for:
 	//   - Parsing the data (in any format: JSON, text, etc.)
@@ -66,11 +63,6 @@ type CLIAdapter interface {
 
 	// CreateSession creates a new session (optional)
 	CreateSession(sessionName, cliType, workDir string) error
-
-	// CheckInteractive checks if the CLI is waiting for user input
-	// Returns: (isWaiting, promptText, error)
-	// Used for handling intermediate interactions, such as confirming command execution, clarifying ambiguities, etc.
-	CheckInteractive(sessionName string) (bool, string, error)
 
 	// UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
 	// Hook mode: Real-time notifications via CLI hooks (requires CLI configuration)

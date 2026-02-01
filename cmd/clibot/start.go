@@ -141,9 +141,6 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 		switch cliType {
 		case "claude":
 			adapter, err = cli.NewClaudeAdapter(cli.ClaudeAdapterConfig{
-				HistoryDir:   cliConfig.HistoryDir,
-				CheckLines:   cliConfig.Interactive.CheckLines,
-				Patterns:     cliConfig.Interactive.Patterns,
 				UseHook:      cliConfig.UseHook,
 				PollInterval: pollInterval,
 				StableCount:  cliConfig.StableCount,
@@ -151,9 +148,6 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 			})
 		case "gemini":
 			adapter, err = cli.NewGeminiAdapter(cli.GeminiAdapterConfig{
-				HistoryDir:   cliConfig.HistoryDir,
-				CheckLines:   cliConfig.Interactive.CheckLines,
-				Patterns:     cliConfig.Interactive.Patterns,
 				UseHook:      cliConfig.UseHook,
 				PollInterval: pollInterval,
 				StableCount:  cliConfig.StableCount,
@@ -161,9 +155,6 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 			})
 		case "opencode":
 			adapter, err = cli.NewOpenCodeAdapter(cli.OpenCodeAdapterConfig{
-				HistoryDir:   cliConfig.HistoryDir,
-				CheckLines:   cliConfig.Interactive.CheckLines,
-				Patterns:     cliConfig.Interactive.Patterns,
 				UseHook:      cliConfig.UseHook,
 				PollInterval: pollInterval,
 				StableCount:  cliConfig.StableCount,

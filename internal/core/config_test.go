@@ -114,7 +114,7 @@ cli_adapters:
 	assert.Equal(t, "my-secret-token", config.Bots["discord"].Token)
 }
 
-func TestLoadConfig_HomeDirectoryExpansion_ExpandsTilde(t *testing.T) {
+func TestLoadConfig_HomeDirectoryExpansion_DeprecatedFieldNoLongerProcessed(t *testing.T) {
 	// Create temporary config file with ~ in paths
 	configContent := `
 hook_server:
@@ -135,11 +135,9 @@ bots:
 cli_adapters:
   claude:
     history_dir: "~/.claude/conversations"
-    interactive:
-      enabled: true
-      check_lines: 3
-      patterns:
-        - "\\? [y/N]"
+    use_hook: true
+    poll_interval: "1s"
+    stable_count: 3
 `
 	tmpFile, err := os.CreateTemp("", "config-*.yaml")
 	if err != nil {
@@ -158,12 +156,11 @@ cli_adapters:
 	// Assert
 	assert.NoError(t, err)
 
-	// Home directory expansion happens in GetCLIAdapterConfig
+	// GetCLIAdapterConfig should succeed but history_dir is no longer expanded
 	adapterConfig, err := config.GetCLIAdapterConfig("claude")
 	assert.NoError(t, err)
-	homeDir, _ := os.UserHomeDir()
-	expectedPath := homeDir + "/.claude/conversations"
-	assert.Equal(t, expectedPath, adapterConfig.HistoryDir)
+	// history_dir is kept as-is for backward compatibility, but no longer expanded
+	assert.Equal(t, "~/.claude/conversations", adapterConfig.HistoryDir)
 }
 
 func TestLoadConfig_InvalidFile_ReturnsError(t *testing.T) {
@@ -227,10 +224,7 @@ func TestGetCLIAdapterConfig_ValidAdapter_ReturnsConfig(t *testing.T) {
 		CLIAdapters: map[string]CLIAdapterConfig{
 			"claude": {
 				HistoryDir: "~/.claude/conversations",
-				Interactive: InteractiveConfig{
-					Enabled:    true,
-					CheckLines: 3,
-				},
+				UseHook:    true,
 			},
 		},
 	}
@@ -239,9 +233,9 @@ func TestGetCLIAdapterConfig_ValidAdapter_ReturnsConfig(t *testing.T) {
 
 	// Assert
 	assert.NoError(t, err)
-	homeDir, _ := os.UserHomeDir()
-	assert.Equal(t, homeDir+"/.claude/conversations", adapterConfig.HistoryDir)
-	assert.True(t, adapterConfig.Interactive.Enabled)
+	// HistoryDir is kept for backward compatibility but no longer expanded
+	assert.Equal(t, "~/.claude/conversations", adapterConfig.HistoryDir)
+	assert.True(t, adapterConfig.UseHook)
 }
 
 func TestGetCLIAdapterConfig_NonExistentAdapter_ReturnsError(t *testing.T) {

@@ -3,25 +3,16 @@ package cli
 import (
 	"fmt"
 	"os/exec"
-	"regexp"
-	"strings"
 	"testing"
 	"time"
 )
 
-// Mock functions for testing (to be replaced with proper mocks later)
-var (
-	mockSendKeys      func(sessionName, input string) error
-	mockCapturePane   func(sessionName string, lines int) (string, error)
-	mockIsAlive       func(sessionName string) bool
-	mockCreateSession func(sessionName, cliType, workDir string) error
-)
-
 func TestClaudeAdapter_NewClaudeAdapter(t *testing.T) {
 	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "/tmp/test/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`, `Confirm\?`},
+		UseHook:      true,
+		PollInterval: 1 * time.Second,
+		StableCount:  3,
+		PollTimeout:  120 * time.Second,
 	})
 
 	if err != nil {
@@ -32,57 +23,52 @@ func TestClaudeAdapter_NewClaudeAdapter(t *testing.T) {
 		t.Fatal("NewClaudeAdapter returned nil")
 	}
 
-	if adapter.historyDir != "/tmp/test/conversations" {
-		t.Errorf("expected historyDir /tmp/test/conversations, got %s", adapter.historyDir)
+	// Verify polling config is set correctly
+	if adapter.useHook != true {
+		t.Errorf("expected useHook true, got %v", adapter.useHook)
 	}
 
-	if adapter.checkLines != 3 {
-		t.Errorf("expected checkLines 3, got %d", adapter.checkLines)
+	if adapter.pollInterval != 1*time.Second {
+		t.Errorf("expected pollInterval 1s, got %v", adapter.pollInterval)
 	}
 
-	if len(adapter.patterns) != 2 {
-		t.Errorf("expected 2 patterns, got %d", len(adapter.patterns))
+	if adapter.stableCount != 3 {
+		t.Errorf("expected stableCount 3, got %d", adapter.stableCount)
+	}
+
+	if adapter.pollTimeout != 120*time.Second {
+		t.Errorf("expected pollTimeout 120s, got %v", adapter.pollTimeout)
 	}
 }
 
-func TestClaudeAdapter_NewClaudeAdapter_PatternCompilation(t *testing.T) {
-	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "/tmp/test/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`, `Confirm\?`},
-	})
+func TestClaudeAdapter_NewClaudeAdapter_Defaults(t *testing.T) {
+	// Test with zero values - should use defaults
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{})
 
 	if err != nil {
 		t.Fatalf("NewClaudeAdapter returned error: %v", err)
 	}
 
-	// Verify patterns are compiled regex
-	if len(adapter.patterns) != 2 {
-		t.Fatal("expected 2 patterns")
+	// Verify defaults are applied
+	if adapter.pollInterval != 1*time.Second {
+		t.Errorf("expected default pollInterval 1s, got %v", adapter.pollInterval)
 	}
 
-	// Test first pattern - it requires a question mark followed by space and [y/N]
-	// Note: We need to escape the brackets in the pattern
-	if !adapter.patterns[0].MatchString("Execute? [y/N]") {
-		t.Error("first pattern should match 'Execute? [y/N]'")
+	if adapter.stableCount != 3 {
+		t.Errorf("expected default stableCount 3, got %d", adapter.stableCount)
 	}
 
-	// Test second pattern
-	if !adapter.patterns[1].MatchString("Confirm?") {
-		t.Error("second pattern should match 'Confirm?'")
-	}
-
-	// Test with actual prompt format
-	if !adapter.patterns[0].MatchString("Execute 'rm -rf ./temp'? [y/N]") {
-		t.Error("first pattern should match full prompt")
+	if adapter.pollTimeout != 120*time.Second {
+		t.Errorf("expected default pollTimeout 120s, got %v", adapter.pollTimeout)
 	}
 }
 
 func TestClaudeAdapter_SendInput(t *testing.T) {
 	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "/tmp/test/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`},
+		UseHook:      true,
+		PollInterval: 1 * time.Second,
+		StableCount:  3,
+		PollTimeout:  120 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("NewClaudeAdapter failed: %v", err)
@@ -97,125 +83,78 @@ func TestClaudeAdapter_SendInput(t *testing.T) {
 	}
 }
 
-func TestClaudeAdapter_CheckInteractive_WithConfirmationPrompt_ReturnsTrue(t *testing.T) {
-	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "/tmp/test/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`, `Confirm\?`},
-	})
-	if err != nil {
-		t.Fatalf("NewClaudeAdapter failed: %v", err)
+func TestClaudeAdapter_UseHook(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   ClaudeAdapterConfig
+		expected bool
+	}{
+		{
+			name: "hook mode enabled",
+			config: ClaudeAdapterConfig{
+				UseHook: true,
+			},
+			expected: true,
+		},
+		{
+			name: "polling mode (explicitly configured)",
+			config: ClaudeAdapterConfig{
+				UseHook:      false,
+				PollInterval: 1 * time.Second,
+			},
+			expected: false,
+		},
+		{
+			name:     "default (hook mode)",
+			config:   ClaudeAdapterConfig{},
+			expected: true, // Default is true when not configured
+		},
 	}
 
-	// Test pattern matching
-	lines := []string{"Processing files...", "Execute 'rm -rf ./temp'? [y/N]"}
-	waiting, prompt := testCheckInteractive(adapter, lines)
-
-	if !waiting {
-		t.Error("expected waiting=true for confirmation prompt")
-	}
-
-	if prompt == "" {
-		t.Error("expected non-empty prompt")
-	}
-}
-
-func TestClaudeAdapter_CheckInteractive_WithoutPrompt_ReturnsFalse(t *testing.T) {
-	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "/tmp/test/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`, `Confirm\?`},
-	})
-	if err != nil {
-		t.Fatalf("NewClaudeAdapter failed: %v", err)
-	}
-
-	// Test data: normal output without prompt
-	lines := []string{"Processing files...", "Done!"}
-
-	waiting, _ := testCheckInteractive(adapter, lines)
-
-	if waiting {
-		t.Error("expected waiting=false for normal output")
-	}
-}
-
-func TestClaudeAdapter_CheckInteractive_AnsiCodes_StripCorrectly(t *testing.T) {
-	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "/tmp/test/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`},
-	})
-	if err != nil {
-		t.Fatalf("NewClaudeAdapter failed: %v", err)
-	}
-
-	// Test data: ANSI codes with prompt
-	lines := []string{"\x1b[31mError:\x1b[0m Execute? [y/N]"}
-
-	waiting, prompt := testCheckInteractive(adapter, lines)
-
-	if !waiting {
-		t.Error("expected waiting=true even with ANSI codes")
-	}
-
-	// Verify prompt was cleaned
-	if prompt == "" {
-		t.Error("expected cleaned prompt")
-	}
-
-	// Verify ANSI codes were stripped
-	if strings.Contains(prompt, "\x1b") {
-		t.Error("prompt should not contain ANSI codes")
-	}
-}
-
-func TestClaudeAdapter_HomeDirExpansion(t *testing.T) {
-	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "~/.claude/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`},
-	})
-	if err != nil {
-		t.Fatalf("NewClaudeAdapter failed: %v", err)
-	}
-
-	// Home directory should be expanded
-	if adapter.historyDir == "~" {
-		t.Error("home directory should be expanded")
-	}
-
-	// Should start with /home or /Users (typical home dirs)
-	if !strings.HasPrefix(adapter.historyDir, "/") {
-		t.Error("expanded path should be absolute")
-	}
-}
-
-// Helper function to test CheckInteractive logic
-func testCheckInteractive(adapter *ClaudeAdapter, lines []string) (bool, string) {
-	for _, line := range lines {
-		clean := stripAnsiHelper(line)
-		for _, pattern := range adapter.patterns {
-			if pattern.MatchString(clean) {
-				return true, clean
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter, err := NewClaudeAdapter(tt.config)
+			if err != nil {
+				t.Fatalf("NewClaudeAdapter failed: %v", err)
 			}
-		}
+
+			if adapter.UseHook() != tt.expected {
+				t.Errorf("expected UseHook=%v, got %v", tt.expected, adapter.UseHook())
+			}
+		})
 	}
-	return false, ""
 }
 
-// Helper function to strip ANSI codes (simplified version)
-func stripAnsiHelper(input string) string {
-	// Simple ANSI escape code removal
-	ansiEscape := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-	return ansiEscape.ReplaceAllString(input, "")
+func TestClaudeAdapter_PollingConfig(t *testing.T) {
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
+		UseHook:      false,
+		PollInterval: 2 * time.Second,
+		StableCount:  5,
+		PollTimeout:  60 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
+
+	if adapter.GetPollInterval() != 2*time.Second {
+		t.Errorf("expected pollInterval 2s, got %v", adapter.GetPollInterval())
+	}
+
+	if adapter.GetStableCount() != 5 {
+		t.Errorf("expected stableCount 5, got %d", adapter.GetStableCount())
+	}
+
+	if adapter.GetPollTimeout() != 60*time.Second {
+		t.Errorf("expected pollTimeout 60s, got %v", adapter.GetPollTimeout())
+	}
 }
 
 func TestClaudeAdapter_IsSessionAlive(t *testing.T) {
 	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "/tmp/test/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`},
+		UseHook:      true,
+		PollInterval: 1 * time.Second,
+		StableCount:  3,
+		PollTimeout:  120 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("NewClaudeAdapter failed: %v", err)
@@ -231,63 +170,12 @@ func TestClaudeAdapter_IsSessionAlive(t *testing.T) {
 	}
 }
 
-func TestConversation_LastAssistantMessage(t *testing.T) {
-	conv := &Conversation{
-		Messages: []Message{
-			{Role: "user", Content: "Hello", Timestamp: time.Now()},
-			{Role: "assistant", Content: "Hi there!", Timestamp: time.Now()},
-			{Role: "user", Content: "How are you?", Timestamp: time.Now()},
-		},
-	}
-
-	msg := conv.LastAssistantMessage()
-	if msg == nil {
-		t.Fatal("expected assistant message, got nil")
-	}
-
-	if msg.Content != "Hi there!" {
-		t.Errorf("expected 'Hi there!', got %s", msg.Content)
-	}
-}
-
-func TestConversation_LastAssistantMessage_NoMessages(t *testing.T) {
-	conv := &Conversation{
-		Messages: []Message{},
-	}
-
-	msg := conv.LastAssistantMessage()
-	if msg != nil {
-		t.Error("expected nil for empty conversation")
-	}
-}
-
-func TestConversation_LastAssistantMessage_OnlyUserMessages(t *testing.T) {
-	conv := &Conversation{
-		Messages: []Message{
-			{Role: "user", Content: "Hello", Timestamp: time.Now()},
-			{Role: "user", Content: "How are you?", Timestamp: time.Now()},
-		},
-	}
-
-	msg := conv.LastAssistantMessage()
-	if msg != nil {
-		t.Error("expected nil when no assistant messages")
-	}
-}
-
-func TestConversation_LoadConversation_InvalidJSON(t *testing.T) {
-	// This test verifies error handling for invalid JSON
-	_, err := LoadConversation("/nonexistent/file.json")
-	if err == nil {
-		t.Error("expected error for nonexistent file")
-	}
-}
-
 func TestClaudeAdapter_CreateSession(t *testing.T) {
 	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "/tmp/test/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`},
+		UseHook:      true,
+		PollInterval: 1 * time.Second,
+		StableCount:  3,
+		PollTimeout:  120 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("NewClaudeAdapter failed: %v", err)
@@ -306,36 +194,4 @@ func TestClaudeAdapter_CreateSession(t *testing.T) {
 
 	// Clean up: try to kill the session if it was created
 	exec.Command("tmux", "kill-session", "-t", sessionName).Run()
-}
-
-func TestClaudeAdapter_GetLastResponse_NoConversationFiles(t *testing.T) {
-	// Create a temporary directory with no conversation files
-	tmpDir := t.TempDir()
-
-	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: tmpDir,
-		CheckLines: 3,
-		Patterns:   []string{`\? \[y/N\]`},
-	})
-	if err != nil {
-		t.Fatalf("NewClaudeAdapter failed: %v", err)
-	}
-
-	_, err = adapter.GetLastResponse("test-session")
-	if err == nil {
-		t.Error("expected error when no conversation files exist")
-	}
-}
-
-func TestClaudeAdapter_NewClaudeAdapter_InvalidPattern(t *testing.T) {
-	// Test with invalid regex pattern
-	_, err := NewClaudeAdapter(ClaudeAdapterConfig{
-		HistoryDir: "/tmp/test/conversations",
-		CheckLines: 3,
-		Patterns:   []string{`[invalid(`}, // Unclosed bracket
-	})
-
-	if err == nil {
-		t.Error("expected error for invalid regex pattern")
-	}
 }

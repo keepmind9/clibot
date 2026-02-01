@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -17,10 +15,6 @@ import (
 
 // OpenCodeAdapterConfig configuration for OpenCode adapter
 type OpenCodeAdapterConfig struct {
-	HistoryDir string   // Directory containing conversation JSON files
-	CheckLines int      // Number of lines to check for interactive prompts
-	Patterns   []string // Regex patterns for interactive prompts
-
 	// Polling mode configuration (when UseHook = false)
 	UseHook      bool          // Use hook mode (true) or polling mode (false). Default: true
 	PollInterval time.Duration // Polling interval. Default: 1s
@@ -30,10 +24,6 @@ type OpenCodeAdapterConfig struct {
 
 // OpenCodeAdapter implements CLIAdapter for OpenCode
 type OpenCodeAdapter struct {
-	historyDir string           // Expanded path to conversation history directory
-	checkLines int              // Number of lines to check for prompts
-	patterns   []*regexp.Regexp // Compiled regex patterns
-
 	// Polling mode configuration
 	useHook      bool
 	pollInterval time.Duration
@@ -42,36 +32,17 @@ type OpenCodeAdapter struct {
 }
 
 // NewOpenCodeAdapter creates a new OpenCode adapter
-// Returns an error if any of the regex patterns fail to compile
 func NewOpenCodeAdapter(config OpenCodeAdapterConfig) (*OpenCodeAdapter, error) {
-	// Expand home directory in historyDir
-	historyDir, err := expandHome(config.HistoryDir)
-	if err != nil {
-		return nil, fmt.Errorf("invalid history_dir: %w", err)
-	}
-
-	// Compile regex patterns
-	patterns := make([]*regexp.Regexp, len(config.Patterns))
-	for i, pattern := range config.Patterns {
-		compiled, err := regexp.Compile(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compile pattern '%s': %w", pattern, err)
-		}
-		patterns[i] = compiled
-	}
-
-	// Set defaults for polling config
+	// Default to hook mode (true) if not explicitly configured
 	useHook := config.UseHook
-	// Note: Default value is set in config.go validation
-	// If not specified in YAML, use_hook defaults to true (hook mode)
+	if !useHook && config.PollInterval == 0 && config.PollTimeout == 0 {
+		useHook = true
+	}
 
 	pollInterval, stableCount, pollTimeout := normalizePollingConfig(
 		config.PollInterval, config.StableCount, config.PollTimeout)
 
 	return &OpenCodeAdapter{
-		historyDir:   historyDir,
-		checkLines:   config.CheckLines,
-		patterns:     patterns,
 		useHook:      useHook,
 		pollInterval: pollInterval,
 		stableCount:  stableCount,
@@ -96,18 +67,6 @@ func (o *OpenCodeAdapter) SendInput(sessionName, input string) error {
 	}
 
 	return nil
-}
-
-// GetLastResponse retrieves the last assistant response from conversation history
-// This is the fallback method when hook doesn't provide transcript_path
-func (o *OpenCodeAdapter) GetLastResponse(sessionName string) (string, error) {
-	// Try to get from conversation history files (fallback)
-	content, err := GetLastOpenCodeResponse(o.historyDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to get last response: %w", err)
-	}
-
-	return content, nil
 }
 
 // HandleHookData handles raw hook data from OpenCode
@@ -220,42 +179,6 @@ func (o *OpenCodeAdapter) CreateSession(sessionName, cliType, workDir string) er
 	}
 
 	return nil
-}
-
-// CheckInteractive checks if OpenCode is waiting for user input
-func (o *OpenCodeAdapter) CheckInteractive(sessionName string) (bool, string, error) {
-	// Capture last N lines from tmux session
-	output, err := watchdog.CapturePane(sessionName, o.checkLines)
-	if err != nil {
-		return false, "", fmt.Errorf("failed to capture pane: %w", err)
-	}
-
-	// Split into lines
-	lines := strings.Split(output, "\n")
-
-	// Check last N lines for interactive prompts
-	// Only check the last checkLines lines to avoid false positives
-	startIdx := len(lines) - o.checkLines
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	relevantLines := lines[startIdx:]
-
-	// Check each line for patterns
-	for _, line := range relevantLines {
-		// Strip ANSI codes
-		clean := watchdog.StripANSI(line)
-
-		// Check against all patterns
-		for _, pattern := range o.patterns {
-			if pattern.MatchString(clean) {
-				return true, clean, nil
-			}
-		}
-	}
-
-	return false, "", nil
 }
 
 // UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
@@ -390,52 +313,5 @@ func extractLastUserPromptFromTranscript(transcriptPath string) (string, error) 
 	return "", fmt.Errorf("no user message found in transcript")
 }
 
-// GetLastOpenCodeResponse retrieves the latest assistant response from OpenCode history files
-// This scans the history directory for the most recent conversation file
-func GetLastOpenCodeResponse(historyDir string) (string, error) {
-	logger.WithField("history_dir", historyDir).Debug("scanning-opencode-history-directory")
-
-	// Find all JSON files in history directory
-	entries, err := os.ReadDir(historyDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to read history directory: %w", err)
-	}
-
-	// Helper structure to hold file info with mod time
-	type jsonFile struct {
-		name    string
-		modTime time.Time
-	}
-
-	var jsonFiles []jsonFile
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
-			info, err := entry.Info()
-			if err != nil {
-				logger.WithField("file", entry.Name()).Warn("failed-to-get-file-info")
-				continue
-			}
-			jsonFiles = append(jsonFiles, jsonFile{
-				name:    entry.Name(),
-				modTime: info.ModTime(),
-			})
-		}
-	}
-
-	if len(jsonFiles) == 0 {
-		return "", fmt.Errorf("no JSON files found in history directory")
-	}
-
-	// Sort by modification time, newest first
-	sort.Slice(jsonFiles, func(i, j int) bool {
-		return jsonFiles[i].modTime.After(jsonFiles[j].modTime)
-	})
-
-	// Try the most recent file
-	mostRecent := jsonFiles[0]
-	transcriptPath := historyDir + "/" + mostRecent.name
-
-	logger.WithField("transcript", mostRecent.name).Debug("extracting-from-latest-opencode-transcript")
-
-	return extractFromOpenCodeTranscript(transcriptPath)
-}
+// GetLastOpenCodeResponse is removed - no longer needed as OpenCode uses hook mode
+// which provides transcript_path directly in the hook data.

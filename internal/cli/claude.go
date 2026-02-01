@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"time"
 
@@ -17,10 +16,6 @@ import (
 
 // ClaudeAdapterConfig configuration for Claude Code adapter
 type ClaudeAdapterConfig struct {
-	HistoryDir string   // Directory containing conversation JSON files
-	CheckLines int      // Number of lines to check for interactive prompts
-	Patterns   []string // Regex patterns for interactive prompts
-
 	// Polling mode configuration (when UseHook = false)
 	UseHook      bool          // Use hook mode (true) or polling mode (false). Default: true
 	PollInterval time.Duration // Polling interval. Default: 1s
@@ -30,10 +25,6 @@ type ClaudeAdapterConfig struct {
 
 // ClaudeAdapter implements CLIAdapter for Claude Code
 type ClaudeAdapter struct {
-	historyDir string           // Expanded path to conversation history directory
-	checkLines int              // Number of lines to check for prompts
-	patterns   []*regexp.Regexp // Compiled regex patterns
-
 	// Polling mode configuration
 	useHook      bool
 	pollInterval time.Duration
@@ -42,36 +33,18 @@ type ClaudeAdapter struct {
 }
 
 // NewClaudeAdapter creates a new Claude Code adapter
-// Returns an error if any of the regex patterns fail to compile
 func NewClaudeAdapter(config ClaudeAdapterConfig) (*ClaudeAdapter, error) {
-	// Expand home directory in historyDir
-	historyDir, err := expandHome(config.HistoryDir)
-	if err != nil {
-		return nil, fmt.Errorf("invalid history_dir: %w", err)
-	}
-
-	// Compile regex patterns
-	patterns := make([]*regexp.Regexp, len(config.Patterns))
-	for i, pattern := range config.Patterns {
-		compiled, err := regexp.Compile(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compile pattern '%s': %w", pattern, err)
-		}
-		patterns[i] = compiled
-	}
-
-	// Set defaults for polling config
+	// Default to hook mode (true) if not explicitly configured
+	// If UseHook is false and polling config is at defaults, assume user wants hook mode
 	useHook := config.UseHook
-	// Note: Default value is set in config.go validation
-	// If not specified in YAML, use_hook defaults to true (hook mode)
+	if !useHook && config.PollInterval == 0 && config.PollTimeout == 0 {
+		useHook = true
+	}
 
 	pollInterval, stableCount, pollTimeout := normalizePollingConfig(
 		config.PollInterval, config.StableCount, config.PollTimeout)
 
 	return &ClaudeAdapter{
-		historyDir:   historyDir,
-		checkLines:   config.CheckLines,
-		patterns:     patterns,
 		useHook:      useHook,
 		pollInterval: pollInterval,
 		stableCount:  stableCount,
@@ -96,18 +69,6 @@ func (c *ClaudeAdapter) SendInput(sessionName, input string) error {
 	}
 
 	return nil
-}
-
-// GetLastResponse retrieves the last assistant response from conversation history
-// This is the fallback method when hook doesn't provide transcript_path
-func (c *ClaudeAdapter) GetLastResponse(sessionName string) (string, error) {
-	// Try to get from conversation history files (fallback)
-	content, err := GetLastAssistantContent(c.historyDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to get last response: %w", err)
-	}
-
-	return content, nil
 }
 
 // HandleHookData handles raw hook data from Claude Code
@@ -221,42 +182,6 @@ func (c *ClaudeAdapter) CreateSession(sessionName, cliType, workDir string) erro
 	}
 
 	return nil
-}
-
-// CheckInteractive checks if Claude Code is waiting for user input
-func (c *ClaudeAdapter) CheckInteractive(sessionName string) (bool, string, error) {
-	// Capture last N lines from tmux session
-	output, err := watchdog.CapturePane(sessionName, c.checkLines)
-	if err != nil {
-		return false, "", fmt.Errorf("failed to capture pane: %w", err)
-	}
-
-	// Split into lines
-	lines := strings.Split(output, "\n")
-
-	// Check last N lines for interactive prompts
-	// Only check the last checkLines lines to avoid false positives
-	startIdx := len(lines) - c.checkLines
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	relevantLines := lines[startIdx:]
-
-	// Check each line for patterns
-	for _, line := range relevantLines {
-		// Strip ANSI codes
-		clean := watchdog.StripANSI(line)
-
-		// Check against all patterns
-		for _, pattern := range c.patterns {
-			if pattern.MatchString(clean) {
-				return true, clean, nil
-			}
-		}
-	}
-
-	return false, "", nil
 }
 
 // UseHook returns whether this adapter uses hook mode (true) or polling mode (false)

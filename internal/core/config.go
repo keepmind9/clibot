@@ -288,26 +288,8 @@ func (c *Config) GetCLIAdapterConfig(cliType string) (CLIAdapterConfig, error) {
 		return CLIAdapterConfig{}, fmt.Errorf("CLI adapter %s not found in configuration", cliType)
 	}
 
-	// Expand home directory in paths
-	var err error
-	if adapter.HistoryDir != "" {
-		adapter.HistoryDir, err = expandHome(adapter.HistoryDir)
-		if err != nil {
-			return CLIAdapterConfig{}, fmt.Errorf("invalid history_dir: %w", err)
-		}
-	}
-	if adapter.HistoryDB != "" {
-		adapter.HistoryDB, err = expandHome(adapter.HistoryDB)
-		if err != nil {
-			return CLIAdapterConfig{}, fmt.Errorf("invalid history_db: %w", err)
-		}
-	}
-	if adapter.HistoryFile != "" {
-		adapter.HistoryFile, err = expandHome(adapter.HistoryFile)
-		if err != nil {
-			return CLIAdapterConfig{}, fmt.Errorf("invalid history_file: %w", err)
-		}
-	}
+	// Note: HistoryDir, HistoryDB, HistoryFile are deprecated and no longer processed
+	// They are kept in the struct for backward compatibility with existing config files
 
 	return adapter, nil
 }

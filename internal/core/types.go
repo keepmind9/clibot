@@ -85,25 +85,18 @@ type BotConfig struct {
 
 // CLIAdapterConfig represents CLI adapter configuration
 type CLIAdapterConfig struct {
-	HistoryDir   string            `yaml:"history_dir"`
-	HistoryDB    string            `yaml:"history_db"`
-	HistoryFile  string            `yaml:"history_file"`
-	HookCommand  string            `yaml:"hook_command"`
-	Interactive  InteractiveConfig `yaml:"interactive"`
-	Timeout      string            `yaml:"timeout"`       // Connection timeout (e.g., "2s")
-	PollTimeout  string            `yaml:"poll_timeout"`  // Long poll timeout (e.g., "60s")
+	// Deprecated fields - kept for backward compatibility but not used
+	HistoryDir  string `yaml:"history_dir"`  // Deprecated: Not used anymore
+	HistoryDB   string `yaml:"history_db"`   // Deprecated: Not used anymore
+	HistoryFile string `yaml:"history_file"` // Deprecated: Not used anymore
+
+	Timeout     string `yaml:"timeout"`      // Connection timeout (e.g., "2s")
+	PollTimeout string `yaml:"poll_timeout"` // Long poll timeout (e.g., "60s")
 
 	// Polling mode configuration (alternative to hook mode)
-	UseHook      bool   `yaml:"use_hook"`       // Use hook mode (true) or polling mode (false). Default: true
-	PollInterval string `yaml:"poll_interval"`  // Polling interval (e.g., "1s"). Default: "1s"
-	StableCount   int    `yaml:"stable_count"`   // Consecutive stable checks required. Default: 3
-}
-
-// InteractiveConfig represents interactive detection configuration
-type InteractiveConfig struct {
-	Enabled    bool     `yaml:"enabled"`
-	CheckLines int      `yaml:"check_lines"`
-	Patterns   []string `yaml:"patterns"`
+	UseHook      bool   `yaml:"use_hook"`      // Use hook mode (true) or polling mode (false). Default: true
+	PollInterval string `yaml:"poll_interval"` // Polling interval (e.g., "1s"). Default: "1s"
+	StableCount   int    `yaml:"stable_count"`  // Consecutive stable checks required. Default: 3
 }
 
 // LoggingConfig represents logging configuration
