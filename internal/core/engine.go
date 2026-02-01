@@ -242,8 +242,17 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 
 	// Step 3: If session is waiting for input (interactive state), pass directly
 	if session.State == StateWaitingInput {
+		// Process key words before sending
+		processedContent := watchdog.ProcessKeyWords(msg.Content)
+		if processedContent != msg.Content {
+			logger.WithFields(logrus.Fields{
+				"original": msg.Content,
+				"processed": fmt.Sprintf("%q", processedContent),
+			}).Debug("keyword-converted-to-key-sequence")
+		}
+
 		adapter := e.cliAdapters[session.CLIType]
-		if err := adapter.SendInput(session.Name, msg.Content); err != nil {
+		if err := adapter.SendInput(session.Name, processedContent); err != nil {
 			e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send input: %v", err))
 			return
 		}
@@ -272,9 +281,19 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		return
 	}
 
-	// Step 4: Normal flow - send to CLI
+	// Step 4: Process key words (tab, esc, stab, enter)
+	// Converts entire input matching keywords to actual key sequences
+	processedContent := watchdog.ProcessKeyWords(msg.Content)
+	if processedContent != msg.Content {
+		logger.WithFields(logrus.Fields{
+			"original": msg.Content,
+			"processed": fmt.Sprintf("%q", processedContent),
+		}).Debug("keyword-converted-to-key-sequence")
+	}
+
+	// Step 5: Normal flow - send to CLI
 	adapter := e.cliAdapters[session.CLIType]
-	if err := adapter.SendInput(session.Name, msg.Content); err != nil {
+	if err := adapter.SendInput(session.Name, processedContent); err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
 			"error":   err,
