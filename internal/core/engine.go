@@ -343,10 +343,23 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	// Step 5: Update session state to processing
 	e.updateSessionState(session.Name, StateProcessing)
 
-	// Step 6: Start new watchdog for this session
+	// Step 6: Check if CLI adapter uses hook mode
+	// Hook mode: CLI sends notification when complete, no polling needed
+	// Polling mode: Need to monitor tmux output to detect completion
+	if adapter.UseHook() {
+		// Hook mode - CLI will notify via HTTP hook when complete
+		// No need to start watchdog polling
+		logger.WithFields(logrus.Fields{
+			"session": session.Name,
+			"mode":    "hook",
+		}).Debug("skipping-watchdog-startup-in-hook-mode")
+		return
+	}
+
+	// Step 7: Polling mode - start watchdog monitoring
+	// Watchdog polls tmux output to detect when CLI completes response
 	ctx, cleanup := e.startNewWatchdogForSession(session.Name)
 
-	// Step 7: Start watchdog monitoring (for detecting interactive prompts)
 	go func(sessionName string, watchdogCtx context.Context) {
 		defer func() {
 			if r := recover(); r != nil {
