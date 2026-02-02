@@ -58,8 +58,8 @@ func TestClaudeAdapter_NewClaudeAdapter_Defaults(t *testing.T) {
 		t.Errorf("expected default stableCount 3, got %d", adapter.stableCount)
 	}
 
-	if adapter.pollTimeout != 120*time.Second {
-		t.Errorf("expected default pollTimeout 120s, got %v", adapter.pollTimeout)
+	if adapter.pollTimeout != 1*time.Hour {
+		t.Errorf("expected default pollTimeout 1h, got %v", adapter.pollTimeout)
 	}
 }
 

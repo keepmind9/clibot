@@ -92,14 +92,14 @@ cli_adapters:
     # Polling 模式配置（如需要）
     # poll_interval: "2s"
     # stable_count: 4
-    # poll_timeout: "120s"
+    # poll_timeout: "1h"      # 硬保底超时（默认: 1h，实际由 stable_count 决定完成时机）
 
   opencode:
     use_hook: true
     # Polling 模式配置（如需要）
     # poll_interval: "1s"
     # stable_count: 3
-    # poll_timeout: "120s"
+    # poll_timeout: "1h"      # 硬保底超时（默认: 1h，实际由 stable_count 决定完成时机）
 
 # 日志配置
 logging:

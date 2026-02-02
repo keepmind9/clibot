@@ -90,7 +90,10 @@ type CLIAdapter interface {
 // Parameters:
 //   - interval: polling interval (0 → 1 second)
 //   - stableCount: consecutive stable checks required (0 → 3)
-//   - timeout: maximum wait time (0 → 120 seconds)
+//   - timeout: maximum wait time (0 → 1 hour)
+//
+// Note: timeout acts as a safety fallback; actual completion is determined
+// by the stable_count mechanism (output stability detection).
 //
 // Returns:
 //   - Normalized interval, stableCount, timeout
@@ -102,7 +105,7 @@ func normalizePollingConfig(interval time.Duration, stableCount int, timeout tim
 		stableCount = 3
 	}
 	if timeout == 0 {
-		timeout = 120 * time.Second
+		timeout = 1 * time.Hour // Safety fallback - actual completion determined by stable_count
 	}
 	return interval, stableCount, timeout
 }
