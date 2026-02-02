@@ -43,12 +43,39 @@ func eqPromptCharacterData(line string, userPrompt string) bool {
 func isLikelyUserPromptLine(line, userPrompt string) bool {
 	// Priority 1: Lines with cursor prefix (most reliable indicator)
 	if strings.HasPrefix(line, "❯ ") && strings.Contains(line, userPrompt) {
-		logger.WithFields(logrus.Fields{
-			"line":        line,
-			"user_prompt": userPrompt,
-			"reason":      "has cursor prefix",
-		}).Debug("accepting-line-has-cursor-prefix")
-		return true
+		// Check if this is a menu option (e.g., "❯ 1. Yes", "❯ 2. Option")
+		// Menu options have the pattern: cursor + number + punctuation + text
+		// User input has the pattern: cursor + userPrompt (possibly with text after)
+		cleanLine := strings.TrimPrefix(line, "❯ ")
+		cleanLine = strings.TrimSpace(cleanLine)
+
+		// If line starts with userPrompt followed by menu punctuation, it's a menu option
+		if strings.HasPrefix(cleanLine, userPrompt) {
+			afterPrompt := cleanLine[len(userPrompt):]
+			afterPrompt = strings.TrimSpace(afterPrompt)
+
+			// Menu indicators: ". " (period), ", " (comma), etc.
+			if strings.HasPrefix(afterPrompt, ". ") ||
+			   strings.HasPrefix(afterPrompt, ",") ||
+			   strings.HasPrefix(afterPrompt, "、") {
+				logger.WithFields(logrus.Fields{
+					"line":        line,
+					"user_prompt": userPrompt,
+					"reason":      "menu option pattern detected",
+				}).Debug("rejecting-line-is-menu-option-not-user-input")
+				return false
+			}
+		}
+
+		// If cleanLine exactly matches userPrompt, it's user input
+		if cleanLine == userPrompt || strings.HasPrefix(cleanLine, userPrompt+" ") {
+			logger.WithFields(logrus.Fields{
+				"line":        line,
+				"user_prompt": userPrompt,
+				"reason":      "has cursor prefix and matches user prompt",
+			}).Debug("accepting-line-has-cursor-prefix")
+			return true
+		}
 	}
 
 	// Priority 2: Exact match (for cases without cursor prefix)
