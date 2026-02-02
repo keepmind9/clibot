@@ -312,70 +312,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	}
 	e.sessionMu.Unlock()
 
-	// Step 3: If session is waiting for input (interactive state), pass directly
-	// Use read lock to prevent race condition with session state updates
-	e.sessionMu.RLock()
-	isWaitingInput := session.State == StateWaitingInput
-	e.sessionMu.RUnlock()
-
-	if isWaitingInput {
-		// Process key words before sending
-		processedContent := watchdog.ProcessKeyWords(msg.Content)
-		if processedContent != msg.Content {
-			logger.WithFields(logrus.Fields{
-				"original": msg.Content,
-				"processed": fmt.Sprintf("%q", processedContent),
-			}).Debug("keyword-converted-to-key-sequence")
-		}
-
-		adapter := e.cliAdapters[session.CLIType]
-		if err := adapter.SendInput(session.Name, processedContent); err != nil {
-			// Don't update state on error - keep it in waiting input state
-			e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send input: %v", err))
-			return
-		}
-
-		// Update session state
-		e.updateSessionState(session.Name, StateProcessing)
-
-		// Start new watchdog for this session
-		ctx, cleanup := e.startNewWatchdogForSession(session.Name)
-
-		// Resume watchdog monitoring
-		go func(sessionName string, watchdogCtx context.Context) {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.WithFields(logrus.Fields{
-						"session": sessionName,
-						"panic":   r,
-					}).Error("watchdog-panic-recovered")
-				}
-				// Clear the cancel function when done
-				cleanup()
-			}()
-
-			// Re-fetch session under lock to avoid race condition
-			e.sessionMu.RLock()
-			session, exists := e.sessions[sessionName]
-			e.sessionMu.RUnlock()
-
-			if !exists {
-				logger.WithField("session", sessionName).Warn("session-no-longer-exists")
-				return
-			}
-
-			if err := e.startWatchdogWithContext(watchdogCtx, session); err != nil {
-				logger.WithFields(logrus.Fields{
-					"session": sessionName,
-					"error":   err,
-				}).Error("watchdog-failed")
-			}
-		}(session.Name, ctx)
-
-		return
-	}
-
-	// Step 4: Process key words (tab, esc, stab, enter)
+	// Step 3: Process key words (tab, esc, stab, enter, ctrlc, etc.)
 	// Converts entire input matching keywords to actual key sequences
 	processedContent := watchdog.ProcessKeyWords(msg.Content)
 	if processedContent != msg.Content {
@@ -385,15 +322,15 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		}).Debug("keyword-converted-to-key-sequence")
 	}
 
-	// Step 5: Normal flow - send to CLI
+	// Step 4: Send to CLI
 	adapter := e.cliAdapters[session.CLIType]
 	if err := adapter.SendInput(session.Name, processedContent); err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
 			"error":   err,
 		}).Error("failed-to-send-input-to-cli")
-		// Restore session state to idle on error
-		e.updateSessionState(session.Name, StateIdle)
+		// On error, keep session in its current state (don't change to idle)
+		// This preserves the waiting input state if it was interactive
 		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send input: %v", err))
 		return
 	}
@@ -403,13 +340,13 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		"cli":     session.CLIType,
 	}).Info("input-sent-to-cli")
 
-	// Update session state
+	// Step 5: Update session state to processing
 	e.updateSessionState(session.Name, StateProcessing)
 
-	// Start new watchdog for this session
+	// Step 6: Start new watchdog for this session
 	ctx, cleanup := e.startNewWatchdogForSession(session.Name)
 
-	// Start watchdog monitoring (for detecting interactive prompts)
+	// Step 7: Start watchdog monitoring (for detecting interactive prompts)
 	go func(sessionName string, watchdogCtx context.Context) {
 		defer func() {
 			if r := recover(); r != nil {
