@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -104,6 +106,7 @@ type Engine struct {
 	messageChan     chan bot.BotMessage        // Bot message channel
 	hookServer      *http.Server               // HTTP server for hooks
 	sessionChannels map[string]BotChannel      // Session name -> active bot channel (for routing responses)
+	inputTracker    *InputTracker              // Tracks user input for response extraction
 	ctx             context.Context            // Context for cancellation
 	cancel          context.CancelFunc         // Cancel function for graceful shutdown
 }
@@ -117,6 +120,14 @@ type BotChannel struct {
 // NewEngine creates a new Engine instance
 func NewEngine(config *Config) *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Initialize input tracker for response extraction
+	tracker, err := NewInputTracker(filepath.Join(os.Getenv("HOME"), ".clibot", "sessions"))
+	if err != nil {
+		logger.WithField("error", err).Warn("failed-to-create-input-tracker-response-extraction-may-be-affected")
+		tracker = nil // Continue without tracker
+	}
+
 	return &Engine{
 		config:          config,
 		cliAdapters:     make(map[string]cli.CLIAdapter),
@@ -124,6 +135,7 @@ func NewEngine(config *Config) *Engine {
 		sessions:        make(map[string]*Session),
 		messageChan:     make(chan bot.BotMessage, constants.MessageChannelBufferSize),
 		sessionChannels: make(map[string]BotChannel),
+		inputTracker:    tracker,
 		ctx:             ctx,
 		cancel:          cancel,
 	}
@@ -319,6 +331,23 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 			"original": msg.Content,
 			"processed": fmt.Sprintf("%q", processedContent),
 		}).Debug("keyword-converted-to-key-sequence")
+	}
+
+	// Step 3.5: Record user input for response extraction (polling mode)
+	// This recorded input will be used as an anchor to extract the correct response
+	// from tmux output, which may contain historical conversation data
+	if e.inputTracker != nil {
+		if err := e.inputTracker.RecordInput(session.Name, msg.Content); err != nil {
+			logger.WithFields(logrus.Fields{
+				"session": session.Name,
+				"error":   err,
+			}).Warn("failed-to-record-input-response-extraction-may-be-affected")
+		} else {
+			logger.WithFields(logrus.Fields{
+				"session":      session.Name,
+				"input_length": len(msg.Content),
+			}).Debug("input-recorded-for-response-extraction")
+		}
 	}
 
 	// Step 4: Send to CLI
@@ -761,7 +790,8 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 	}).Info("polling-mode-watchdog-started")
 
 	// Wait for CLI to complete (polling mode)
-	content, err := watchdog.WaitForCompletion(session.Name, pollingConfig, ctx)
+	// This returns all stable content from tmux, which may include historical data
+	rawContent, err := watchdog.WaitForCompletion(session.Name, pollingConfig, ctx)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
@@ -774,13 +804,54 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 		return err
 	}
 
+	// Extract the relevant response using recorded user input
+	var response string
+	if e.inputTracker != nil && e.inputTracker.HasInput(session.Name) {
+		// Get the recorded user input
+		lastInput, timestamp, err := e.inputTracker.GetLastInput(session.Name)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"session": session.Name,
+				"error":   err,
+			}).Warn("failed-to-get-recorded-input-using-full-content")
+			response = rawContent
+		} else {
+			// Extract content after the recorded user input
+			response = watchdog.ExtractContentAfterPrompt(rawContent, lastInput)
+
+			// Calculate response time
+			responseTime := time.Now().UnixMilli() - timestamp
+			logger.WithFields(logrus.Fields{
+				"session":        session.Name,
+				"response_time":  fmt.Sprintf("%dms", responseTime),
+				"raw_length":     len(rawContent),
+				"extracted_length": len(response),
+			}).Info("response-extracted-using-recorded-input")
+
+			// Clear the recorded input after extraction
+			if err := e.inputTracker.Clear(session.Name); err != nil {
+				logger.WithFields(logrus.Fields{
+					"session": session.Name,
+					"error":   err,
+				}).Warn("failed-to-clear-recorded-input")
+			}
+		}
+	} else {
+		// No recorded input, use full content
+		// This happens when user interacts with CLI directly (not through bot)
+		logger.WithFields(logrus.Fields{
+			"session": session.Name,
+		}).Debug("no-recorded-input-using-full-tmux-content")
+		response = rawContent
+	}
+
 	// Send response to user
 	logger.WithFields(logrus.Fields{
 		"session":        session.Name,
-		"response_length": len(content),
+		"response_length": len(response),
 	}).Info("response-completed-sending-to-user")
 
-	e.sendResponseToUser(session.Name, content)
+	e.sendResponseToUser(session.Name, response)
 
 	// Update session state
 	e.updateSessionState(session.Name, StateIdle)
