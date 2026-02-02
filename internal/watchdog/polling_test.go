@@ -13,7 +13,7 @@ func TestDefaultPollingConfig_ReturnsCorrectDefaults(t *testing.T) {
 
 	assert.Equal(t, 1*time.Second, config.Interval)
 	assert.Equal(t, 3, config.StableCount)
-	assert.Equal(t, 120*time.Second, config.Timeout)
+	assert.Equal(t, 1*time.Hour, config.Timeout)
 }
 
 func TestExtractStableContent_RemovesANSICodes(t *testing.T) {

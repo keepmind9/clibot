@@ -36,7 +36,7 @@ func DefaultPollingConfig() PollingConfig {
 	return PollingConfig{
 		Interval:    1 * time.Second,
 		StableCount: 3,
-		Timeout:     120 * time.Second,
+		Timeout:     1 * time.Hour, // Safety fallback - actual completion determined by stable_count
 	}
 }
 

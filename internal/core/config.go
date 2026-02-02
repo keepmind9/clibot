@@ -66,7 +66,9 @@ const (
 	DefaultWatchdogMaxRetries   = 10
 	DefaultWatchdogInitialDelay = "500ms"
 	DefaultWatchdogRetryDelay   = "800ms"
-	DefaultPollTimeout         = "60s"
+	// DefaultPollTimeout is the default timeout for polling mode
+	// Set to 1 hour as a safety fallback - actual completion is determined by stable_count
+	DefaultPollTimeout = "1h"
 
 	// Default polling mode values
 	DefaultPollInterval = "1s"  // Poll every 1 second
@@ -200,8 +202,8 @@ func validateConfig(config *Config) error {
 			if timeout < interval {
 				return fmt.Errorf("poll_timeout for %s must be greater than poll_interval", cliType)
 			}
-			if timeout > 10*time.Minute {
-				return fmt.Errorf("poll_timeout for %s is too large (max 10m, got %v)", cliType, timeout)
+			if timeout > 2*time.Hour {
+				return fmt.Errorf("poll_timeout for %s is too large (max 2h, got %v)", cliType, timeout)
 			}
 
 			if adapter.StableCount < 1 || adapter.StableCount > 20 {
@@ -209,7 +211,7 @@ func validateConfig(config *Config) error {
 			}
 
 			// Validate that timeout is sufficient for stable_count
-			// Minimum timeout should be at least (stable_count + 1) * interval
+			// With 1h default timeout, this check is mostly a sanity check
 			minimumTimeout := time.Duration(adapter.StableCount+2) * interval
 			if timeout < minimumTimeout {
 				return fmt.Errorf("poll_timeout for %s must be at least %v (interval * (stable_count + 2)), got %v",

@@ -85,7 +85,7 @@ cli_adapters:
     # ========== Polling 模式配置（仅当 use_hook: false 时使用）==========
     # poll_interval: "1s"     # 轮询间隔（默认: 1s）
     # stable_count: 3         # 需要连续几次稳定输出才算完成（默认: 3）
-    # poll_timeout: "120s"    # 最大等待时间（默认: 120s）
+    # poll_timeout: "1h"      # 硬保底超时（默认: 1h，实际由 stable_count 决定完成时机）
 
   gemini:
     use_hook: true
