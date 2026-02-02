@@ -34,6 +34,7 @@ type Config struct {
 	HookServer    HookServerConfig        `yaml:"hook_server"`
 	Security      SecurityConfig          `yaml:"security"`
 	Watchdog      WatchdogConfig          `yaml:"watchdog"`
+	Session       SessionGlobalConfig     `yaml:"session"`
 	Sessions      []SessionConfig         `yaml:"sessions"`
 	DefaultSession string                 `yaml:"default_session"`
 	Bots          map[string]BotConfig    `yaml:"bots"`
@@ -61,6 +62,11 @@ type WatchdogConfig struct {
 	MaxRetries     int      `yaml:"max_retries"`
 	InitialDelay   string   `yaml:"initial_delay"`
 	RetryDelay     string   `yaml:"retry_delay"`
+}
+
+// SessionGlobalConfig represents global session configuration
+type SessionGlobalConfig struct {
+	InputHistorySize int `yaml:"input_history_size"` // Maximum number of input history entries to keep (default: 10)
 }
 
 // SessionConfig represents a session configuration

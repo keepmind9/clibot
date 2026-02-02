@@ -310,6 +310,67 @@ func ExtractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 	return cleanContent(result)
 }
 
+// InputRecord represents a historical user input
+type InputRecord struct {
+	Timestamp int64
+	Content   string
+}
+
+// ExtractContentAfterAnyInput extracts content appearing after ANY of the provided inputs
+// Searches inputs from newest to oldest, returning the first match found
+// This is useful for handling short inputs (menu selections) that may not appear in tmux output
+//
+// Parameters:
+//   - tmuxOutput: the captured tmux pane output
+//   - inputs: historical user inputs ordered from newest to oldest
+//
+// Returns:
+//   - Extracted content after the first matching input
+//   - If no inputs match, returns result of extractLastAssistantContent (fallback)
+func ExtractContentAfterAnyInput(tmuxOutput string, inputs []InputRecord) string {
+	if len(inputs) == 0 {
+		logger.Debug("no-inputs-provided-using-basic-extraction")
+		return extractLastAssistantContent(tmuxOutput)
+	}
+
+	lines := strings.Split(tmuxOutput, "\n")
+
+	// Try each input from newest to oldest
+	for _, input := range inputs {
+		logger.WithFields(logrus.Fields{
+			"input_length": len(input.Content),
+			"timestamp":    input.Timestamp,
+		}).Debug("trying-to-match-input-in-tmux-output")
+
+		matcher := NewPromptMatcher(input.Content)
+		promptIndex := matcher.findPromptIndex(lines)
+
+		if promptIndex != -1 {
+			// Found a match!
+			contentLines := matcher.extractContent(lines, promptIndex)
+
+			logger.WithFields(logrus.Fields{
+				"matched_input":      input.Content,
+				"matched_timestamp":  input.Timestamp,
+				"total_lines":        len(lines),
+				"prompt_index":       promptIndex,
+				"content_lines":      len(contentLines),
+			}).Info("found-input-match-extracting-content")
+
+			if len(contentLines) > 0 {
+				result := strings.Join(contentLines, "\n")
+				return cleanContent(result)
+			}
+		}
+	}
+
+	// No inputs matched, use fallback
+	logger.WithFields(logrus.Fields{
+		"tried_inputs": len(inputs),
+	}).Debug("no-input-matched-using-basic-extraction")
+	return extractLastAssistantContent(tmuxOutput)
+}
+
 // IsThinking checks if AI CLI is still thinking based on tmux output
 // Uses universal keywords that work across different AI CLI tools
 // Only checks the last N lines to accurately determine current state

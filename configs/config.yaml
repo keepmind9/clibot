@@ -35,6 +35,13 @@ watchdog:
     - 5s    # 第8秒：检测慢速交互
   timeout: 5m  # 超时时间
 
+# ========== Session 配置 ==========
+session:
+  # 保留最近的 N 个用户输入用于响应提取（默认: 10）
+  # 这些输入用于从 tmux 输出中提取正确的响应部分
+  # 特别是对于短输入（菜单选择如 "1", "2", "y", "n"）不显示在 tmux 中的情况
+  input_history_size: 10  # 范围: 1-100
+
 # tmux session 管理
 sessions:
   # 自动发现已有 tmux session，或手动配置

@@ -27,7 +27,8 @@ func TestInputTracker_RecordAndRetrieve(t *testing.T) {
 	err = tracker.RecordInput(session, input)
 	assert.NoError(t, err)
 
-	filePath := filepath.Join(tmpDir, session, "last_input.txt")
+	// Check new JSONL file exists
+	filePath := filepath.Join(tmpDir, session, "input_history.jsonl")
 	_, err = os.Stat(filePath)
 	assert.NoError(t, err)
 
@@ -113,9 +114,11 @@ func TestInputTracker_Clear(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, tracker.HasInput(session))
 
+	// Clear is now a no-op - it preserves history for multi-input matching
 	err = tracker.Clear(session)
 	assert.NoError(t, err)
-	assert.False(t, tracker.HasInput(session))
+	// Input should still exist after Clear
+	assert.True(t, tracker.HasInput(session))
 
 	err = tracker.Clear("non-existent")
 	assert.NoError(t, err)
@@ -166,8 +169,9 @@ func TestInputTracker_SessionIsolation(t *testing.T) {
 	retrieved2, _, _ := tracker.GetLastInput(session2)
 	assert.Equal(t, input2, retrieved2)
 
+	// Clear is now a no-op - sessions should still have their inputs
 	tracker.Clear(session1)
-	assert.False(t, tracker.HasInput(session1))
+	assert.True(t, tracker.HasInput(session1))
 	assert.True(t, tracker.HasInput(session2))
 }
 
@@ -402,20 +406,18 @@ func TestInputTracker_CorruptedFile(t *testing.T) {
 
 	session := "test-session"
 	sessionDir := filepath.Join(tmpDir, session)
-	sessionFile := filepath.Join(sessionDir, "last_input.txt")
+	sessionFile := filepath.Join(sessionDir, "input_history.jsonl")
 
 	os.MkdirAll(sessionDir, 0755)
 
 	testCases := []struct {
-		name     string
-		content  string
-		contains string
+		name          string
+		content       string
+		shouldHaveData bool
 	}{
-		{"empty file", "", "empty file"},
-		{"no newline", "1234567890123notimestamp", "no newline"},
-		{"only newline", "\n", "empty timestamp"},
-		{"invalid timestamp", "invalid\ninput", "invalid timestamp"},
-		{"negative timestamp", "-1234567890\ninput", "invalid timestamp"},
+		{"empty file", "", false},
+		{"invalid JSON", "{invalid json}", false},
+		{"mixed valid and invalid", "{\"timestamp\":123,\"input\":\"valid\"}\n{invalid}\n{\"timestamp\":456,\"input\":\"also valid\"}", true},
 	}
 
 	for _, tc := range testCases {
@@ -423,9 +425,16 @@ func TestInputTracker_CorruptedFile(t *testing.T) {
 			err := os.WriteFile(sessionFile, []byte(tc.content), 0644)
 			assert.NoError(t, err)
 
-			_, _, retrieveErr := tracker.GetLastInput(session)
-			assert.Error(t, retrieveErr)
-			assert.Contains(t, retrieveErr.Error(), tc.contains)
+			records, retrieveErr := tracker.GetAllInputs(session)
+			if tc.shouldHaveData {
+				assert.NoError(t, retrieveErr)
+				assert.Greater(t, len(records), 0, "Should have parsed some valid entries")
+			} else {
+				// Either returns empty or error (depending on implementation)
+				if retrieveErr == nil {
+					assert.Equal(t, 0, len(records))
+				}
+			}
 		})
 	}
 }
@@ -440,5 +449,5 @@ func TestInputTracker_RetrieveNonExistent(t *testing.T) {
 
 	_, _, err = tracker.GetLastInput("non-existent")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to read input")
+	assert.Contains(t, err.Error(), "no inputs found")
 }

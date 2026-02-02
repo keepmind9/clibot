@@ -161,6 +161,15 @@ func validateConfig(config *Config) error {
 		config.Watchdog.RetryDelay = DefaultWatchdogRetryDelay
 	}
 
+	// Set default session configuration
+	if config.Session.InputHistorySize == 0 {
+		config.Session.InputHistorySize = DefaultInputHistorySize
+	}
+	// Validate input history size
+	if config.Session.InputHistorySize < 1 || config.Session.InputHistorySize > 100 {
+		return fmt.Errorf("session.input_history_size must be between 1 and 100, got %d", config.Session.InputHistorySize)
+	}
+
 	// Set default timeout values for CLI adapters
 	for cliType, adapter := range config.CLIAdapters {
 		if adapter.PollTimeout == "" {

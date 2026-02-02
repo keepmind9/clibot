@@ -122,7 +122,13 @@ func NewEngine(config *Config) *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Initialize input tracker for response extraction
-	tracker, err := NewInputTracker(filepath.Join(os.Getenv("HOME"), ".clibot", "sessions"))
+	// Get history size from config, default to 10
+	historySize := config.Session.InputHistorySize
+	if historySize == 0 {
+		historySize = DefaultInputHistorySize
+	}
+
+	tracker, err := NewInputTrackerWithSize(filepath.Join(os.Getenv("HOME"), ".clibot", "sessions"), historySize)
 	if err != nil {
 		logger.WithField("error", err).Warn("failed-to-create-input-tracker-response-extraction-may-be-affected")
 		tracker = nil // Continue without tracker
@@ -804,44 +810,52 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 		return err
 	}
 
-	// Extract the relevant response using recorded user input
+	// Extract the relevant response using recorded user inputs
 	var response string
-	if e.inputTracker != nil && e.inputTracker.HasInput(session.Name) {
-		// Get the recorded user input
-		lastInput, timestamp, err := e.inputTracker.GetLastInput(session.Name)
+	if e.inputTracker != nil {
+		// Get all recorded inputs (from newest to oldest)
+		inputs, err := e.inputTracker.GetAllInputs(session.Name)
 		if err != nil {
 			logger.WithFields(logrus.Fields{
 				"session": session.Name,
 				"error":   err,
-			}).Warn("failed-to-get-recorded-input-using-full-content")
+			}).Warn("failed-to-get-recorded-inputs-using-full-content")
+			response = rawContent
+		} else if len(inputs) == 0 {
+			// No recorded input, use full content
+			// This happens when user interacts with CLI directly (not through bot)
+			logger.WithFields(logrus.Fields{
+				"session": session.Name,
+			}).Debug("no-recorded-inputs-using-full-tmux-content")
 			response = rawContent
 		} else {
-			// Extract content after the recorded user input
-			response = watchdog.ExtractContentAfterPrompt(rawContent, lastInput)
-
-			// Calculate response time
-			responseTime := time.Now().UnixMilli() - timestamp
-			logger.WithFields(logrus.Fields{
-				"session":        session.Name,
-				"response_time":  fmt.Sprintf("%dms", responseTime),
-				"raw_length":     len(rawContent),
-				"extracted_length": len(response),
-			}).Info("response-extracted-using-recorded-input")
-
-			// Clear the recorded input after extraction
-			if err := e.inputTracker.Clear(session.Name); err != nil {
-				logger.WithFields(logrus.Fields{
-					"session": session.Name,
-					"error":   err,
-				}).Warn("failed-to-clear-recorded-input")
+			// Try to extract content using any of the recorded inputs (from newest to oldest)
+			// This handles cases where short inputs (menu selections) don't appear in tmux output
+			inputRecords := make([]watchdog.InputRecord, len(inputs))
+			for i, input := range inputs {
+				inputRecords[i] = watchdog.InputRecord{
+					Timestamp: input.Timestamp,
+					Content:   input.Content,
+				}
 			}
+
+			response = watchdog.ExtractContentAfterAnyInput(rawContent, inputRecords)
+
+			// Calculate response time using the most recent input
+			responseTime := time.Now().UnixMilli() - inputs[0].Timestamp
+			logger.WithFields(logrus.Fields{
+				"session":         session.Name,
+				"response_time":   fmt.Sprintf("%dms", responseTime),
+				"raw_length":      len(rawContent),
+				"extracted_length": len(response),
+				"tried_inputs":    len(inputs),
+			}).Info("response-extracted-using-recorded-inputs")
 		}
 	} else {
-		// No recorded input, use full content
-		// This happens when user interacts with CLI directly (not through bot)
+		// No input tracker available, use full content
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
-		}).Debug("no-recorded-input-using-full-tmux-content")
+		}).Debug("no-input-tracker-using-full-tmux-content")
 		response = rawContent
 	}
 

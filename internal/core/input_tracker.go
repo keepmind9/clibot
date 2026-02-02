@@ -1,11 +1,11 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,11 +21,20 @@ const (
 
 	// minSessionNameLength is the minimum allowed session name length
 	minSessionNameLength = 1
+
+	// DefaultInputHistorySize is the default maximum number of inputs to keep
+	DefaultInputHistorySize = 10
 )
 
 // sessionNamePattern defines valid session name format
 // Only alphanumeric characters, hyphens, and underscores are allowed
 var sessionNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// InputRecord represents a single input entry in the history
+type InputRecord struct {
+	Timestamp int64  `json:"timestamp"`
+	Content   string `json:"input"`
+}
 
 // InputTracker tracks user input for each session
 // Used to extract the correct response from tmux output in polling mode
@@ -34,18 +43,25 @@ var sessionNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 // to extract the relevant response from tmux capture (which may contain historical data).
 type InputTracker struct {
 	baseDir string
+	maxSize int
 	mu      sync.RWMutex
 }
 
 // NewInputTracker creates a new input tracker
 // baseDir is the root directory for storing session input files
 func NewInputTracker(baseDir string) (*InputTracker, error) {
+	return NewInputTrackerWithSize(baseDir, DefaultInputHistorySize)
+}
+
+// NewInputTrackerWithSize creates a new input tracker with custom max size
+func NewInputTrackerWithSize(baseDir string, maxSize int) (*InputTracker, error) {
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create base dir: %w", err)
 	}
 
 	return &InputTracker{
 		baseDir: baseDir,
+		maxSize: maxSize,
 	}, nil
 }
 
@@ -71,17 +87,14 @@ func validateSessionName(session string) error {
 	return nil
 }
 
-// RecordInput records user input with millisecond timestamp
-// The input can contain newlines - they will be preserved
+// RecordInput records user input with millisecond timestamp in JSONL format
+// The input can contain newlines and special characters - they are preserved in JSON
 //
-// File format:
-//   Line 1: timestamp in milliseconds (13 digits)
-//   Line 2+: complete user input (may contain newlines)
+// File format (JSONL - one JSON object per line):
+//   {"timestamp":1706878200123,"input":"help me\nwrite code"}
+//   {"timestamp":1706878201000,"input":"1"}
 //
-// Example:
-//   1706878200123
-//   Help me write a function
-//   That handles multiple lines
+// After recording, the file is trimmed to keep only the most recent maxSize entries
 //
 // Returns error if:
 //   - Session name is invalid (path traversal check)
@@ -111,21 +124,120 @@ func (t *InputTracker) RecordInput(session, input string) error {
 		return fmt.Errorf("failed to create session dir: %w", err)
 	}
 
-	// Generate timestamp in milliseconds
-	timestamp := time.Now().UnixMilli()
+	// Construct JSON record
+	record := InputRecord{
+		Timestamp: time.Now().UnixMilli(),
+		Content:   input,
+	}
+	jsonData, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("failed to marshal input: %w", err)
+	}
 
-	// Format: first line is timestamp, rest is input (including newlines)
-	data := fmt.Sprintf("%d\n%s", timestamp, input)
+	// Append to history file
+	historyPath := filepath.Join(sessionDir, "input_history.jsonl")
+	f, err := os.OpenFile(historyPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open history file: %w", err)
+	}
+	defer f.Close()
 
-	path := filepath.Join(sessionDir, "last_input.txt")
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+	if _, err := f.Write(append(jsonData, '\n')); err != nil {
 		return fmt.Errorf("failed to write input: %w", err)
+	}
+
+	// Trim to size to prevent file from growing too large
+	if err := t.trimToSize(historyPath); err != nil {
+		// Trim failure is not critical, just log it
+		// (in real implementation, would log here)
+		return fmt.Errorf("failed to trim history: %w", err)
 	}
 
 	return nil
 }
 
-// GetLastInput retrieves the last recorded input
+// trimToSize reads the history file and keeps only the most recent maxSize entries
+// Must be called while holding the lock
+func (t *InputTracker) trimToSize(historyPath string) error {
+	// Read all lines
+	data, err := os.ReadFile(historyPath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var validLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			validLines = append(validLines, trimmed)
+		}
+	}
+
+	// Keep only the most recent maxSize entries
+	if len(validLines) > t.maxSize {
+		validLines = validLines[len(validLines)-t.maxSize:]
+	}
+
+	// Rewrite file
+	output := strings.Join(validLines, "\n") + "\n"
+	return os.WriteFile(historyPath, []byte(output), 0644)
+}
+
+// GetAllInputs retrieves all recorded inputs for a session, ordered from newest to oldest
+// Returns empty slice if session doesn't exist or has no inputs
+//
+// Returns error if:
+//   - Session name is invalid
+//   - File exists but is corrupted
+func (t *InputTracker) GetAllInputs(session string) ([]InputRecord, error) {
+	// Validate session name
+	if err := validateSessionName(session); err != nil {
+		return nil, fmt.Errorf("invalid session name: %w", err)
+	}
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	historyPath := filepath.Join(t.baseDir, session, "input_history.jsonl")
+
+	// Read file
+	data, err := os.ReadFile(historyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No history file exists, return empty
+			return []InputRecord{}, nil
+		}
+		return nil, fmt.Errorf("failed to read history: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var records []InputRecord
+
+	// Parse each line as JSON
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		var record InputRecord
+		if err := json.Unmarshal([]byte(trimmed), &record); err != nil {
+			// Skip corrupted lines but continue parsing
+			continue
+		}
+		records = append(records, record)
+	}
+
+	// Reverse to get newest first
+	for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
+		records[i], records[j] = records[j], records[i]
+	}
+
+	return records, nil
+}
+
+// GetLastInput retrieves the most recent recorded input
 // Returns: (input, timestampInMillis, error)
 //
 // The timestamp can be used to calculate response time:
@@ -133,66 +245,26 @@ func (t *InputTracker) RecordInput(session, input string) error {
 //
 // Returns error if:
 //   - Session name is invalid
-//   - File doesn't exist or can't be read
-//   - File format is invalid
-//   - Timestamp is malformed
+//   - No inputs found
 func (t *InputTracker) GetLastInput(session string) (string, int64, error) {
-	// Validate session name (security check)
-	if err := validateSessionName(session); err != nil {
-		return "", 0, fmt.Errorf("invalid session name: %w", err)
-	}
-
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	path := filepath.Join(t.baseDir, session, "last_input.txt")
-	data, err := os.ReadFile(path)
+	records, err := t.GetAllInputs(session)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to read input: %w", err)
+		return "", 0, err
 	}
 
-	// Validate file is not empty
-	if len(data) == 0 {
-		return "", 0, fmt.Errorf("invalid format: empty file")
+	if len(records) == 0 {
+		return "", 0, fmt.Errorf("no inputs found for session")
 	}
 
-	// Split first newline only
-	strData := string(data)
-	idx := strings.Index(strData, "\n")
-	if idx == -1 {
-		return "", 0, fmt.Errorf("invalid format: no newline found")
-	}
-
-	// Validate timestamp is not empty
-	if idx == 0 {
-		return "", 0, fmt.Errorf("invalid format: empty timestamp")
-	}
-
-	// Parse timestamp from first line
-	timestampStr := strData[:idx]
-	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
-	if err != nil {
-		return "", 0, fmt.Errorf("invalid timestamp: %w", err)
-	}
-
-	// Validate timestamp is reasonable (not too old or too far in future)
-	now := time.Now().UnixMilli()
-	maxAge := int64(365 * 24 * 3600 * 1000) // 1 year in milliseconds
-	if timestamp < now-maxAge || timestamp > now+maxAge {
-		return "", 0, fmt.Errorf("invalid timestamp: out of valid range")
-	}
-
-	// Everything after first newline is the input (may contain newlines)
-	input := strData[idx+1:]
-
-	return input, timestamp, nil
+	// GetAllInputs returns newest first, so index 0 is the most recent
+	return records[0].Content, records[0].Timestamp, nil
 }
 
-// HasInput checks if there's a recorded input for the session
+// HasInput checks if there's any recorded input for the session
 // This is used to determine whether to send response to bot
 // (only send response if input came from bot, not from manual CLI interaction)
 //
-// Returns false if session name is invalid
+// Returns false if session name is invalid or no inputs exist
 func (t *InputTracker) HasInput(session string) bool {
 	// Validate session name (security check)
 	if err := validateSessionName(session); err != nil {
@@ -202,29 +274,31 @@ func (t *InputTracker) HasInput(session string) bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	path := filepath.Join(t.baseDir, session, "last_input.txt")
-	_, err := os.ReadFile(path)
-	return err == nil
+	historyPath := filepath.Join(t.baseDir, session, "input_history.jsonl")
+	data, err := os.ReadFile(historyPath)
+	if err != nil {
+		return false
+	}
+
+	// Check if file has any content
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			return true
+		}
+	}
+
+	return false
 }
 
-// Clear removes the recorded input
-// Should be called after response is extracted and sent to bot
+// Clear is a no-op for the new JSONL-based implementation
+// We now preserve input history for multi-input matching
+// This method is kept for backward compatibility but does nothing
 //
-// If session doesn't exist or file doesn't exist, returns no error (idempotent)
+// Deprecated: Input history is now preserved and automatically trimmed
 func (t *InputTracker) Clear(session string) error {
-	// Validate session name (security check)
-	if err := validateSessionName(session); err != nil {
-		return fmt.Errorf("invalid session name: %w", err)
-	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	path := filepath.Join(t.baseDir, session, "last_input.txt")
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to clear input: %w", err)
-	}
-
+	// No-op: we now preserve history
+	// The trimToSize logic in RecordInput keeps the file size manageable
 	return nil
 }
 
@@ -242,26 +316,29 @@ func (t *InputTracker) GetTimestamp(session string) int64 {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	path := filepath.Join(t.baseDir, session, "last_input.txt")
+	path := filepath.Join(t.baseDir, session, "input_history.jsonl")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0
 	}
 
-	// Parse just the timestamp
-	strData := string(data)
-	idx := strings.Index(strData, "\n")
-	if idx == -1 || idx == 0 {
-		return 0
+	// Parse JSONL format - get the most recent (last) entry
+	lines := strings.Split(string(data), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" {
+			continue
+		}
+
+		// Parse JSON to get timestamp
+		var record InputRecord
+		if err := json.Unmarshal([]byte(trimmed), &record); err != nil {
+			continue
+		}
+		return record.Timestamp
 	}
 
-	timestampStr := strData[:idx]
-	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
-	if err != nil {
-		return 0
-	}
-
-	return timestamp
+	return 0
 }
 
 // GetSessionDir returns the directory path for a specific session
