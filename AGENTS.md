@@ -40,3 +40,5 @@ This includes: variable/function names, error messages, comments, documentation,
 - `opt:` performance optimization
 - `security:` security fixes
 - `chore:` build/tooling
+
+**Commit message length limit**: Maximum 150 characters for the subject line (first line of the commit message). This ensures messages are concise and readable in git logs.
