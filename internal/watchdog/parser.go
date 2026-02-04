@@ -42,12 +42,24 @@ func eqPromptCharacterData(line string, userPrompt string) bool {
 // rather than AI-generated content containing the same keywords
 func isLikelyUserPromptLine(line, userPrompt string) bool {
 	// Priority 1: Lines with cursor prefix (most reliable indicator)
-	if strings.HasPrefix(line, "❯ ") && strings.Contains(line, userPrompt) {
+	// Support all cursor prefixes: "❯ ", "> ", ">>>"
+	cursorPrefixes := []string{"❯ ", "> ", ">>>"}
+	var matchedPrefix string
+	var cleanLine string
+
+	for _, prefix := range cursorPrefixes {
+		if strings.HasPrefix(line, prefix) && strings.Contains(line, userPrompt) {
+			matchedPrefix = prefix
+			cleanLine = strings.TrimPrefix(line, prefix)
+			cleanLine = strings.TrimSpace(cleanLine)
+			break
+		}
+	}
+
+	if matchedPrefix != "" {
 		// Check if this is a menu option (e.g., "❯ 1. Yes", "❯ 2. Option")
 		// Menu options have the pattern: cursor + number + punctuation + text
 		// User input has the pattern: cursor + userPrompt (possibly with text after)
-		cleanLine := strings.TrimPrefix(line, "❯ ")
-		cleanLine = strings.TrimSpace(cleanLine)
 
 		// If line starts with userPrompt followed by menu punctuation, it's a menu option
 		if strings.HasPrefix(cleanLine, userPrompt) {
@@ -88,34 +100,117 @@ func isLikelyUserPromptLine(line, userPrompt string) bool {
 		return true
 	}
 
+	// Priority 3: Match with cursor prefix characters (for > and >>> without exact match)
+	if hasPromptCharacterPrefix(line) {
+		cleanLine := line
+		for _, prefix := range cursorPrefixes {
+			if strings.HasPrefix(line, prefix) {
+				cleanLine = strings.TrimPrefix(line, prefix)
+				cleanLine = strings.TrimSpace(cleanLine)
+				break
+			}
+		}
+		if cleanLine == userPrompt || strings.HasPrefix(cleanLine, userPrompt+" ") {
+			logger.WithFields(logrus.Fields{
+				"line":        line,
+				"user_prompt": userPrompt,
+				"reason":      "has prompt character prefix and matches",
+			}).Debug("accepting-line-has-prompt-char-prefix")
+			return true
+		}
+	}
+
 	// Reject all other cases (including AI responses like "test content follows")
 	logger.WithFields(logrus.Fields{
 		"line":       line,
 		"user_prompt": userPrompt,
 		"line_len":   len(line),
 		"prompt_len": len(userPrompt),
-		"reason":     "no cursor prefix and not exact match",
+		"reason":     "no valid cursor prefix and not exact match",
 	}).Debug("rejecting-line-does-not-look-like-user-prompt")
 
 	return false
 }
 
+// isMenuOption checks if a line is a menu option (e.g., "❯ 1. Yes", "❯ 2. No")
+// Menu options should be preserved in final responses but used as anchor points
+func isMenuOption(line string) bool {
+	// Check for cursor prefix
+	cursorPrefixes := []string{"❯ ", "> ", ">>>"}
+	for _, prefix := range cursorPrefixes {
+		if strings.HasPrefix(line, prefix) {
+			cleanLine := strings.TrimPrefix(line, prefix)
+			cleanLine = strings.TrimSpace(cleanLine)
+
+			// Menu options typically start with a number followed by punctuation
+			// e.g., "1. Yes", "2. No", "3. Cancel"
+			// Match pattern: digit + punctuation
+			if len(cleanLine) > 0 {
+				firstChar := cleanLine[0]
+				if firstChar >= '0' && firstChar <= '9' {
+					// Check if followed by punctuation
+					if len(cleanLine) > 2 {
+						secondPart := cleanLine[1:]
+						if strings.HasPrefix(secondPart, ". ") ||
+						   strings.HasPrefix(secondPart, ",") ||
+						   strings.HasPrefix(secondPart, "、") {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 // isPromptOrCommand checks if a line is a prompt/command rather than assistant output
 func isPromptOrCommand(line string) bool {
-	promptPatterns := []string{
-		"user@",
-		"$ ",
-		">>>",
-		"...",
-		"[?]",
-		"Press Enter",
-		"Confirm?",
+	// Exact patterns (must match from start or be standalone)
+	if strings.HasPrefix(line, "user@") ||
+	   strings.HasPrefix(line, "$ ") ||
+	   strings.HasPrefix(line, ">>>") ||
+	   line == "..." ||
+	   strings.Contains(line, "[?]") ||
+	   strings.Contains(line, "Press Enter") ||
+	   strings.Contains(line, "Confirm?") {
+		return true
 	}
 
-	for _, pattern := range promptPatterns {
-		if strings.Contains(line, pattern) {
-			return true
+	// Special case: Lines with cursor prefix "❯ "
+	// These could be either menu options (keep) or user input prompts (filter)
+	if strings.HasPrefix(line, "❯ ") {
+		// Menu options like "❯ 1. Yes" should be kept
+		if isMenuOption(line) {
+			return false  // Keep menu options
 		}
+		// User input prompts should be filtered
+		return true
+	}
+
+	// Special case: Lines ending with "..." that are single words or common status indicators
+	// These are typically loading/paused indicators, not AI responses
+	// But we need to distinguish from AI sentences that end with "..."
+	if strings.HasSuffix(line, "...") {
+		// Single word with ellipsis (e.g., "Loading...", "Waiting...")
+		// are considered prompts, but full sentences are not
+		words := strings.Fields(line)
+		if len(words) == 1 {
+			// Check if it's an AI status message (verbs with -ing/-ed)
+			// vs UI indicator (nouns like "Loading", "Waiting")
+			word := strings.ToLower(strings.TrimSuffix(words[0], "..."))
+
+			// AI status messages: verbs with common endings
+			if strings.HasSuffix(word, "ing") || strings.HasSuffix(word, "ed") {
+				return false  // "Thinking...", "Processing...", "Compiling..." are AI status
+			}
+
+			return true  // Single word like "Loading..." is a UI prompt
+		}
+
+		// Multi-word phrases with ellipsis are AI responses, not prompts
+		// e.g., "Great! Proceeding with the operation..." is an AI response
+		return false
 	}
 
 	return false
