@@ -207,16 +207,15 @@ func WaitForCompletion(sessionName string, config PollingConfig, ctx context.Con
 //
 // It removes:
 // - ANSI escape codes
-// - UI status lines (scrollbars, progress indicators)
 // - Leading/trailing whitespace
 //
-// This ensures we're comparing meaningful content only.
+// Note: This does NOT remove UI status lines (like "ESC to interrupt")
+// because it's used during polling for stability comparison, not for
+// final response generation. UI status lines should only be removed
+// when preparing the final response for the user (see RemoveUIStatusLines).
 func ExtractStableContent(output string) string {
 	// Remove ANSI codes
 	clean := StripANSI(output)
-
-	// Remove UI status lines
-	clean = RemoveUIStatusLines(clean)
 
 	// Trim whitespace
 	clean = strings.TrimSpace(clean)
