@@ -90,6 +90,32 @@ func IsSessionAlive(sessionName string) bool {
 	return err == nil
 }
 
+// isTmuxKeyName checks if the input is a tmux key name (e.g., "C-[", "C-i", "C-c")
+// Key names should not be sent with the -l (literal) flag.
+func isTmuxKeyName(input string) bool {
+	// Check for tmux key prefix patterns
+	keyPrefixes := []string{
+		"C-",   // Control keys (C-a, C-c, C-m, etc.)
+		"M-",   // Meta/Alt keys
+		"C-S-", // Control+Shift combinations
+	}
+
+	for _, prefix := range keyPrefixes {
+		if strings.HasPrefix(input, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isLiteralKeySequence checks if the input is a literal key sequence (e.g., "\x1b[Z" for Shift+Tab)
+// These should be sent with the -l flag but without the trailing Enter key.
+func isLiteralKeySequence(input string) bool {
+	// Check for ANSI escape sequences (starts with \x1b)
+	return strings.Contains(input, "\x1b")
+}
+
 // SendKeys sends keystrokes to a tmux session
 // Parameters:
 //   - sessionName: tmux session name
@@ -107,33 +133,52 @@ func SendKeys(sessionName, input string, delayMs ...int) error {
 		"delay_ms": delay,
 	}).Debug("sending-keys-to-tmux-session")
 
+	// Determine input type:
+	// 1. Tmux key name (e.g., "C-[", "C-i") → send without -l flag, no Enter
+	// 2. Literal key sequence (e.g., "\x1b[Z" for Shift+Tab) → send with -l flag, no Enter
+	// 3. Regular text → send with -l flag, with Enter
+
+	isKeyName := isTmuxKeyName(input)
+	isLiteralSeq := isLiteralKeySequence(input)
+
 	// Step 1: Send the input text
-	args1 := []string{"send-keys", "-t", sessionName, "-l", input}
+	var args1 []string
+	if isKeyName {
+		// Key names should NOT use -l flag
+		args1 = []string{"send-keys", "-t", sessionName, input}
+	} else {
+		// Regular text and literal sequences use -l flag
+		args1 = []string{"send-keys", "-t", sessionName, "-l", input}
+	}
+
 	cmd1 := exec.Command("tmux", args1...)
 	if output, err := cmd1.CombinedOutput(); err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": sessionName,
 			"error":   err,
 			"output":  string(output),
-		}).Error("failed-to-send-text-to-tmux-session")
-		return fmt.Errorf("failed to send text to session %s: %w (output: %s)", sessionName, err, string(output))
+		}).Error("failed-to-send-input-to-tmux-session")
+		return fmt.Errorf("failed to send input to session %s: %w (output: %s)", sessionName, err, string(output))
 	}
 
-	// Delay before Enter key if specified
-	if delay > 0 {
-		time.Sleep(time.Duration(delay) * time.Millisecond)
-	}
+	// Step 2: Send Enter key (C-m) - only for regular text input
+	// Key names and literal key sequences are already complete
+	if !isKeyName && !isLiteralSeq {
+		// Delay before Enter key if specified
+		if delay > 0 {
+			time.Sleep(time.Duration(delay) * time.Millisecond)
+		}
 
-	// Step 2: Send Enter key (C-m)
-	args2 := []string{"send-keys", "-t", sessionName, "C-m"}
-	cmd2 := exec.Command("tmux", args2...)
-	if output, err := cmd2.CombinedOutput(); err != nil {
-		logger.WithFields(logrus.Fields{
-			"session": sessionName,
-			"error":   err,
-			"output":  string(output),
-		}).Error("failed-to-send-enter-key-to-tmux-session")
-		return fmt.Errorf("failed to send Enter to session %s: %w (output: %s)", sessionName, err, string(output))
+		args2 := []string{"send-keys", "-t", sessionName, "C-m"}
+		cmd2 := exec.Command("tmux", args2...)
+		if output, err := cmd2.CombinedOutput(); err != nil {
+			logger.WithFields(logrus.Fields{
+				"session": sessionName,
+				"error":   err,
+				"output":  string(output),
+			}).Error("failed-to-send-enter-key-to-tmux-session")
+			return fmt.Errorf("failed to send Enter to session %s: %w (output: %s)", sessionName, err, string(output))
+		}
 	}
 
 	return nil

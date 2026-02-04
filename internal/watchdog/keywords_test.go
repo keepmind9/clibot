@@ -8,32 +8,32 @@ import (
 
 func TestProcessKeyWords_Tab_ConvertsToTabKey(t *testing.T) {
 	result := ProcessKeyWords("tab")
-	assert.Equal(t, "\t", result)
+	assert.Equal(t, "C-i", result)
 }
 
 func TestProcessKeyWords_TabUpperCase_ConvertsToTabKey(t *testing.T) {
 	result := ProcessKeyWords("TAB")
-	assert.Equal(t, "\t", result)
+	assert.Equal(t, "C-i", result)
 }
 
 func TestProcessKeyWords_TabMixedCase_ConvertsToTabKey(t *testing.T) {
 	result := ProcessKeyWords("TaB")
-	assert.Equal(t, "\t", result)
+	assert.Equal(t, "C-i", result)
 }
 
 func TestProcessKeyWords_TabWithSpaces_TrimsAndConverts(t *testing.T) {
 	result := ProcessKeyWords("  tab  ")
-	assert.Equal(t, "\t", result)
+	assert.Equal(t, "C-i", result)
 }
 
 func TestProcessKeyWords_Esc_ConvertsToEscapeKey(t *testing.T) {
 	result := ProcessKeyWords("esc")
-	assert.Equal(t, "\x1b", result)
+	assert.Equal(t, "C-[", result)
 }
 
 func TestProcessKeyWords_EscUpperCase_ConvertsToEscapeKey(t *testing.T) {
 	result := ProcessKeyWords("ESC")
-	assert.Equal(t, "\x1b", result)
+	assert.Equal(t, "C-[", result)
 }
 
 func TestProcessKeyWords_Stab_ConvertsToShiftTab(t *testing.T) {
@@ -63,7 +63,7 @@ func TestProcessKeyWords_STabDashWithSpaces_TrimsAndConverts(t *testing.T) {
 
 func TestProcessKeyWords_Enter_ConvertsToEnterKey(t *testing.T) {
 	result := ProcessKeyWords("enter")
-	assert.Equal(t, "\n", result)
+	assert.Equal(t, "C-m", result)
 }
 
 func TestProcessKeyWords_NotAKeyword_ReturnsOriginal(t *testing.T) {
@@ -93,13 +93,13 @@ func TestProcessKeyWords_EscapeWord_ReturnsOriginal(t *testing.T) {
 func TestProcessKeyWords_WithLeadingSpace_TrimsAndConverts(t *testing.T) {
 	input := " tab"
 	result := ProcessKeyWords(input)
-	assert.Equal(t, "\t", result) // Trims spaces then converts
+	assert.Equal(t, "C-i", result) // Trims spaces then converts
 }
 
 func TestProcessKeyWords_WithTrailingSpace_TrimsAndConverts(t *testing.T) {
 	input := "tab "
 	result := ProcessKeyWords(input)
-	assert.Equal(t, "\t", result) // Trims spaces then converts
+	assert.Equal(t, "C-i", result) // Trims spaces then converts
 }
 
 func TestProcessKeyWords_EmptyString_ReturnsEmpty(t *testing.T) {
@@ -122,27 +122,27 @@ func TestProcessKeyWords_HelpMessage_ReturnsOriginal(t *testing.T) {
 
 func TestProcessKeyWords_Ctrlc_ConvertsToCtrlC(t *testing.T) {
 	result := ProcessKeyWords("ctrlc")
-	assert.Equal(t, "\x03", result)
+	assert.Equal(t, "C-c", result)
 }
 
 func TestProcessKeyWords_CtrlcUpperCase_ConvertsToCtrlC(t *testing.T) {
 	result := ProcessKeyWords("CTRLC")
-	assert.Equal(t, "\x03", result)
+	assert.Equal(t, "C-c", result)
 }
 
 func TestProcessKeyWords_CtrlDashC_ConvertsToCtrlC(t *testing.T) {
 	result := ProcessKeyWords("ctrl-c")
-	assert.Equal(t, "\x03", result)
+	assert.Equal(t, "C-c", result)
 }
 
 func TestProcessKeyWords_CtrlDashCUpperCase_ConvertsToCtrlC(t *testing.T) {
 	result := ProcessKeyWords("CTRL-C")
-	assert.Equal(t, "\x03", result)
+	assert.Equal(t, "C-c", result)
 }
 
 func TestProcessKeyWords_CtrlcWithSpaces_TrimsAndConverts(t *testing.T) {
 	result := ProcessKeyWords("  ctrlc  ")
-	assert.Equal(t, "\x03", result)
+	assert.Equal(t, "C-c", result)
 }
 
 func TestProcessKeyWords_CtrlcInText_ReturnsOriginal(t *testing.T) {
