@@ -18,6 +18,19 @@ This includes: variable/function names, error messages, comments, documentation,
 - Maintain test coverage above 50%
 - Write table-driven tests for multiple scenarios
 
+## Code Quality Standards
+
+- **MUST**: Code must compile successfully before considering work complete
+- **MUST**: All tests must pass (`go test ./...`) before marking task as complete
+- **MUST**: No failing tests or compilation errors in final deliverables
+
+## Git Workflow
+
+- **DO NOT** automatically commit to git without explicit user instruction
+- **DO NOT** run `git commit` or `git push` unless user explicitly requests it
+- Wait for user confirmation before making any commits
+- **One atomic change per commit**: Each commit should contain only one logical change or feature. Do not combine multiple unrelated changes in a single commit
+
 ## Commit Message Convention
 
 - `feat:` new feature

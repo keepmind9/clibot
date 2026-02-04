@@ -21,12 +21,10 @@ go.work
 # Dependency directories
 vendor/
 
-# 配置文件（包含敏感信息）
 config.yaml
 *.yaml
 !configs/config.yaml
 
-# 日志文件
 *.log
 
 # IDE
@@ -40,8 +38,12 @@ config.yaml
 .DS_Store
 Thumbs.db
 
-# 环境变量文件
 .env
 .env.local
 
 __debug_bin*
+tmp
+docs/tmp
+
+# Bug analysis documentation (kept for reference but not committed)
+BUG_*.md
