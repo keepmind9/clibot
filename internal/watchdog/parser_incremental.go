@@ -85,8 +85,9 @@ func extractTailContent(afterLines []string, count int) string {
 
 // filterOutBeforeContent removes lines from candidate that existed in beforeSnapshot
 //
-// This handles the case where before content has scrolled away but we still
-// want to avoid duplicates in the extracted content.
+// Key insight: Once we find new content (line not in before) from top to bottom,
+// everything from that point onwards should be kept, regardless of whether
+// subsequent lines exist in before or not.
 func filterOutBeforeContent(candidate, beforeSnapshot string, beforeLines []string) string {
 	if candidate == "" {
 		return ""
@@ -102,31 +103,39 @@ func filterOutBeforeContent(candidate, beforeSnapshot string, beforeLines []stri
 		}
 	}
 
-	// Filter candidate lines
+	// Scan from top to bottom to find the first "new" line
+	// Once found, everything after that point is kept
 	candidateLines := strings.Split(candidate, "\n")
-	var resultLines []string
+	firstNewLineIdx := -1
 
-	for _, line := range candidateLines {
+	for i, line := range candidateLines {
 		trimmed := strings.TrimSpace(line)
 
-		// Skip empty lines
+		// Skip empty lines when looking for new content start
 		if trimmed == "" {
 			continue
 		}
 
-		// Keep line if it doesn't exist in before
+		// Found a line that's not in before - this is the start of new content
 		if !beforeLineSet[trimmed] {
-			resultLines = append(resultLines, line)
+			firstNewLineIdx = i
+			break
 		}
 	}
 
-	result := strings.Join(resultLines, "\n")
-
-	// If filtering removed everything, return empty
-	// This will trigger the fallback line-diff strategy
-	if result == "" && len(candidateLines) > 0 {
-		logger.Debug("filter-removed-all-candidates-returning-empty")
+	// If no new content found, return empty
+	if firstNewLineIdx == -1 {
+		logger.Debug("no-new-content-found-returning-empty")
+		return ""
 	}
+
+	// Return everything from the first new line onwards
+	result := strings.Join(candidateLines[firstNewLineIdx:], "\n")
+
+	logger.WithFields(logrus.Fields{
+		"first_new_line_idx": firstNewLineIdx,
+		"result_len":         len(result),
+	}).Debug("found-new-content-start-point")
 
 	return result
 }
