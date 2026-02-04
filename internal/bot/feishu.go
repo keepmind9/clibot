@@ -220,10 +220,13 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 
 	if !resp.Success() {
 		logger.WithFields(logrus.Fields{
-			"chat_id":    chatID,
-			"code":       resp.Code,
-			"msg":        resp.Msg,
-			"request_id": resp.RequestId,
+			"chat_id":      chatID,
+			"code":         resp.Code,
+			"msg":          resp.Msg,
+			"request_id":   resp.RequestId,
+			"message":      message,
+			"message_len":  len(message),
+			"content_json": contentJSON,
 		}).Error("failed-to-send-message-to-feishu-api-error")
 		return fmt.Errorf("API error: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
