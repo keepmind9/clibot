@@ -60,6 +60,27 @@ const (
 	ThinkingCheckLines = 20
 )
 
+// Incremental extraction limits
+const (
+	// IncrementalSnapshotTailLines is the number of lines from the end to use for incremental extraction
+	// Should be slightly less than DefaultCaptureLines to leave margin for overlap detection
+	IncrementalSnapshotTailLines = 150
+	// IncrementalSnapshotMinimumStartRatio is the minimum ratio (as numerator) to consider content as new
+	// Content after len(afterLines)/IncrementalSnapshotMinimumStartRatio is considered new content
+	IncrementalSnapshotMinimumStartRatio = 2
+	// IncrementalSnapshotFallbackRatio is the fallback ratio (as numerator) to extract from the end
+	// Extracts len(afterLines) * IncrementalSnapshotFallbackRatio / IncrementalSnapshotFallbackDenominator
+	IncrementalSnapshotFallbackRatio       = 4
+	IncrementalSnapshotFallbackDenominator = 5
+)
+
+// Snapshot size limits
+const (
+	// MaxSnapshotSize is the maximum allowed size for a snapshot in bytes
+	// This prevents disk exhaustion from abnormally large snapshots
+	MaxSnapshotSize = 10 * 1024 * 1024 // 10MB
+)
+
 // Token masking
 const (
 	// MinTokenLengthForMasking is the minimum token length to apply masking

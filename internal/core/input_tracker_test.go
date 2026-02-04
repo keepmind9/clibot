@@ -451,3 +451,320 @@ func TestInputTracker_RetrieveNonExistent(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no inputs found")
 }
+
+// Snapshot-related tests
+
+func TestInputTracker_RecordBeforeSnapshot(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	cliType := "claude"
+	content := "Line 1\nLine 2\nLine 3"
+
+	err = tracker.RecordBeforeSnapshot(session, cliType, content)
+	assert.NoError(t, err)
+
+	// Verify file exists
+	expectedPath := filepath.Join(tmpDir, session+"_"+cliType, "before_snapshot.txt")
+	_, err = os.Stat(expectedPath)
+	assert.NoError(t, err)
+}
+
+func TestInputTracker_RecordAfterSnapshot(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	cliType := "claude"
+	content := "After content\nLine 2\nLine 3"
+
+	err = tracker.RecordAfterSnapshot(session, cliType, content)
+	assert.NoError(t, err)
+
+	// Verify file exists
+	expectedPath := filepath.Join(tmpDir, session+"_"+cliType, "after_snapshot.txt")
+	_, err = os.Stat(expectedPath)
+	assert.NoError(t, err)
+}
+
+func TestInputTracker_GetSnapshotPair(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	cliType := "claude"
+	beforeContent := "Before content\nLine 2"
+	afterContent := "After content\nLine 2"
+
+	err = tracker.RecordBeforeSnapshot(session, cliType, beforeContent)
+	assert.NoError(t, err)
+
+	err = tracker.RecordAfterSnapshot(session, cliType, afterContent)
+	assert.NoError(t, err)
+
+	before, after, err := tracker.GetSnapshotPair(session, cliType)
+	assert.NoError(t, err)
+	assert.Equal(t, beforeContent, before)
+	assert.Equal(t, afterContent, after)
+}
+
+func TestInputTracker_GetSnapshotPair_NotFound(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	cliType := "claude"
+
+	// No snapshots recorded
+	before, after, err := tracker.GetSnapshotPair(session, cliType)
+	assert.NoError(t, err)
+	assert.Empty(t, before)
+	assert.Empty(t, after)
+}
+
+func TestInputTracker_ClearSnapshots(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	cliType := "claude"
+
+	// Record snapshots
+	err = tracker.RecordBeforeSnapshot(session, cliType, "before")
+	assert.NoError(t, err)
+
+	err = tracker.RecordAfterSnapshot(session, cliType, "after")
+	assert.NoError(t, err)
+
+	// Verify files exist
+	beforePath := filepath.Join(tmpDir, session+"_"+cliType, "before_snapshot.txt")
+	afterPath := filepath.Join(tmpDir, session+"_"+cliType, "after_snapshot.txt")
+	_, err = os.Stat(beforePath)
+	assert.NoError(t, err)
+	_, err = os.Stat(afterPath)
+	assert.NoError(t, err)
+
+	// Clear snapshots
+	err = tracker.ClearSnapshots(session, cliType)
+	assert.NoError(t, err)
+
+	// Verify files are deleted
+	_, err = os.Stat(beforePath)
+	assert.True(t, os.IsNotExist(err))
+	_, err = os.Stat(afterPath)
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestInputTracker_ClearSnapshots_NotExist(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	// Clear non-existent snapshots should not error
+	err = tracker.ClearSnapshots("non-existent", "claude")
+	assert.NoError(t, err)
+}
+
+func TestInputTracker_Snapshot_CLITypeIsolation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	cliType1 := "claude"
+	cliType2 := "gemini"
+
+	beforeContent1 := "Before claude"
+	beforeContent2 := "Before gemini"
+
+	err = tracker.RecordBeforeSnapshot(session, cliType1, beforeContent1)
+	assert.NoError(t, err)
+
+	err = tracker.RecordBeforeSnapshot(session, cliType2, beforeContent2)
+	assert.NoError(t, err)
+
+	// Verify isolation
+	before1, _, _ := tracker.GetSnapshotPair(session, cliType1)
+	before2, _, _ := tracker.GetSnapshotPair(session, cliType2)
+
+	assert.Equal(t, beforeContent1, before1)
+	assert.Equal(t, beforeContent2, beforeContent2)
+	assert.NotEqual(t, before1, before2)
+}
+
+func TestInputTracker_Snapshot_InvalidCLIType(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	invalidCLITypes := []string{
+		"../../../etc",
+		"../test",
+		"test/../../etc",
+		"test\\..\\windows",
+		"",
+		"test type",
+		"test.type",
+		"test@type",
+		strings.Repeat("a", 51), // too long
+	}
+
+	for _, cliType := range invalidCLITypes {
+		err = tracker.RecordBeforeSnapshot(session, cliType, "content")
+		assert.Error(t, err, "should reject invalid CLI type: %s", cliType)
+	}
+}
+
+func TestInputTracker_Snapshot_ValidCLIType(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	validCLITypes := []string{
+		"claude",
+		"gemini",
+		"cli-123",
+		"cli_456",
+		"C",
+		"CLI123",
+		strings.Repeat("a", 50), // max length
+	}
+
+	for _, cliType := range validCLITypes {
+		err = tracker.RecordBeforeSnapshot(session, cliType, "content")
+		assert.NoError(t, err, "should accept valid CLI type: %s", cliType)
+	}
+}
+
+func TestInputTracker_Snapshot_SizeLimit(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	cliType := "claude"
+
+	// Create content larger than MaxSnapshotSize (10MB)
+	largeContent := strings.Repeat("a", 10*1024*1024+1)
+
+	err = tracker.RecordBeforeSnapshot(session, cliType, largeContent)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "too large")
+
+	// Test max valid size
+	maxContent := strings.Repeat("a", 10*1024*1024)
+	err = tracker.RecordAfterSnapshot(session, cliType, maxContent)
+	assert.NoError(t, err)
+}
+
+func TestInputTracker_Snapshot_ConcurrentAccess(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	session := "test-session"
+	cliType := "claude"
+	const numGoroutines = 50
+	const numOperations = 50
+
+	var wg sync.WaitGroup
+	errors := make(chan error, numGoroutines*numOperations)
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < numOperations; j++ {
+				switch j % 4 {
+				case 0:
+					content := fmt.Sprintf("before-%d-%d", id, j)
+					if err := tracker.RecordBeforeSnapshot(session, cliType, content); err != nil {
+						errors <- err
+					}
+				case 1:
+					content := fmt.Sprintf("after-%d-%d", id, j)
+					if err := tracker.RecordAfterSnapshot(session, cliType, content); err != nil {
+						errors <- err
+					}
+				case 2:
+					tracker.GetSnapshotPair(session, cliType)
+				case 3:
+					tracker.ClearSnapshots(session, cliType)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	for err := range errors {
+		t.Errorf("unexpected error during concurrent access: %v", err)
+	}
+}
+
+func TestInputTracker_Snapshot_InvalidSessionName(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "input-tracker-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	tracker, err := NewInputTracker(tmpDir)
+	assert.NoError(t, err)
+
+	cliType := "claude"
+	invalidSessions := []string{
+		"../../../etc/passwd",
+		"../test",
+		"test/../../etc",
+		"test\\..\\windows",
+		"test session",
+		"test.session",
+	}
+
+	for _, session := range invalidSessions {
+		err = tracker.RecordBeforeSnapshot(session, cliType, "content")
+		assert.Error(t, err, "should reject invalid session name: %s", session)
+		assert.Contains(t, err.Error(), "invalid session name")
+	}
+}

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/keepmind9/clibot/pkg/constants"
 )
 
 const (
@@ -350,4 +352,205 @@ func (t *InputTracker) GetSessionDir(session string) string {
 		return ""
 	}
 	return filepath.Join(t.baseDir, session)
+}
+
+// validateCLIType validates CLI type to prevent path traversal attacks
+func validateCLIType(cliType string) error {
+	// Check length
+	if len(cliType) == 0 || len(cliType) > 50 {
+		return fmt.Errorf("invalid CLI type length: must be between 1 and 50 characters")
+	}
+
+	// Check for path traversal attempts
+	if strings.Contains(cliType, "..") || strings.Contains(cliType, "/") || strings.Contains(cliType, "\\") {
+		return fmt.Errorf("path traversal detected in CLI type")
+	}
+
+	// Check format (only alphanumeric, hyphen, underscore)
+	if !sessionNamePattern.MatchString(cliType) {
+		return fmt.Errorf("invalid CLI type format: only alphanumeric, hyphen, and underscore allowed")
+	}
+
+	return nil
+}
+
+// getSessionDirWithCLIType returns the isolated directory path for a session+cliType combination
+//
+// The directory format is: {sessionName}_{cliType}
+// This prevents snapshots from different CLI types from overwriting each other.
+//
+// Example:
+//   getSessionDirWithCLIType("project-a", "claude") → "~/.clibot/sessions/project-a_claude/"
+//   getSessionDirWithCLIType("project-a", "gemini") → "~/.clibot/sessions/project-a_gemini/"
+func (t *InputTracker) getSessionDirWithCLIType(session, cliType string) string {
+	isolatedDir := fmt.Sprintf("%s_%s", session, cliType)
+	return filepath.Join(t.baseDir, isolatedDir)
+}
+
+// RecordBeforeSnapshot saves the before snapshot for a session
+//
+// The snapshot is saved in an isolated directory to prevent conflicts between CLI types:
+//   ~/.clibot/sessions/{sessionName}_{cliType}/before_snapshot.txt
+//
+// Returns error if:
+//   - Session name is invalid
+//   - CLI type is invalid
+//   - File operations fail
+func (t *InputTracker) RecordBeforeSnapshot(sessionName, cliType, content string) error {
+	// Validate session name (security check)
+	if err := validateSessionName(sessionName); err != nil {
+		return fmt.Errorf("invalid session name: %w", err)
+	}
+
+	// Validate CLI type (security check)
+	if err := validateCLIType(cliType); err != nil {
+		return fmt.Errorf("invalid CLI type: %w", err)
+	}
+
+	// Validate content size (prevent disk exhaustion)
+	if len(content) > constants.MaxSnapshotSize {
+		return fmt.Errorf("snapshot content too large: %d bytes (max %d bytes)", len(content), constants.MaxSnapshotSize)
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Create isolated session directory
+	sessionDir := t.getSessionDirWithCLIType(sessionName, cliType)
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return fmt.Errorf("failed to create session dir: %w", err)
+	}
+
+	// Write before snapshot
+	snapshotPath := filepath.Join(sessionDir, "before_snapshot.txt")
+	if err := os.WriteFile(snapshotPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write before snapshot: %w", err)
+	}
+
+	return nil
+}
+
+// RecordAfterSnapshot saves the after snapshot for a session
+//
+// The snapshot is saved in an isolated directory to prevent conflicts between CLI types:
+//   ~/.clibot/sessions/{sessionName}_{cliType}/after_snapshot.txt
+//
+// Returns error if:
+//   - Session name is invalid
+//   - CLI type is invalid
+//   - File operations fail
+func (t *InputTracker) RecordAfterSnapshot(sessionName, cliType, content string) error {
+	// Validate session name (security check)
+	if err := validateSessionName(sessionName); err != nil {
+		return fmt.Errorf("invalid session name: %w", err)
+	}
+
+	// Validate CLI type (security check)
+	if err := validateCLIType(cliType); err != nil {
+		return fmt.Errorf("invalid CLI type: %w", err)
+	}
+
+	// Validate content size (prevent disk exhaustion)
+	if len(content) > constants.MaxSnapshotSize {
+		return fmt.Errorf("snapshot content too large: %d bytes (max %d bytes)", len(content), constants.MaxSnapshotSize)
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Create isolated session directory
+	sessionDir := t.getSessionDirWithCLIType(sessionName, cliType)
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return fmt.Errorf("failed to create session dir: %w", err)
+	}
+
+	// Write after snapshot
+	snapshotPath := filepath.Join(sessionDir, "after_snapshot.txt")
+	if err := os.WriteFile(snapshotPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write after snapshot: %w", err)
+	}
+
+	return nil
+}
+
+// GetSnapshotPair retrieves both before and after snapshots for a session
+//
+// Returns:
+//   - before: content before user input (empty if not found)
+//   - after: content after user input (empty if not found)
+//   - error: if session name or CLI type is invalid
+//
+// Note: Returns (before, after, nil) even if snapshots don't exist.
+// The caller should check if before/after are empty and handle accordingly.
+func (t *InputTracker) GetSnapshotPair(sessionName, cliType string) (before, after string, err error) {
+	// Validate session name (security check)
+	if err := validateSessionName(sessionName); err != nil {
+		return "", "", fmt.Errorf("invalid session name: %w", err)
+	}
+
+	// Validate CLI type (security check)
+	if err := validateCLIType(cliType); err != nil {
+		return "", "", fmt.Errorf("invalid CLI type: %w", err)
+	}
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	sessionDir := t.getSessionDirWithCLIType(sessionName, cliType)
+
+	// Read before snapshot
+	beforePath := filepath.Join(sessionDir, "before_snapshot.txt")
+	beforeData, beforeErr := os.ReadFile(beforePath)
+	if beforeErr != nil && !os.IsNotExist(beforeErr) {
+		return "", "", fmt.Errorf("failed to read before snapshot: %w", beforeErr)
+	}
+
+	// Read after snapshot
+	afterPath := filepath.Join(sessionDir, "after_snapshot.txt")
+	afterData, afterErr := os.ReadFile(afterPath)
+	if afterErr != nil && !os.IsNotExist(afterErr) {
+		return "", "", fmt.Errorf("failed to read after snapshot: %w", afterErr)
+	}
+
+	return string(beforeData), string(afterData), nil
+}
+
+// ClearSnapshots removes both before and after snapshots for a session
+//
+// This is useful for cleanup or when starting a new conversation.
+//
+// Returns error if:
+//   - Session name is invalid
+//   - CLI type is invalid
+//   - File operations fail (non-existence is not an error)
+func (t *InputTracker) ClearSnapshots(sessionName, cliType string) error {
+	// Validate session name (security check)
+	if err := validateSessionName(sessionName); err != nil {
+		return fmt.Errorf("invalid session name: %w", err)
+	}
+
+	// Validate CLI type (security check)
+	if err := validateCLIType(cliType); err != nil {
+		return fmt.Errorf("invalid CLI type: %w", err)
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	sessionDir := t.getSessionDirWithCLIType(sessionName, cliType)
+
+	beforePath := filepath.Join(sessionDir, "before_snapshot.txt")
+	afterPath := filepath.Join(sessionDir, "after_snapshot.txt")
+
+	// Remove before snapshot (ignore if doesn't exist)
+	if err := os.Remove(beforePath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove before snapshot: %w", err)
+	}
+
+	// Remove after snapshot (ignore if doesn't exist)
+	if err := os.Remove(afterPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove after snapshot: %w", err)
+	}
+
+	return nil
 }

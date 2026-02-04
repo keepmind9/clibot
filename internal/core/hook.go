@@ -216,6 +216,7 @@ func (e *Engine) captureResponseWithRetry(session *Session, lastUserPrompt strin
 	}
 
 	var lastResponse string
+	var lastAlgorithmUsed string
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if attempt == 1 {
@@ -235,15 +236,45 @@ func (e *Engine) captureResponseWithRetry(session *Session, lastUserPrompt strin
 
 		cleanOutput := watchdog.StripANSI(tmuxOutput)
 
-		// Extract content after the user's prompt
-		filteredOutput := watchdog.ExtractContentAfterPrompt(cleanOutput, lastUserPrompt)
+		// Try incremental extraction first (if snapshot exists)
+		var filteredOutput string
+		var algorithmUsed string
+		if e.inputTracker != nil {
+			beforeSnapshot, _, snapshotErr := e.inputTracker.GetSnapshotPair(session.Name, session.CLIType)
+			if snapshotErr == nil && beforeSnapshot != "" {
+				// Use incremental extraction (after - before)
+				filteredOutput = watchdog.ExtractIncrement(cleanOutput, beforeSnapshot)
+				algorithmUsed = "incremental_snapshot"
+			} else {
+				// Fallback to prompt matching
+				filteredOutput = watchdog.ExtractContentAfterPrompt(cleanOutput, lastUserPrompt)
+				algorithmUsed = "prompt_matching"
+			}
 
-		logger.WithFields(logrus.Fields{
-			"attempt":          attempt,
-			"filtered_length":  len(filteredOutput),
-			"filtered_preview": truncateString(filteredOutput, 200),
-			"is_thinking":      watchdog.IsThinking(filteredOutput),
-		}).Debug("extracted-content-after-user-prompt")
+			logger.WithFields(logrus.Fields{
+				"attempt":          attempt,
+				"filtered_length":  len(filteredOutput),
+				"filtered_preview": truncateString(filteredOutput, 200),
+				"is_thinking":      watchdog.IsThinking(filteredOutput),
+				"algorithm":        algorithmUsed,
+				"event":            "parser_hook_using_" + algorithmUsed,
+			}).Info("parser_hook_using_algorithm")
+		} else {
+			// No input tracker, use prompt matching
+			filteredOutput = watchdog.ExtractContentAfterPrompt(cleanOutput, lastUserPrompt)
+			algorithmUsed = "prompt_matching"
+			logger.WithFields(logrus.Fields{
+				"attempt":          attempt,
+				"filtered_length":  len(filteredOutput),
+				"filtered_preview": truncateString(filteredOutput, 200),
+				"is_thinking":      watchdog.IsThinking(filteredOutput),
+				"algorithm":        "prompt_matching",
+				"event":            "parser_hook_using_prompt_matching",
+			}).Info("parser_hook_using_prompt_matching_fallback")
+		}
+
+		// Save algorithm used for this attempt
+		lastAlgorithmUsed = algorithmUsed
 
 		// Check if still thinking in the filtered content
 		if watchdog.IsThinking(filteredOutput) {
@@ -267,7 +298,9 @@ func (e *Engine) captureResponseWithRetry(session *Session, lastUserPrompt strin
 				"attempt":           attempt,
 				"response_length":  len(response),
 				"response_preview": truncateString(response, 200),
-			}).Info("successfully-extracted-response-from-tmux")
+				"algorithm":        lastAlgorithmUsed,
+				"event":            "parser_hook_successfully_extracted_response",
+			}).Info("parser_hook_successfully_extracted_response")
 			return response // Got valid response, return immediately
 		}
 

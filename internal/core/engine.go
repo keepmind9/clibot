@@ -339,9 +339,46 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		}).Debug("keyword-converted-to-key-sequence")
 	}
 
-	// Step 3.5: Record user input for response extraction (polling mode)
+	// Step 3.5: Capture before snapshot for incremental extraction (polling mode only)
+	// IMPORTANT: Must capture BEFORE recording input to ensure before snapshot
+	// only contains state BEFORE user input, not after
+	// This snapshot is used to calculate the increment (after - before)
+	// In hook mode, snapshots are not needed as hook provides the response directly
+	adapter := e.cliAdapters[session.CLIType]
+	if e.inputTracker != nil && !adapter.UseHook() {
+		beforeCapture, err := watchdog.CapturePane(session.Name, capturePaneLine)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"session": session.Name,
+				"cliType": session.CLIType,
+				"error":   err,
+			}).Warn("failed-to-capture-before-snapshot-falling-back-to-full-extraction")
+		} else {
+			// IMPORTANT: Strip ANSI codes to match after snapshot format
+			// after snapshot comes from WaitForCompletion which uses ExtractStableContent (StripANSI)
+			// This ensures before and after snapshots are comparable
+			beforeCapture = watchdog.StripANSI(beforeCapture)
+
+			if err := e.inputTracker.RecordBeforeSnapshot(session.Name, session.CLIType, beforeCapture); err != nil {
+				logger.WithFields(logrus.Fields{
+					"session": session.Name,
+					"cliType": session.CLIType,
+					"error":   err,
+				}).Warn("failed-to-save-before-snapshot-will-use-full-extraction")
+			} else {
+				logger.WithFields(logrus.Fields{
+					"session":     session.Name,
+					"cliType":     session.CLIType,
+					"capture_len": len(beforeCapture),
+				}).Debug("before-snapshot-captured")
+			}
+		}
+	}
+
+	// Step 3.6: Record user input for response extraction (polling mode)
 	// This recorded input will be used as an anchor to extract the correct response
 	// from tmux output, which may contain historical conversation data
+	// IMPORTANT: Recorded AFTER before snapshot to ensure clean state
 	if e.inputTracker != nil {
 		if err := e.inputTracker.RecordInput(session.Name, msg.Content); err != nil {
 			logger.WithFields(logrus.Fields{
@@ -357,7 +394,6 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	}
 
 	// Step 4: Send to CLI
-	adapter := e.cliAdapters[session.CLIType]
 	if err := adapter.SendInput(session.Name, processedContent); err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
@@ -810,46 +846,63 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 		return err
 	}
 
-	// Extract the relevant response using recorded user inputs
+	// Capture after snapshot for incremental extraction
 	var response string
 	if e.inputTracker != nil {
-		// Get all recorded inputs (from newest to oldest)
-		inputs, err := e.inputTracker.GetAllInputs(session.Name)
-		if err != nil {
+		// Save after snapshot
+		if err := e.inputTracker.RecordAfterSnapshot(session.Name, session.CLIType, rawContent); err != nil {
 			logger.WithFields(logrus.Fields{
 				"session": session.Name,
+				"cliType": session.CLIType,
 				"error":   err,
-			}).Warn("failed-to-get-recorded-inputs-using-full-content")
-			response = rawContent
-		} else if len(inputs) == 0 {
-			// No recorded input, use full content
-			// This happens when user interacts with CLI directly (not through bot)
-			logger.WithFields(logrus.Fields{
-				"session": session.Name,
-			}).Debug("no-recorded-inputs-using-full-tmux-content")
+			}).Warn("failed-to-save-after-snapshot-will-use-full-extraction")
+			// Fall back to full content
 			response = rawContent
 		} else {
-			// Try to extract content using any of the recorded inputs (from newest to oldest)
-			// This handles cases where short inputs (menu selections) don't appear in tmux output
-			inputRecords := make([]watchdog.InputRecord, len(inputs))
-			for i, input := range inputs {
-				inputRecords[i] = watchdog.InputRecord{
-					Timestamp: input.Timestamp,
-					Content:   input.Content,
-				}
-			}
-
-			response = watchdog.ExtractContentAfterAnyInput(rawContent, inputRecords)
-
-			// Calculate response time using the most recent input
-			responseTime := time.Now().UnixMilli() - inputs[0].Timestamp
 			logger.WithFields(logrus.Fields{
-				"session":         session.Name,
-				"response_time":   fmt.Sprintf("%dms", responseTime),
-				"raw_length":      len(rawContent),
-				"extracted_length": len(response),
-				"tried_inputs":    len(inputs),
-			}).Info("response-extracted-using-recorded-inputs")
+				"session":     session.Name,
+				"cliType":     session.CLIType,
+				"capture_len": len(rawContent),
+			}).Debug("after-snapshot-captured")
+
+			// Try incremental extraction using snapshots
+			beforeSnapshot, _, snapshotErr := e.inputTracker.GetSnapshotPair(session.Name, session.CLIType)
+			if snapshotErr != nil {
+				logger.WithFields(logrus.Fields{
+					"session":  session.Name,
+					"cliType":  session.CLIType,
+					"error":    snapshotErr,
+					"event":    "parser_failed_to_get_snapshot_fallback",
+					"fallback": "raw_content",
+				}).Warn("parser_failed_to_get_snapshot_falling_back_to_raw")
+				response = rawContent
+			} else if beforeSnapshot == "" {
+				// No before snapshot available, fall back to legacy method
+				logger.WithFields(logrus.Fields{
+					"session":   session.Name,
+					"cliType":   session.CLIType,
+					"event":     "parser_no_before_snapshot_fallback",
+					"algorithm": "prompt_matching",
+				}).Info("parser_no_before_snapshot_fallback_to_prompt_matching")
+				response = e.extractResponseUsingInputs(session.Name, rawContent)
+			} else {
+				// Use incremental extraction with snapshots
+				response = watchdog.ExtractIncrement(rawContent, beforeSnapshot)
+
+				rawLines := len(strings.Split(rawContent, "\n"))
+				extractedLines := len(strings.Split(response, "\n"))
+
+				logger.WithFields(logrus.Fields{
+					"session":          session.Name,
+					"cliType":          session.CLIType,
+					"raw_length":       len(rawContent),
+					"raw_lines":        rawLines,
+					"extracted_length": len(response),
+					"extracted_lines":  extractedLines,
+					"algorithm":        "incremental_snapshot",
+					"event":            "parser_using_incremental_snapshot",
+				}).Info("parser_using_incremental_snapshot")
+			}
 		}
 	} else {
 		// No input tracker available, use full content
@@ -863,7 +916,9 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 	logger.WithFields(logrus.Fields{
 		"session":        session.Name,
 		"response_length": len(response),
-	}).Info("response-completed-sending-to-user")
+		"mode":           "polling",
+		"event":          "parser_response_completed",
+	}).Info("parser_response_completed_sending_to_user")
 
 	e.sendResponseToUser(session.Name, response)
 
@@ -871,6 +926,58 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 	e.updateSessionState(session.Name, StateIdle)
 
 	return nil
+}
+
+// extractResponseUsingInputs extracts response using recorded inputs (fallback method)
+// This is used when incremental extraction is not available
+func (e *Engine) extractResponseUsingInputs(sessionName string, rawContent string) string {
+	// Get all recorded inputs (from newest to oldest)
+	inputs, err := e.inputTracker.GetAllInputs(sessionName)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": sessionName,
+			"error":   err,
+		}).Warn("failed-to-get-recorded-inputs-using-full-content")
+		return rawContent
+	}
+
+	if len(inputs) == 0 {
+		// No recorded input, use full content
+		logger.WithFields(logrus.Fields{
+			"session": sessionName,
+		}).Debug("no-recorded-inputs-using-full-tmux-content")
+		return rawContent
+	}
+
+	// Try to extract content using any of the recorded inputs (from newest to oldest)
+	inputRecords := make([]watchdog.InputRecord, len(inputs))
+	for i, input := range inputs {
+		inputRecords[i] = watchdog.InputRecord{
+			Timestamp: input.Timestamp,
+			Content:   input.Content,
+		}
+	}
+
+	response := watchdog.ExtractContentAfterAnyInput(rawContent, inputRecords)
+
+	// Calculate response time using the most recent input
+	responseTime := time.Now().UnixMilli() - inputs[0].Timestamp
+	rawLines := len(strings.Split(rawContent, "\n"))
+	extractedLines := len(strings.Split(response, "\n"))
+
+	logger.WithFields(logrus.Fields{
+		"session":         sessionName,
+		"response_time":   fmt.Sprintf("%dms", responseTime),
+		"raw_length":      len(rawContent),
+		"raw_lines":       rawLines,
+		"extracted_length": len(response),
+		"extracted_lines": extractedLines,
+		"tried_inputs":    len(inputs),
+		"algorithm":       "prompt_matching",
+		"event":           "parser_using_prompt_matching",
+	}).Info("parser_using_prompt_matching_fallback")
+
+	return response
 }
 
 // sendResponseToUser sends the CLI response to the user via bot

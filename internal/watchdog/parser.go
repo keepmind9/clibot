@@ -8,6 +8,54 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+/*
+PARSER ARCHITECTURE
+==================
+
+This file contains the original "pattern matching" parser implementation.
+New implementations are in parser_incremental.go.
+
+Parser Functions:
+-----------------
+
+1. ExtractIncrement (parser_incremental.go) - NEW (Recommended)
+   - Uses "incremental snapshot" approach (after - before)
+   - Simple state comparison, no complex pattern matching
+   - Handles scrolling, content replacement, disappearing menus gracefully
+   - Use when: You have before/after snapshots available
+
+2. ExtractContentAfterPrompt (this file) - LEGACY (Still supported)
+   - Uses "pattern matching" approach
+   - Searches backward from end to find user prompt
+   - Complex heuristic rules for menu detection, cursor handling
+   - Use when: You don't have snapshots, only have tmux output
+
+3. ExtractContentAfterAnyInput (this file) - LEGACY (Still supported)
+   - Tries multiple user inputs from newest to oldest
+   - Fallback for short inputs that don't appear in tmux output
+   - Use when: Hook mode fallback without incremental extraction
+
+Migration Path:
+--------------
+Polling mode → Use ExtractIncrement (with before/after snapshots)
+Hook mode   → Try ExtractIncrement first, fallback to ExtractContentAfterPrompt
+
+The old functions are kept for:
+- Backward compatibility
+- Fallback when snapshots aren't available
+- Hook mode edge cases
+
+Helper Functions (shared by all parsers):
+----------------------------------------
+- isLikelyUserPromptLine: Validates if a line is user input vs AI response
+- isMenuOption: Detects menu options (e.g., "❯ 1. Yes")
+- isPromptOrCommand: Filters out UI prompts and commands
+- canSkip: Filters out empty lines and UI borders
+- extractLastAssistantContent: Basic extraction without prompt matching
+- IsThinking: Checks if CLI is still processing
+- RemoveUIStatusLines: Removes UI indicators from final response
+*/
+
 // hasPromptCharacterPrefix checks if a line has a cursor prefix
 func hasPromptCharacterPrefix(line string) bool {
 	prefix := []string{
@@ -222,8 +270,12 @@ func canSkip(line string) bool {
 		return true
 	}
 	// Detect and skip UI borders (box drawing characters)
+	// Single-line: ─ │ ┌ └ ┐ ┘ ├ ┤
+	// Double-line: ═ ║ ╒ ╓ ╔ ╕ ╖ ╗ ╘ ╙ ╚ ╛ ╜ ╝ ╞ ╟ ╠ ╡ ╢ ╣ ╤ ╥ ╦ ╧ ╨ ╩
+	// Rounded: ╭ ╮ ╰ ╯
+	// Other space-like: · • ● ○ ◌ ■
 	for _, runeValue := range line {
-		if strings.ContainsRune("─│┌└┐┘├┤ ╭╮╰╯_", runeValue) {
+		if strings.ContainsRune("─│┌└┐┘├┤═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╭╮╰╯·•●○◌■ ", runeValue) {
 			continue
 		}
 		return false
