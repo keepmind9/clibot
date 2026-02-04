@@ -158,7 +158,8 @@ func WaitForCompletion(sessionName string, config PollingConfig, ctx context.Con
 			currentContent := ExtractStableContent(output)
 
 			// Check if content is stable
-			if currentContent == lastContent {
+			// Uses two-tier check: exact match OR menu mode + high similarity
+			if isPollingCompleted(currentContent, lastContent) {
 				if currentContent != "" {
 					// Normal case: non-empty stable content
 					stableTimes++
@@ -221,4 +222,99 @@ func ExtractStableContent(output string) string {
 	clean = strings.TrimSpace(clean)
 
 	return clean
+}
+
+// isPollingCompleted determines if polling should be considered complete.
+//
+// It uses a two-tier check:
+// 1. Exact match (original logic) - handles all cases including thinking
+// 2. Menu mode + high similarity - handles menus with animated indicators
+//
+// This ensures thinking states (with various animations) continue to wait,
+// while menu states can complete despite indicator flashing.
+func isPollingCompleted(current, last string) bool {
+	// Tier 1: Exact match (universal)
+	if current == last {
+		return true
+	}
+
+	// Tier 2: Menu mode + high similarity
+	// Only applies if we're clearly in a menu/interactive state
+	if isMenuMode(current) {
+		sim := calculateSimilarity(current, last)
+		if sim >= 0.90 {
+			logger.WithFields(logrus.Fields{
+				"similarity": sim,
+				"mode":       "menu",
+			}).Debug("polling-completed-by-menu-mode-and-similarity")
+			return true
+		}
+	}
+
+	// Not in menu mode or not similar enough: continue waiting
+	return false
+}
+
+// isMenuMode checks if the content shows a menu with numbered options.
+// Numbered options (e.g., "1. Yes", "2) No") are the most reliable indicator
+// of a menu/interactive state waiting for user input.
+func isMenuMode(content string) bool {
+	return hasNumberedOptions(content)
+}
+
+// hasNumberedOptions checks if content contains numbered menu options.
+// It detects patterns like: "1. Edit", "2) Delete", "3、Rename", "4 /path/to/file"
+func hasNumberedOptions(content string) bool {
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Pattern: digit + punctuation + any content
+		if len(trimmed) > 2 {
+			firstChar := trimmed[0]
+			if firstChar >= '0' && firstChar <= '9' {
+				// Check for punctuation after digit
+				rest := trimmed[1:]
+				rest = strings.TrimSpace(rest)
+				if len(rest) > 0 {
+					// Use string prefix to handle multi-byte characters
+					if strings.HasPrefix(rest, ".") ||
+						strings.HasPrefix(rest, ")") ||
+						strings.HasPrefix(rest, "、") ||
+						strings.HasPrefix(rest, " ") {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// calculateSimilarity calculates the line-based similarity between two strings.
+// Returns a value between 0.0 (no similarity) and 1.0 (identical).
+func calculateSimilarity(a, b string) float64 {
+	linesA := strings.Split(a, "\n")
+	linesB := strings.Split(b, "\n")
+
+	// Find maximum line count
+	maxLines := len(linesA)
+	if len(linesB) > maxLines {
+		maxLines = len(linesB)
+	}
+
+	if maxLines == 0 {
+		return 1.0
+	}
+
+	// Count matching lines
+	matchedLines := 0
+	for i := 0; i < maxLines; i++ {
+		if i < len(linesA) && i < len(linesB) {
+			if linesA[i] == linesB[i] {
+				matchedLines++
+			}
+		}
+	}
+
+	return float64(matchedLines) / float64(maxLines)
 }
