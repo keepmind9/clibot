@@ -119,17 +119,18 @@ func (g *GeminiAdapter) HandleHookData(data []byte) (string, string, string, err
 	}).Debug("hook-data-parsed")
 
 	var response string
+	var lastUserPrompt string
 	var err error
 
 	// Only extract response for non-notification events
 	// Notification events don't have assistant responses to extract
 	if !strings.EqualFold(hookEventName, "Notification") {
-		response, err = g.extractGeminiResponse(transcriptPath, cwd)
+		lastUserPrompt, response, err = g.extractGeminiResponse(transcriptPath, cwd)
 		if err != nil {
 			logger.WithFields(logrus.Fields{
 				"transcript_path": transcriptPath,
-				"cwd": cwd,
-				"error":          err,
+				"cwd":             cwd,
+				"error":           err,
 			}).Warn("failed-to-extract-gemini-response")
 		}
 	} else {
@@ -138,10 +139,11 @@ func (g *GeminiAdapter) HandleHookData(data []byte) (string, string, string, err
 
 	logger.WithFields(logrus.Fields{
 		"cwd":          cwd,
+		"prompt_len":   len(lastUserPrompt),
 		"response_len": len(response),
 	}).Info("response-extracted-from-gemini-history")
 
-	return cwd, "", response, nil
+	return cwd, lastUserPrompt, response, nil
 }
 
 // Gemini stores history in: ~/.gemini/tmp/{project_hash}/chats/session-*.json
@@ -185,39 +187,39 @@ func (g *GeminiAdapter) lastSessionFile(cwd string)(string, error){
 
 // extractGeminiResponse extracts the latest Gemini response from history
 // JSON structure: {"messages": [{"type": "user", ...}, {"type": "gemini", "content": "...", "thoughts": [...]}, ...]}
-func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string) (string, error) {
+func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string) (string, string, error) {
 	var latestFile = ""
 	if transcriptPath == "" {
 		_latestFile, _err := g.lastSessionFile(cwd)
-		if _err != nil{
-			return "", _err
+		if _err != nil {
+			return "", "", _err
 		}
 		latestFile = _latestFile
-	}else{
+	} else {
 		latestFile = transcriptPath
 	}
 
 	// Parse JSON
 	data, err := os.ReadFile(latestFile)
 	if err != nil {
-		return "", fmt.Errorf("failed to read session file: %w", err)
+		return "", "", fmt.Errorf("failed to read session file: %w", err)
 	}
 
 	var sessionData struct {
 		Messages []struct {
-			Type     string                 `json:"type"`
-			Content  string                 `json:"content"`
+			Type     string                   `json:"type"`
+			Content  string                   `json:"content"`
 			Thoughts []map[string]interface{} `json:"thoughts,omitempty"`
 		} `json:"messages"`
 	}
 
 	if err := json.Unmarshal(data, &sessionData); err != nil {
-		return "", fmt.Errorf("failed to parse session JSON: %w", err)
+		return "", "", fmt.Errorf("failed to parse session JSON: %w", err)
 	}
 
 	messages := sessionData.Messages
 	if len(messages) == 0 {
-		return "", fmt.Errorf("no messages in session file")
+		return "", "", fmt.Errorf("no messages in session file")
 	}
 
 	// Find last user message index
@@ -229,8 +231,10 @@ func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string)
 	}
 
 	if lastUserIndex == -1 {
-		return "", fmt.Errorf("no user message found in session")
+		return "", "", fmt.Errorf("no user message found in session")
 	}
+
+	userPrompt := strings.TrimSpace(messages[lastUserIndex].Content)
 
 	// Collect all Gemini messages after the last user message
 	var contentParts []string
@@ -244,20 +248,20 @@ func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string)
 	}
 
 	if len(contentParts) == 0 {
-		return "", fmt.Errorf("no Gemini messages found after last user message")
+		return "", "", fmt.Errorf("no Gemini messages found after last user message")
 	}
 
 	// Join all content parts with double newline
 	response := strings.Join(contentParts, "\n\n")
 
 	logger.WithFields(logrus.Fields{
-		"total_messages":    len(messages),
-		"last_user_index":   lastUserIndex,
-		"gemini_messages":   len(contentParts),
-		"response_length":   len(response),
+		"total_messages":  len(messages),
+		"last_user_index": lastUserIndex,
+		"gemini_messages": len(contentParts),
+		"response_length": len(response),
 	}).Info("extracted-gemini-response-from-session-file")
 
-	return response, nil
+	return userPrompt, response, nil
 }
 
 // computeProjectHash computes SHA256 hash of project path
