@@ -238,6 +238,12 @@ func isPollingCompleted(current, last string) bool {
 		return true
 	}
 
+	// If it's still thinking, don't use similarity-based completion
+	// We want to wait for the thinking state to finish completely
+	if IsThinking(current) {
+		return false
+	}
+
 	// Tier 2: Menu mode + high similarity
 	// Only applies if we're clearly in a menu/interactive state
 	if isMenuMode(current) {
@@ -265,29 +271,31 @@ func isMenuMode(content string) bool {
 // hasNumberedOptions checks if content contains numbered menu options.
 // It detects patterns like: "1. Edit", "2) Delete", "3、Rename", "4 /path/to/file"
 func hasNumberedOptions(content string) bool {
+	matches := 0
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		// Pattern: digit + punctuation + any content
-		if len(trimmed) > 2 {
+		if len(trimmed) > 1 {
 			firstChar := trimmed[0]
 			if firstChar >= '0' && firstChar <= '9' {
 				// Check for punctuation after digit
 				rest := trimmed[1:]
-				rest = strings.TrimSpace(rest)
 				if len(rest) > 0 {
-					// Use string prefix to handle multi-byte characters
+					// Check for common menu delimiters
 					if strings.HasPrefix(rest, ".") ||
 						strings.HasPrefix(rest, ")") ||
 						strings.HasPrefix(rest, "、") ||
 						strings.HasPrefix(rest, " ") {
-						return true
+						matches++
 					}
 				}
 			}
 		}
 	}
-	return false
+	// A menu usually has at least 2 options
+	// This avoids false positives from lines that happen to start with a number
+	return matches >= 2
 }
 
 // calculateSimilarity calculates the line-based similarity between two strings.

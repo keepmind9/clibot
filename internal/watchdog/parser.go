@@ -275,7 +275,7 @@ func canSkip(line string) bool {
 	// Rounded: ╭ ╮ ╰ ╯
 	// Other space-like: · • ● ○ ◌ ■
 	for _, runeValue := range line {
-		if strings.ContainsRune("─│┌└┐┘├┤═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╭╮╰╯·•●○◌■ ", runeValue) {
+		if strings.ContainsRune("─│┌└┐┘├┤═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╭╮╰╯·•●○◌■ ▀▄", runeValue) {
 			continue
 		}
 		return false
@@ -536,6 +536,7 @@ func IsThinking(output string) bool {
 		"esc to interrupt",
 		"press escape to interrupt",
 		"interrupt",
+		"loading",
 	}
 
 	recentOutput := strings.Join(recentLines, "\n")
