@@ -185,8 +185,8 @@ func (g *GeminiAdapter) lastSessionFile(cwd string)(string, error){
 	return latestFile, nil
 }
 
-// ExtractGeminiResponse exports the latest Gemini response extraction logic
-func (g *GeminiAdapter) ExtractGeminiResponse(transcriptPath string, cwd string) (string, string, error) {
+// ExtractLatestInteraction exports the latest Gemini response extraction logic
+func (g *GeminiAdapter) ExtractLatestInteraction(transcriptPath string, cwd string) (string, string, error) {
 	return g.extractGeminiResponse(transcriptPath, cwd)
 }
 
@@ -308,7 +308,7 @@ func (g *GeminiAdapter) CreateSession(sessionName, cliType, workDir string) erro
 	}
 
 	// Start Gemini CLI in the session
-	if err := g.startGemini(sessionName); err != nil {
+	if err := g.start(sessionName); err != nil {
 		return fmt.Errorf("failed to start Gemini CLI: %w", err)
 	}
 
@@ -335,8 +335,8 @@ func (g *GeminiAdapter) GetPollTimeout() time.Duration {
 	return g.pollTimeout
 }
 
-// startGemini starts Gemini CLI in a tmux session
-func (g *GeminiAdapter) startGemini(sessionName string) error {
+// start starts Gemini CLI in a tmux session
+func (g *GeminiAdapter) start(sessionName string) error {
 	logger.WithField("session", sessionName).Info("starting-gemini-cli-in-tmux-session")
 
 	// Start Gemini CLI using "gemini" command

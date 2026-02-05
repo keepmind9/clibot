@@ -31,7 +31,11 @@ var extractInteractionCmd = &cobra.Command{
 		case "gemini":
 			// Initialize a temporary adapter for extraction
 			adapter, _ := cli.NewGeminiAdapter(cli.GeminiAdapterConfig{})
-			prompt, response, err = adapter.ExtractGeminiResponse(path, "")
+			prompt, response, err = adapter.ExtractLatestInteraction(path, "")
+		case "opencode":
+			// Initialize a temporary adapter for extraction
+			adapter, _ := cli.NewOpenCodeAdapter(cli.OpenCodeAdapterConfig{})
+			prompt, response, err = adapter.ExtractLatestInteraction(path)
 		default:
 			fmt.Printf("Unsupported CLI type: %s\n", cliType)
 			os.Exit(1)

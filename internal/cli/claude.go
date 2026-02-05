@@ -159,7 +159,7 @@ func (c *ClaudeAdapter) CreateSession(sessionName, cliType, workDir string) erro
 	}
 
 	// Start Claude Code in the session
-	if err := c.startClaude(sessionName); err != nil {
+	if err := c.start(sessionName); err != nil {
 		return fmt.Errorf("failed to start Claude Code: %w", err)
 	}
 
@@ -186,8 +186,8 @@ func (c *ClaudeAdapter) GetPollTimeout() time.Duration {
 	return c.pollTimeout
 }
 
-// startClaude starts Claude Code in the specified tmux session
-func (c *ClaudeAdapter) startClaude(sessionName string) error {
+// start starts Claude Code in the specified tmux session
+func (c *ClaudeAdapter) start(sessionName string) error {
 	// Send "claude" command to start Claude Code
 	if err := watchdog.SendKeys(sessionName, "claude"); err != nil {
 		return err

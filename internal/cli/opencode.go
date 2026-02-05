@@ -112,37 +112,28 @@ func (o *OpenCodeAdapter) HandleHookData(data []byte) (string, string, string, e
 		"hook_event_name": hookEventName,
 	}).Debug("hook-data-parsed")
 
-	var lastUserPrompt string
-	var response string
+	var lastUserPrompt, response string
 	var err error
 
-	// Only extract response for non-notification events
-	// Notification events don't have assistant responses to extract
-	if !strings.EqualFold(hookEventName, "Notification") {
-		response, err = extractFromOpenCodeTranscript(transcriptPath)
+	// Extract interaction in one pass
+	if transcriptPath != "" {
+		lastUserPrompt, response, err = extractLatestOpenCodeInteraction(transcriptPath)
 		if err != nil {
-			// Don't fail the hook - transcript parsing errors are not critical
 			logger.WithFields(logrus.Fields{
 				"transcript": transcriptPath,
 				"error":      err,
-			}).Warn("failed-to-extract-response-from-transcript")
+			}).Warn("failed-to-extract-interaction-from-transcript")
 		}
-	} else {
-		logger.WithField("hook_event_name", hookEventName).Debug("skipping-response-extraction-for-notification-event")
-	}
 
-	// Extract user prompt for tmux filtering when response is empty or extraction failed
-	if response == "" || err != nil {
-		lastUserPrompt, err = extractLastUserPromptFromTranscript(transcriptPath)
-		if err != nil {
-			logger.WithField("error", err).Debug("failed-to-extract-last-user-prompt")
-		} else {
-			logger.WithField("last_user_prompt", lastUserPrompt).Debug("extracted-last-user-prompt")
+		// Clear response for notification events
+		if strings.EqualFold(hookEventName, "Notification") {
+			response = ""
 		}
 	}
 
 	logger.WithFields(logrus.Fields{
 		"cwd":          cwd,
+		"prompt_len":   len(lastUserPrompt),
 		"response_len": len(response),
 	}).Info("response-extracted-from-transcript")
 
@@ -174,7 +165,7 @@ func (o *OpenCodeAdapter) CreateSession(sessionName, cliType, workDir string) er
 	}
 
 	// Start OpenCode in the session
-	if err := o.startOpenCode(sessionName); err != nil {
+	if err := o.start(sessionName); err != nil {
 		return fmt.Errorf("failed to start OpenCode: %w", err)
 	}
 
@@ -201,8 +192,8 @@ func (o *OpenCodeAdapter) GetPollTimeout() time.Duration {
 	return o.pollTimeout
 }
 
-// startOpenCode starts OpenCode in the specified tmux session
-func (o *OpenCodeAdapter) startOpenCode(sessionName string) error {
+// start starts OpenCode in the specified tmux session
+func (o *OpenCodeAdapter) start(sessionName string) error {
 	logger.WithField("session", sessionName).Info("starting-opencode-cli-in-tmux-session")
 
 	// Start OpenCode using "opencode" command
@@ -241,76 +232,67 @@ type Metadata struct {
 	Model       string `json:"model,omitempty"`
 }
 
-// extractFromOpenCodeTranscript extracts the last assistant response from OpenCode's transcript file
-func extractFromOpenCodeTranscript(transcriptPath string) (string, error) {
+// ExtractLatestInteraction exports the latest OpenCode response extraction logic
+func (o *OpenCodeAdapter) ExtractLatestInteraction(transcriptPath string) (string, string, error) {
+	return extractLatestOpenCodeInteraction(transcriptPath)
+}
+
+// extractLatestOpenCodeInteraction extracts the last interaction from OpenCode's transcript file
+func extractLatestOpenCodeInteraction(transcriptPath string) (string, string, error) {
 	logger.WithField("transcript", transcriptPath).Debug("starting-opencode-transcript-extraction")
 
 	// Read transcript file
 	file, err := os.Open(transcriptPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open transcript file: %w", err)
+		return "", "", fmt.Errorf("failed to open transcript file: %w", err)
 	}
 	defer file.Close()
 
 	// Parse JSON
 	var transcript OpenCodeTranscript
 	if err := json.NewDecoder(file).Decode(&transcript); err != nil {
-		return "", fmt.Errorf("failed to parse transcript JSON: %w", err)
+		return "", "", fmt.Errorf("failed to parse transcript JSON: %w", err)
 	}
 
-	// Find last assistant message
-	var lastAssistantContent string
-	for i := len(transcript.Messages) - 1; i >= 0; i-- {
-		msg := transcript.Messages[i]
-		if msg.Type == "assistant" && msg.Content != "" {
-			lastAssistantContent = msg.Content
-			break
-		}
-	}
-
-	if lastAssistantContent == "" {
-		return "", fmt.Errorf("no assistant message found in transcript")
-	}
-
-	logger.WithFields(logrus.Fields{
-		"transcript":    transcriptPath,
-		"response_len":  len(lastAssistantContent),
-	}).Info("opencode-response-extracted-from-transcript")
-
-	return lastAssistantContent, nil
-}
-
-// extractLastUserPromptFromTranscript extracts the last user message from OpenCode's transcript
-// This is used for filtering tmux output to show only the latest response
-func extractLastUserPromptFromTranscript(transcriptPath string) (string, error) {
-	file, err := os.Open(transcriptPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open transcript file: %w", err)
-	}
-	defer file.Close()
-
-	var transcript OpenCodeTranscript
-	if err := json.NewDecoder(file).Decode(&transcript); err != nil {
-		return "", fmt.Errorf("failed to parse transcript JSON: %w", err)
-	}
+	var prompt, response string
 
 	// Find last user message
 	for i := len(transcript.Messages) - 1; i >= 0; i-- {
 		msg := transcript.Messages[i]
 		if msg.Type == "user" && msg.Content != "" {
+			prompt = msg.Content
+			// Match logic from original extractLastUserPromptFromTranscript:
 			// Extract first line or first 50 chars for matching
-			prompt := msg.Content
 			if strings.Contains(prompt, "\n") {
 				prompt = strings.Split(prompt, "\n")[0]
 			}
 			if len(prompt) > 50 {
 				prompt = prompt[:50]
 			}
-			return prompt, nil
+			break
 		}
 	}
 
-	return "", fmt.Errorf("no user message found in transcript")
+	// Find last assistant message
+	for i := len(transcript.Messages) - 1; i >= 0; i-- {
+		msg := transcript.Messages[i]
+		if msg.Type == "assistant" && msg.Content != "" {
+			response = msg.Content
+			break
+		}
+	}
+
+	if prompt == "" && response == "" {
+		return "", "", fmt.Errorf("no interaction found in transcript")
+	}
+
+	logger.WithFields(logrus.Fields{
+		"transcript":   transcriptPath,
+		"prompt_len":   len(prompt),
+		"response_len": len(response),
+	}).Info("opencode-interaction-extracted")
+
+	return prompt, response, nil
 }
 
 // GetLastOpenCodeResponse is removed - no longer needed as OpenCode uses hook mode
