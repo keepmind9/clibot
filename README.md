@@ -34,11 +34,65 @@ cp configs/config.yaml ~/.config/clibot/config.yaml
 - Real-time notifications
 - Best for production use
 
-Configure Claude Code Hook (example):
+Configure Claude Code Hook (`~/.claude/settings.json`):
 ```json
 {
   "hooks": {
-    "onCompletion": "clibot hook --session $CLIBOT_SESSION --event completed"
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clibot hook --cli-type claude"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clibot hook --cli-type claude"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Configure Gemini CLI Hook (`~/.gemini/settings.json`):
+```json
+{
+  "tools": {
+    "enableHooks": true
+  },
+  "hooks": {
+    "AfterAgent": [
+      {
+        "hooks": [
+          {
+            "name": "clibot-post-command-hook",
+            "type": "command",
+            "command": "clibot hook --cli-type gemini",
+            "description": "post command hook for clibot"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "name": "clibot-notification-command-hook",
+            "type": "command",
+            "command": "clibot hook --cli-type gemini",
+            "description": "notification command hook for clibot"
+          }
+        ]
+      }
+    ]
   }
 }
 ```
