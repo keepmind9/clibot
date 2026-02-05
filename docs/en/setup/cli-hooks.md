@@ -70,3 +70,33 @@ To enable real-time responses with Gemini CLI, add the following to your `~/.gem
   }
 }
 ```
+
+## OpenCode
+
+OpenCode supports real-time notifications via its plugin system. Create a file named `clibot.ts` in your project's `.opencode/plugin/` directory (or globally in `~/.config/opencode/plugin/`):
+
+```typescript
+import { Plugin } from "@opencode-ai/plugin";
+
+export const ClibotPlugin: Plugin = async (ctx) => {
+  return {
+    event: async ({ event }) => {
+      // Trigger when the session becomes idle (task finished)
+      if (event.type === "session.idle") {
+        const { sessionID } = event.properties;
+        const cwd = ctx.directory;
+
+        const payload = JSON.stringify({
+          cwd,
+          session_id: sessionID,
+          hook_event_name: "Completed"
+        });
+
+        // Ensure clibot is in your PATH
+        await ctx.$`echo ${payload} | clibot hook --cli-type opencode`.quiet();
+      }
+    },
+  };
+};
+```
+

@@ -70,3 +70,33 @@
   }
 }
 ```
+
+## OpenCode
+
+OpenCode 通过其插件系统支持实时通知。在项目的 `.opencode/plugin/` 目录（或全局目录 `~/.config/opencode/plugin/`）中创建一个名为 `clibot.ts` 的文件：
+
+```typescript
+import { Plugin } from "@opencode-ai/plugin";
+
+export const ClibotPlugin: Plugin = async (ctx) => {
+  return {
+    event: async ({ event }) => {
+      // 当会话进入空闲状态（任务完成）时触发
+      if (event.type === "session.idle") {
+        const { sessionID } = event.properties;
+        const cwd = ctx.directory;
+
+        const payload = JSON.stringify({
+          cwd,
+          session_id: sessionID,
+          hook_event_name: "Completed"
+        });
+
+        // 确保 clibot 在您的 PATH 环境变量中
+        await ctx.$`echo ${payload} | clibot hook --cli-type opencode`.quiet();
+      }
+    },
+  };
+};
+```
+
