@@ -6,6 +6,7 @@ clibot is a lightweight middleware that connects various IM platforms (Feishu, D
 
 ## Features
 
+- **No Public IP Required**: All bots connect via long-connections (WebSocket/Long Polling). You can deploy clibot on your home or office computer behind NAT without any port forwarding or public IP.
 - **Access Anywhere**: Use powerful desktop AI CLI tools from your mobile phone or tablet via IM
 - **Unified Entry Point**: Manage multiple AI CLI tools through a single IM bot with easy switching
 - **Flexible Extension**: Abstract interface design - add new CLI or Bot by simply implementing interfaces
