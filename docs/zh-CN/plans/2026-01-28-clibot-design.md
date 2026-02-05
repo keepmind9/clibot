@@ -339,11 +339,9 @@ func (e *Engine) HandleUserMessage(msg BotMessage) {
         return
     }
 
-    // 1. 检查是否是特殊命令（根据配置的前缀）
-    prefix := e.config.CommandPrefix
-    if strings.HasPrefix(msg.Content, prefix) {
-        cmd := strings.TrimPrefix(msg.Content, prefix)
-        e.HandleSpecialCommand(cmd, msg)
+    // 1. 检查是否是特殊命令
+    if cmd, isCmd, args := isSpecialCommand(msg.Content); isCmd {
+        e.HandleSpecialCommandWithArgs(cmd, args, msg)
         return
     }
 
@@ -378,7 +376,7 @@ func (e *Engine) HandleUserMessage(msg BotMessage) {
             }
         case <-time.After(5 * time.Minute):
             session.State = StateError
-            e.SendToAllBots("⚠️ CLI 响应超时\n建议: 使用 !!status 检查状态")
+            e.SendToAllBots("⚠️ CLI 响应超时\n建议: 使用 status 检查状态")
         }
     }()
 }
@@ -556,7 +554,7 @@ func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
     case "use": // 新增
         if len(parts) < 2 {
             e.SendToBot(msg.Platform, msg.Channel,
-                "用法: !!use <session-name>\n示例: !!use project-a")
+                "用法: use <session-name>\n示例: use project-a")
             return
         }
         e.useSession(parts[1], msg)
@@ -571,17 +569,17 @@ func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
 
 ```
 # 列出所有 session
-用户: !!sessions
+用户: sessions
 Bot:  📋 可用 Sessions:
       • project-a (claude) - idle [current]
       • project-b (claude) - idle
 
 # 切换 session
-用户: !!use project-b
+用户: use project-b
 Bot:  ✅ 已切换到 session: project-b
 
 # 查看当前 session
-用户: !!whoami
+用户: whoami
 Bot:  📊 当前 Session:
       频道: Discord-Channel-123
       Session: project-b
@@ -597,7 +595,7 @@ Bot: [使用 project-b session 处理]
 
 | 场景 | 处理方式 |
 |------|---------|
-| 频道未选择 session | 返回友好错误，引导用户运行 `!!use` |
+| 频道未选择 session | 返回友好错误，引导用户运行 `use` |
 | 选择的 session 不存在 | 列出可用 session，提示重新选择 |
 | clibot 重启 | 清空 `channelSessions` 映射，需要重新选择 |
 | 多个频道用同一个 session | 允许，正常工作 |
@@ -606,13 +604,13 @@ Bot: [使用 project-b session 处理]
 **7. 内存管理**：
 
 - `channelSessions` 只在内存中，不持久化
-- clibot 重启后清空，用户需重新运行 `!!use`
+- clibot 重启后清空，用户需重新运行 `use`
 - 优势：简单、无状态、重启自动清理
 
 **8. 向后兼容**：
 
-- 单 session 场景：自动使用默认 session，无需 `!!use`
-- 多 session 场景：首次使用前需运行 `!!use` 选择
+- 单 session 场景：自动使用默认 session，无需 `use`
+- 多 session 场景：首次使用前需运行 `use` 选择
 - 现有配置：无需修改，完全兼容
 
 ---
@@ -911,40 +909,35 @@ func (d *DiscordBot) SendMessage(channel, message string) error {
 
 ## 8. 特殊命令
 
-### 8.1 命令前缀配置
+### 8.1 自动识别逻辑
 
-```yaml
-# 特殊命令前缀（可自定义，避免与 CLI 的 / 命令冲突）
-command_prefix: "!!"   # 可选: !! >> ## @+ . 等
-```
+clibot 会自动识别某些特定的单词作为管理命令。为了实现最优性能，这些命令必须在消息中精确匹配（不带任何前缀）。
 
 **设计理由**:
-1. **避免冲突**: CLI 常用 `/` 前缀（如 `/exit`, `/help`），使用其他前缀避免冲突
-2. **手机友好**: `!` 或其他符号比 `/` 在手机上更容易输入
-3. **灵活定制**: 用户可以选择自己习惯的前缀
+1. **手机友好**: 无需输入任何前缀，直接发送单词即可触发
+2. **零冲突**: 通过精确匹配避免与常规对话内容冲突
+3. **高效**: 核心引擎采用 O(1) 的映射查找来检测命令
 
 ### 8.2 支持的命令
 
 ```
-!!sessions              # 列出所有 session
-!!use <session>         # 切换当前 session
-!!new <name> <cli>      # 创建新 session
-!!whoami                # 显示当前 session 信息
-!!status                # 显示所有 session 状态
-!!help                  # 帮助信息
+sessions              # 列出所有 session
+use <session>         # 切换当前 session
+new <name> <cli>      # 创建新 session
+whoami                # 显示当前 session 信息
+status                # 显示所有 session 状态
+help                  # 帮助信息
 ```
 
 ### 8.3 示例交互
 
 ```
-配置: command_prefix: "!!"
-
-用户: !!sessions
+用户: sessions
 Bot: 📋 可用 Sessions:
      • project-a (claude) - idle
      • backend-test (gemini) - working
 
-用户: !!use backend-test
+用户: use backend-test
 Bot: ✅ 已切换到 backend-test
 
 用户: /help         # 直接透传给 CLI（Claude Code 的 help）
@@ -967,9 +960,6 @@ Bot: [AI 的分析结果]
 # HTTP Hook 服务端口
 hook_server:
   port: 8080
-
-# 特殊命令前缀
-command_prefix: "!!"
 
 # ========== 安全配置（白名单机制） ==========
 # clibot 本质上是远程代码执行工具，必须启用用户白名单
@@ -1103,7 +1093,7 @@ logging:
    └─> 回调传给 Engine.messageChan
 
 3. Engine 解析消息
-   ├─> 特殊命令? (如 !!status)
+   ├─> 特殊命令? (如 status)
    │   └─> 是 → Engine 直接处理
    └─> 否 → 透传给当前激活的 session
 
@@ -1340,7 +1330,7 @@ func StripANSI(input string) string {
 
 **友好提示**:
 - CLI 执行失败 → 在 IM 中显示错误提示和可能的原因
-- Session 不存在 → 提示使用 `!!new` 创建或 `!!sessions` 查看
+- Session 不存在 → 提示使用 `new` 创建或 `sessions` 查看
 - 超时 → 提示响应超时，建议检查 CLI 状态
 - **中间交互** → Watchdog 检测到时，清晰推送确认请求
 
@@ -1355,7 +1345,7 @@ func StripANSI(input string) string {
 // Session 不存在
 if !adapter.IsSessionAlive(sessionName) {
     bot.SendMessage(channel,
-        fmt.Sprintf("❌ Session '%s' 不存在\n使用 !!sessions 查看可用 session", sessionName))
+        fmt.Sprintf("❌ Session '%s' 不存在\n使用 sessions 查看可用 session", sessionName))
     return
 }
 
@@ -1369,7 +1359,7 @@ case <-time.After(5 * time.Minute):
         "1. CLI 进程卡死\n" +
         "2. 网络问题\n" +
         "3. API 限流\n\n" +
-        "建议: 使用 !!status 检查状态")
+        "建议: 使用 status 检查状态")
 }
 ```
 

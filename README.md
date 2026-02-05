@@ -232,13 +232,13 @@ clibot/
 ## Special Commands
 
 ```
-!!sessions              # List all sessions
-!!use <session>         # Switch current session
-!!new <name> <cli>      # Create new session
-!!whoami                # Display current session info
-!!status                # Display all session status
-!!view [lines]          # View CLI output (default: 20 lines)
-!!help                  # Show help information
+sessions              # List all sessions
+use <session>         # Switch current session
+new <name> <cli>      # Create new session
+whoami                # Display current session info
+status                # Display all session status
+view [lines]          # View CLI output (default: 20 lines)
+help                  # Show help information
 ```
 
 ## Special Keywords

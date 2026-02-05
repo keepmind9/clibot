@@ -204,13 +204,13 @@ clibot/
 ## 特殊命令
 
 ```
-!!sessions              # 列出所有会话
-!!use <session>         # 切换当前会话
-!!new <name> <cli>      # 创建新会话
-!!whoami                # 显示当前会话信息
-!!status                # 显示所有会话状态
-!!view [lines]          # 查看 CLI 输出 (默认: 20 行)
-!!help                  # 显示帮助信息
+sessions              # 列出所有会话
+use <session>         # 切换当前会话
+new <name> <cli>      # 创建新会话
+whoami                # 显示当前会话信息
+status                # 显示所有会话状态
+view [lines]          # 查看 CLI 输出 (默认: 20 行)
+help                  # 显示帮助信息
 ```
 
 ## 特殊关键词

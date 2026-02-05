@@ -26,7 +26,6 @@ func TestLoadConfig_ValidConfig_ReturnsConfigStruct(t *testing.T) {
     configContent := `
 hook_server:
   port: 8080
-command_prefix: "!!"
 security:
   whitelist_enabled: true
   allowed_users:
@@ -62,7 +61,6 @@ cli_adapters:
     // Assert
     assert.NoError(t, err)
     assert.Equal(t, 8080, config.HookServer.Port)
-    assert.Equal(t, "!!", config.CommandPrefix)
     assert.True(t, config.Security.WhitelistEnabled)
     assert.Len(t, config.Sessions, 1)
     assert.Equal(t, "test-session", config.Sessions[0].Name)
@@ -1003,7 +1001,7 @@ func (e *Engine) startWatchdog(session *Session) {
             } else {
                 // Timeout
                 e.updateSessionState(session.Name, StateError)
-                e.SendToAllBots("⚠️ CLI response timeout\nSuggestion: Use !!status to check status")
+                e.SendToAllBots("⚠️ CLI response timeout\nSuggestion: Use status to check status")
             }
         },
     )
@@ -1052,7 +1050,7 @@ func (e *Engine) HandleSpecialCommand(cmd string, msg bot.BotMessage) {
         e.listSessions(msg)
     case "use":
         if len(args) < 1 {
-            e.SendToBot(msg.Platform, msg.Channel, "Usage: !!use <session-name>")
+            e.SendToBot(msg.Platform, msg.Channel, "Usage: use <session-name>")
             return
         }
         e.useSession(args[0], msg)
@@ -1075,7 +1073,7 @@ func (e *Engine) useSession(sessionName string, msg bot.BotMessage) {
 
     if !exists {
         e.SendToBot(msg.Platform, msg.Channel,
-            fmt.Sprintf("❌ Session '%s' not found\nUse !!sessions to list available sessions", sessionName))
+            fmt.Sprintf("❌ Session '%s' not found\nUse sessions to list available sessions", sessionName))
         return
     }
 
@@ -1088,11 +1086,11 @@ func (e *Engine) useSession(sessionName string, msg bot.BotMessage) {
 func (e *Engine) showHelp(msg bot.BotMessage) {
     help := `**clibot Special Commands**
 
-!!sessions - List all available sessions
-!!use <name> - Switch to a session
-!!status - Show session status
-!!whoami - Show current session info
-!!help - Show this help message`
+sessions - List all available sessions
+use <name> - Switch to a session
+status - Show session status
+whoami - Show current session info
+help - Show this help message`
 
     e.SendToBot(msg.Platform, msg.Channel, help)
 }
@@ -1101,9 +1099,9 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
 **Step 2: Test commands**
 
 Test each command via Discord bot:
-- `!!sessions` - should list sessions
-- `!!status` - should show status
-- `!!help` - should show help
+- `sessions` - should list sessions
+- `status` - should show status
+- `help` - should show help
 
 **Step 3: Commit**
 

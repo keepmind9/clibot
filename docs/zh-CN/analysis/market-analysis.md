@@ -43,10 +43,10 @@
 | 痛点 | clibot 解决方案 |
 |------|----------------|
 | AI CLI 工具只能本地使用 | 通过 IM（飞书/Discord/Telegram）远程访问 |
-| 多个 CLI 工具切换麻烦 | 统一入口管理，`!!use` 切换 |
+| 多个 CLI 工具切换麻烦 | 统一入口管理，`use` 切换 |
 | 移动端无法使用强大的桌面 AI | 打破设备限制，手机就能用 Claude Code |
 | 中间交互（确认提示）无法处理 | Watchdog 机制自动检测并推送确认请求 |
-| 命令前缀冲突（`/exit` 等） | 可配置命令前缀（`!!`、`>>` 等） |
+| 命令前缀冲突（`/exit` 等） | 自动识别特定命令，无需前缀 |
 
 ---
 
@@ -226,15 +226,11 @@ const (
 - 避免重复 Hook 和死锁
 - 易于扩展新状态
 
-#### 4. 可配置命令前缀
-
-```yaml
-command_prefix: "!!"  # 可选: !! >> ## @+ .
-```
+#### 4. 自动识别管理命令
 
 **解决痛点**：
 - 竞品使用 `/` 前缀，与 CLI 的 `/exit`、`/help` 冲突
-- clibot 可自定义，手机输入也友好
+- 无需输入前缀，手机输入更友好
 
 #### 5. 基于 tmux session
 
@@ -264,7 +260,7 @@ Claude-Code-Remote, ccc, cccc
     1. 多 CLI 支持（Gemini、OpenCode、DeepSeek 等）
     2. 更清晰的架构（接口抽象）
     3. Watchdog 机制（处理中间交互）← 独创
-    4. 可配置命令前缀
+    4. 自动识别管理命令
     5. 状态机驱动
 ```
 
@@ -298,7 +294,7 @@ Claude-Code-Remote, ccc, cccc
 1. ✅ Claude Code 适配器
 2. ✅ Telegram Bot
 3. ✅ Watchdog 机制
-4. ✅ 基础命令：`!!sessions`, `!!use`, `!!status`
+4. ✅ 基础命令：`sessions`, `use`, `status`
 5. ✅ 配置文件支持
 
 **不做**：
