@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -27,29 +26,13 @@ type GeminiAdapterConfig struct {
 
 // GeminiAdapter implements CLIAdapter for Gemini CLI
 type GeminiAdapter struct {
-	// Polling mode configuration
-	useHook      bool
-	pollInterval time.Duration
-	stableCount  int
-	pollTimeout  time.Duration
+	BaseAdapter
 }
 
 // NewGeminiAdapter creates a new Gemini CLI adapter
 func NewGeminiAdapter(config GeminiAdapterConfig) (*GeminiAdapter, error) {
-	// Default to hook mode (true) if not explicitly configured
-	useHook := config.UseHook
-	if !useHook && config.PollInterval == 0 && config.PollTimeout == 0 {
-		useHook = true
-	}
-
-	pollInterval, stableCount, pollTimeout := normalizePollingConfig(
-		config.PollInterval, config.StableCount, config.PollTimeout)
-
 	return &GeminiAdapter{
-		useHook:      useHook,
-		pollInterval: pollInterval,
-		stableCount:  stableCount,
-		pollTimeout:  pollTimeout,
+		BaseAdapter: NewBaseAdapter(config.UseHook, config.PollInterval, config.StableCount, config.PollTimeout),
 	}, nil
 }
 
@@ -62,15 +45,7 @@ func (g *GeminiAdapter) SendInput(sessionName, input string) error {
 	}).Debug("sending-input-to-tmux-session")
 
 	// Gemini CLI needs a delay before Enter key to properly process the input
-	if err := watchdog.SendKeys(sessionName, input, 200); err != nil {
-		logger.WithFields(logrus.Fields{
-			"session": sessionName,
-			"error":   err,
-		}).Error("failed-to-send-input-to-tmux")
-		return err
-	}
-
-	return nil
+	return g.SendInputWithDelay(sessionName, input, 200)
 }
 
 // HandleHookData handles raw hook data from Gemini CLI
@@ -282,57 +257,9 @@ func computeProjectHash(projectPath string) string {
 	return fmt.Sprintf("%x", hash)
 }
 
-// IsSessionAlive checks if the tmux session is still running
-func (g *GeminiAdapter) IsSessionAlive(sessionName string) bool {
-	return watchdog.IsSessionAlive(sessionName)
-}
-
 // CreateSession creates a new tmux session and starts Gemini CLI
 func (g *GeminiAdapter) CreateSession(sessionName, cliType, workDir string) error {
-	// Create tmux session
-	args := []string{"new-session", "-d", "-s", sessionName}
-
-	// Set working directory if specified
-	if workDir != "" {
-		var err error
-		workDir, err = expandHome(workDir)
-		if err != nil {
-			return fmt.Errorf("invalid work_dir: %w", err)
-		}
-		args = append(args, "-c", workDir)
-	}
-
-	cmd := exec.Command("tmux", args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create tmux session %s: %w (output: %s)", sessionName, err, string(output))
-	}
-
-	// Start Gemini CLI in the session
-	if err := g.start(sessionName); err != nil {
-		return fmt.Errorf("failed to start Gemini CLI: %w", err)
-	}
-
-	return nil
-}
-
-// UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
-func (g *GeminiAdapter) UseHook() bool {
-	return g.useHook
-}
-
-// GetPollInterval returns the polling interval for polling mode
-func (g *GeminiAdapter) GetPollInterval() time.Duration {
-	return g.pollInterval
-}
-
-// GetStableCount returns the number of consecutive stable checks required
-func (g *GeminiAdapter) GetStableCount() int {
-	return g.stableCount
-}
-
-// GetPollTimeout returns the maximum time to wait for completion
-func (g *GeminiAdapter) GetPollTimeout() time.Duration {
-	return g.pollTimeout
+	return g.CreateTmuxSession(sessionName, cliType, workDir, g.start)
 }
 
 // start starts Gemini CLI in a tmux session
@@ -340,12 +267,8 @@ func (g *GeminiAdapter) start(sessionName string) error {
 	logger.WithField("session", sessionName).Info("starting-gemini-cli-in-tmux-session")
 
 	// Start Gemini CLI using "gemini" command
-	// Note: The exact command may vary depending on Gemini CLI installation.
-	// Common variants are "gemini", "gemini chat", or "gemini-cli".
-	// Update this if the default command doesn't work with your setup.
-	cmd := exec.Command("tmux", "send-keys", "-t", sessionName, "gemini", "C-m")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to start Gemini CLI: %w (output: %s)", err, string(output))
+	if err := watchdog.SendKeys(sessionName, "gemini"); err != nil {
+		return fmt.Errorf("failed to start Gemini CLI: %w", err)
 	}
 
 	logger.WithField("session", sessionName).Info("gemini-cli-started")

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -27,30 +26,13 @@ type ClaudeAdapterConfig struct {
 
 // ClaudeAdapter implements CLIAdapter for Claude Code
 type ClaudeAdapter struct {
-	// Polling mode configuration
-	useHook      bool
-	pollInterval time.Duration
-	stableCount  int
-	pollTimeout  time.Duration
+	BaseAdapter
 }
 
 // NewClaudeAdapter creates a new Claude Code adapter
 func NewClaudeAdapter(config ClaudeAdapterConfig) (*ClaudeAdapter, error) {
-	// Default to hook mode (true) if not explicitly configured
-	// If UseHook is false and polling config is at defaults, assume user wants hook mode
-	useHook := config.UseHook
-	if !useHook && config.PollInterval == 0 && config.PollTimeout == 0 {
-		useHook = true
-	}
-
-	pollInterval, stableCount, pollTimeout := normalizePollingConfig(
-		config.PollInterval, config.StableCount, config.PollTimeout)
-
 	return &ClaudeAdapter{
-		useHook:      useHook,
-		pollInterval: pollInterval,
-		stableCount:  stableCount,
-		pollTimeout:  pollTimeout,
+		BaseAdapter: NewBaseAdapter(config.UseHook, config.PollInterval, config.StableCount, config.PollTimeout),
 	}, nil
 }
 
@@ -62,15 +44,7 @@ func (c *ClaudeAdapter) SendInput(sessionName, input string) error {
 		"length":  len(input),
 	}).Debug("sending-input-to-tmux-session")
 
-	if err := watchdog.SendKeys(sessionName, input); err != nil {
-		logger.WithFields(logrus.Fields{
-			"session": sessionName,
-			"error":   err,
-		}).Error("failed-to-send-input-to-tmux")
-		return err
-	}
-
-	return nil
+	return c.SendInputWithDelay(sessionName, input)
 }
 
 // HandleHookData handles raw hook data from Claude Code
@@ -133,57 +107,9 @@ func (c *ClaudeAdapter) HandleHookData(data []byte) (string, string, string, err
 	return hookData.CWD, lastUserPrompt, response, nil
 }
 
-// IsSessionAlive checks if the tmux session is still running
-func (c *ClaudeAdapter) IsSessionAlive(sessionName string) bool {
-	return watchdog.IsSessionAlive(sessionName)
-}
-
 // CreateSession creates a new tmux session and starts Claude Code
 func (c *ClaudeAdapter) CreateSession(sessionName, cliType, workDir string) error {
-	// Create tmux session
-	args := []string{"new-session", "-d", "-s", sessionName}
-
-	// Set working directory if specified
-	if workDir != "" {
-		var err error
-		workDir, err = expandHome(workDir)
-		if err != nil {
-			return fmt.Errorf("invalid work_dir: %w", err)
-		}
-		args = append(args, "-c", workDir)
-	}
-
-	cmd := exec.Command("tmux", args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create tmux session %s: %w (output: %s)", sessionName, err, string(output))
-	}
-
-	// Start Claude Code in the session
-	if err := c.start(sessionName); err != nil {
-		return fmt.Errorf("failed to start Claude Code: %w", err)
-	}
-
-	return nil
-}
-
-// UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
-func (c *ClaudeAdapter) UseHook() bool {
-	return c.useHook
-}
-
-// GetPollInterval returns the polling interval for polling mode
-func (c *ClaudeAdapter) GetPollInterval() time.Duration {
-	return c.pollInterval
-}
-
-// GetStableCount returns the number of consecutive stable checks required
-func (c *ClaudeAdapter) GetStableCount() int {
-	return c.stableCount
-}
-
-// GetPollTimeout returns the maximum time to wait for completion
-func (c *ClaudeAdapter) GetPollTimeout() time.Duration {
-	return c.pollTimeout
+	return c.CreateTmuxSession(sessionName, cliType, workDir, c.start)
 }
 
 // start starts Claude Code in the specified tmux session

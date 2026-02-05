@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -24,29 +23,13 @@ type OpenCodeAdapterConfig struct {
 
 // OpenCodeAdapter implements CLIAdapter for OpenCode
 type OpenCodeAdapter struct {
-	// Polling mode configuration
-	useHook      bool
-	pollInterval time.Duration
-	stableCount  int
-	pollTimeout  time.Duration
+	BaseAdapter
 }
 
 // NewOpenCodeAdapter creates a new OpenCode adapter
 func NewOpenCodeAdapter(config OpenCodeAdapterConfig) (*OpenCodeAdapter, error) {
-	// Default to hook mode (true) if not explicitly configured
-	useHook := config.UseHook
-	if !useHook && config.PollInterval == 0 && config.PollTimeout == 0 {
-		useHook = true
-	}
-
-	pollInterval, stableCount, pollTimeout := normalizePollingConfig(
-		config.PollInterval, config.StableCount, config.PollTimeout)
-
 	return &OpenCodeAdapter{
-		useHook:      useHook,
-		pollInterval: pollInterval,
-		stableCount:  stableCount,
-		pollTimeout:  pollTimeout,
+		BaseAdapter: NewBaseAdapter(config.UseHook, config.PollInterval, config.StableCount, config.PollTimeout),
 	}, nil
 }
 
@@ -58,15 +41,7 @@ func (o *OpenCodeAdapter) SendInput(sessionName, input string) error {
 		"length":  len(input),
 	}).Debug("sending-input-to-tmux-session")
 
-	if err := watchdog.SendKeys(sessionName, input); err != nil {
-		logger.WithFields(logrus.Fields{
-			"session": sessionName,
-			"error":   err,
-		}).Error("failed-to-send-input-to-tmux")
-		return err
-	}
-
-	return nil
+	return o.SendInputWithDelay(sessionName, input)
 }
 
 // HandleHookData handles raw hook data from OpenCode
@@ -140,56 +115,9 @@ func (o *OpenCodeAdapter) HandleHookData(data []byte) (string, string, string, e
 	return cwd, lastUserPrompt, response, nil
 }
 
-// IsSessionAlive checks if the tmux session is still running
-func (o *OpenCodeAdapter) IsSessionAlive(sessionName string) bool {
-	return watchdog.IsSessionAlive(sessionName)
-}
-
 // CreateSession creates a new tmux session and starts OpenCode
 func (o *OpenCodeAdapter) CreateSession(sessionName, cliType, workDir string) error {
-	// Create tmux session
-	args := []string{"new-session", "-d", "-s", sessionName}
-
-	// Set working directory if specified
-	if workDir != "" {
-		workDir, err := expandHome(workDir)
-		if err != nil {
-			return fmt.Errorf("invalid work_dir: %w", err)
-		}
-		args = append(args, "-c", workDir)
-	}
-
-	cmd := exec.Command("tmux", args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create tmux session %s: %w (output: %s)", sessionName, err, string(output))
-	}
-
-	// Start OpenCode in the session
-	if err := o.start(sessionName); err != nil {
-		return fmt.Errorf("failed to start OpenCode: %w", err)
-	}
-
-	return nil
-}
-
-// UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
-func (o *OpenCodeAdapter) UseHook() bool {
-	return o.useHook
-}
-
-// GetPollInterval returns the polling interval for polling mode
-func (o *OpenCodeAdapter) GetPollInterval() time.Duration {
-	return o.pollInterval
-}
-
-// GetStableCount returns the number of consecutive stable checks required
-func (o *OpenCodeAdapter) GetStableCount() int {
-	return o.stableCount
-}
-
-// GetPollTimeout returns the maximum time to wait for completion
-func (o *OpenCodeAdapter) GetPollTimeout() time.Duration {
-	return o.pollTimeout
+	return o.CreateTmuxSession(sessionName, cliType, workDir, o.start)
 }
 
 // start starts OpenCode in the specified tmux session
@@ -197,13 +125,8 @@ func (o *OpenCodeAdapter) start(sessionName string) error {
 	logger.WithField("session", sessionName).Info("starting-opencode-cli-in-tmux-session")
 
 	// Start OpenCode using "opencode" command
-	// Note: The exact command may vary depending on OpenCode installation.
-	// Common variants are "opencode", "opencode-cli", or "cursor".
-	// Update this if the default command doesn't work with your setup.
-	cmd := exec.Command("tmux", "send-keys", "-t", sessionName, "opencode", "C-m")
-
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to start OpenCode CLI: %w (output: %s)", err, string(output))
+	if err := watchdog.SendKeys(sessionName, "opencode"); err != nil {
+		return fmt.Errorf("failed to start OpenCode CLI: %w", err)
 	}
 
 	logger.WithField("session", sessionName).Info("opencode-cli-started-successfully")
