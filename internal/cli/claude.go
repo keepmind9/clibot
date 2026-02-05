@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -82,73 +84,53 @@ func (c *ClaudeAdapter) SendInput(sessionName, input string) error {
 // Returns: (cwd, lastUserPrompt, response, error)
 func (c *ClaudeAdapter) HandleHookData(data []byte) (string, string, string, error) {
 	// Parse JSON
-	var hookData map[string]interface{}
+	var hookData struct {
+		CWD            string `json:"cwd"`
+		TranscriptPath string `json:"transcript_path"`
+		EventName      string `json:"hook_event_name"`
+	}
 	if err := json.Unmarshal(data, &hookData); err != nil {
 		logger.WithField("error", err).Error("failed-to-parse-hook-json-data")
 		return "", "", "", fmt.Errorf("failed to parse JSON data: %w", err)
 	}
 
-	// Extract cwd (current working directory) - used to match the tmux session
-	cwd, ok := hookData["cwd"].(string)
-	if !ok {
-		logger.Warn("missing-cwd-in-hook-data")
+	if hookData.CWD == "" {
 		return "", "", "", fmt.Errorf("missing cwd in hook data")
 	}
 
-	// Extract transcript_path (contains the conversation history)
-	transcriptPath, ok := hookData["transcript_path"].(string)
-	if !ok {
-		logger.Warn("missing-transcript-path-in-hook-data")
-		return "", "", "", fmt.Errorf("missing transcript_path in hook data")
-	}
-
-	// Extract hook_event_name to check if this is a notification event
-	hookEventName := ""
-	if v, ok := hookData["hook_event_name"].(string); ok {
-		hookEventName = v
-	}
-
 	logger.WithFields(logrus.Fields{
-		"cwd":             cwd,
-		"transcript_path": transcriptPath,
-		"hook_event_name": hookEventName,
+		"cwd":             hookData.CWD,
+		"transcript_path": hookData.TranscriptPath,
+		"hook_event_name": hookData.EventName,
 	}).Debug("hook-data-parsed")
 
-	var lastUserPrompt string
-	var response string
+	var lastUserPrompt, response string
 	var err error
 
-	// Only extract response for non-notification events
-	// Notification events don't have assistant responses to extract
-	if !strings.EqualFold(hookEventName, "Notification") {
-		response, err = extractFromTranscriptFile(transcriptPath)
+	// Extract both prompt and response in one pass if possible
+	if hookData.TranscriptPath != "" {
+		lastUserPrompt, response, err = extractLatestInteraction(hookData.TranscriptPath)
 		if err != nil {
-			// Don't fail the hook - transcript parsing errors are not critical
 			logger.WithFields(logrus.Fields{
-				"transcript": transcriptPath,
+				"transcript": hookData.TranscriptPath,
 				"error":      err,
-			}).Warn("failed-to-extract-response-from-transcript")
+			}).Warn("failed-to-extract-interaction-from-transcript")
 		}
-	} else {
-		logger.WithField("hook_event_name", hookEventName).Debug("skipping-response-extraction-for-notification-event")
-	}
 
-	// Extract user prompt for tmux filtering when response is empty or extraction failed
-	if response == "" || err != nil {
-		lastUserPrompt, err = extractLastUserPrompt(transcriptPath)
-		if err != nil {
-			logger.WithField("error", err).Debug("failed-to-extract-last-user-prompt")
-		} else {
-			logger.WithField("last_user_prompt", lastUserPrompt).Debug("extracted-last-user-prompt")
+		// Clear response for notification events as per original logic
+		if strings.EqualFold(hookData.EventName, "Notification") {
+			logger.Debug("clearing-response-for-notification-event")
+			response = ""
 		}
 	}
 
 	logger.WithFields(logrus.Fields{
-		"cwd":          cwd,
+		"cwd":          hookData.CWD,
+		"prompt_len":   len(lastUserPrompt),
 		"response_len": len(response),
-	}).Info("response-extracted-from-transcript")
+	}).Info("interaction-extracted-from-transcript")
 
-	return cwd, lastUserPrompt, response, nil
+	return hookData.CWD, lastUserPrompt, response, nil
 }
 
 // IsSessionAlive checks if the tmux session is still running
@@ -219,8 +201,10 @@ func (c *ClaudeAdapter) startClaude(sessionName string) error {
 // TranscriptMessage represents a single message in Claude Code's transcript.jsonl
 // Each line in the file is a JSON object with this structure
 type TranscriptMessage struct {
-	Type    string         `json:"type"` // "user", "assistant", "progress", etc.
-	Message MessageContent `json:"message"`
+	Type      string         `json:"type"` // "user", "assistant", "progress", etc.
+	SessionID string         `json:"sessionId"`
+	IsMeta    bool           `json:"isMeta"`
+	Message   MessageContent `json:"message"`
 }
 
 // MessageContent represents the message content structure
@@ -291,9 +275,9 @@ type ContentBlock struct {
 	Thinking string `json:"thinking,omitempty"`
 }
 
-// ParseTranscript parses a Claude Code transcript.jsonl file
+// parseTranscript parses a Claude Code transcript.jsonl file
 // Returns all messages in order
-func ParseTranscript(filePath string) ([]TranscriptMessage, error) {
+func parseTranscript(filePath string) ([]TranscriptMessage, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open transcript file: %w", err)
@@ -339,126 +323,135 @@ func ParseTranscript(filePath string) ([]TranscriptMessage, error) {
 	return messages, nil
 }
 
-// ExtractLastAssistantResponse extracts all assistant messages after the last user message
-//
-// This function attempts to parse the response from the transcript file.
-// If transcript parsing fails, consider implementing a tmux capture fallback
-// using the session name to directly capture pane output.
-//
-// If no text response is found (e.g., assistant is still thinking), returns empty string.
-func ExtractLastAssistantResponse(transcriptPath string) (string, error) {
-	logger.WithField("transcript", transcriptPath).Debug("starting-response-extraction-from-transcript")
-
-	return extractFromTranscriptFile(transcriptPath)
-}
-
-// extractFromTranscriptFile tries to extract response from transcript file
-func extractFromTranscriptFile(transcriptPath string) (string, error) {
-	logger.WithField("transcript", transcriptPath).Debug("parsing-transcript-file")
-
-	messages, err := ParseTranscript(transcriptPath)
-	if err != nil {
-		logger.WithField("error", err).Debug("failed-to-parse-transcript")
-		return "", fmt.Errorf("failed to parse transcript: %w", err)
+// getMessageText extracts plain text content from a TranscriptMessage
+func getMessageText(msg TranscriptMessage) string {
+	if msg.Message.ContentText != "" {
+		return msg.Message.ContentText
 	}
-
-	logger.WithField("message_count", len(messages)).Debug("parsed-transcript-messages")
-
-	// Find the last user message index
-	lastUserIndex := -1
-	for i, msg := range messages {
-		if msg.Type == "user" {
-			lastUserIndex = i
+	var texts []string
+	for _, block := range msg.Message.Content {
+		if block.Type == "text" && block.Text != "" {
+			texts = append(texts, block.Text)
 		}
 	}
+	return strings.Join(texts, "\n\n")
+}
 
-	logger.WithField("last_user_index", lastUserIndex).Debug("found-last-user-message")
+// isRealUserMessage checks if a message is an actual user prompt
+func isRealUserMessage(msg TranscriptMessage) bool {
+	if msg.Type != "user" || msg.IsMeta {
+		return false
+	}
+
+	content := getMessageText(msg)
+	if content == "" {
+		return false
+	}
+
+	// Skip internal command/tool messages
+	return !strings.HasPrefix(content, "<local-command-") &&
+		!strings.HasPrefix(content, "<command-name>")
+}
+
+// extractLatestInteraction extracts the latest user prompt and assistant response
+func extractLatestInteraction(transcriptPath string) (string, string, error) {
+	path, err := expandHome(transcriptPath)
+	if err != nil {
+		return "", "", err
+	}
+
+	messages, err := parseTranscript(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Find the last real user message index
+	lastUserIndex := -1
+	var sessionId, prompt string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if isRealUserMessage(messages[i]) {
+			lastUserIndex = i
+			sessionId = messages[i].SessionID
+			prompt = getMessageText(messages[i])
+			break
+		}
+	}
 
 	if lastUserIndex == -1 {
-		return "", fmt.Errorf("no user messages found in transcript")
+		return "", "", fmt.Errorf("no user messages found")
 	}
 
-	// Extract all assistant text responses after the last user message
+	// Try subagent first
+	subFile, err := extractLatestSubagentFile(path)
+	if err == nil {
+		subMsgs, err := parseTranscript(subFile)
+		if err == nil {
+			var responseTexts []string
+			for _, m := range subMsgs {
+				if m.Type == "assistant" && (m.SessionID == "" || m.SessionID == sessionId) {
+					if text := getMessageText(m); text != "" {
+						responseTexts = append(responseTexts, text)
+					}
+				}
+			}
+			if len(responseTexts) > 0 {
+				return prompt, strings.Join(responseTexts, "\n\n"), nil
+			}
+		}
+	}
+
+	// Fallback to main transcript
 	var responseTexts []string
-	assistantMessageCount := 0
-
 	for i := lastUserIndex + 1; i < len(messages); i++ {
-		if messages[i].Type == "assistant" {
-			assistantMessageCount++
-			for _, block := range messages[i].Message.Content {
-				if block.Type == "text" && block.Text != "" {
-					responseTexts = append(responseTexts, block.Text)
-					logger.WithFields(logrus.Fields{
-						"block_type": block.Type,
-						"text_length": len(block.Text),
-					}).Debug("found-text-block-in-assistant-message")
-				}
+		if messages[i].Type == "assistant" && (messages[i].SessionID == "" || messages[i].SessionID == sessionId) {
+			if text := getMessageText(messages[i]); text != "" {
+				responseTexts = append(responseTexts, text)
 			}
 		}
 	}
 
-	logger.WithFields(logrus.Fields{
-		"assistant_messages": assistantMessageCount,
-		"text_blocks":        len(responseTexts),
-	}).Debug("extracted-text-blocks-from-assistant-messages")
-
-	if len(responseTexts) == 0 {
-		logger.Debug("no-text-responses-found-in-transcript")
-		return "", fmt.Errorf("no text responses found in transcript")
-	}
-
-	result := strings.Join(responseTexts, "\n\n")
-	logger.WithField("joined_length", len(result)).Debug("joined-response-texts")
-
-	return result, nil
+	return prompt, strings.Join(responseTexts, "\n\n"), nil
 }
 
-func (c *ClaudeAdapter) GetLastResponseFromTranscript(transcriptPath string) (string, error) {
-	// Expand home directory in path
-	var err error
-	transcriptPath, err = expandHome(transcriptPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to expand transcript path: %w", err)
-	}
-
-	// Extract response from transcript
-	response, err := ExtractLastAssistantResponse(transcriptPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to extract response from transcript: %w", err)
-	}
-
-	return response, nil
+// ExtractLastAssistantResponse extracts all assistant messages after the last user message
+func ExtractLastAssistantResponse(transcriptPath string) (string, error) {
+	_, response, err := extractLatestInteraction(transcriptPath)
+	return response, err
 }
 
-// extractLastUserPrompt extracts the last user's prompt from transcript
-// This is used to filter tmux output to only show the latest response
-func extractLastUserPrompt(transcriptPath string) (string, error) {
-	var err error
-	transcriptPath, err = expandHome(transcriptPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to expand transcript path: %w", err)
+// extractLatestSubagentFile finds the latest jsonl file in the subagents directory
+func extractLatestSubagentFile(transcriptPath string) (string, error) {
+	ext := filepath.Ext(transcriptPath)
+	base := transcriptPath[:len(transcriptPath)-len(ext)]
+	subagentsDir := filepath.Join(base, "subagents")
+
+	if _, err := os.Stat(subagentsDir); err != nil {
+		return "", err
 	}
 
-	messages, err := ParseTranscript(transcriptPath)
+	files, err := os.ReadDir(subagentsDir)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse transcript: %w", err)
+		return "", err
 	}
 
-	// Find the last user message
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Type == "user" {
-			// Get the user's content
-			if messages[i].Message.ContentText != "" {
-				return messages[i].Message.ContentText, nil
-			}
-			// Try extracting from content array
-			for _, block := range messages[i].Message.Content {
-				if block.Type == "text" && block.Text != "" {
-					return block.Text, nil
-				}
+	var jsonlFiles []os.FileInfo
+	for _, f := range files {
+		if !f.IsDir() && filepath.Ext(f.Name()) == ".jsonl" {
+			info, err := f.Info()
+			if err == nil {
+				jsonlFiles = append(jsonlFiles, info)
 			}
 		}
 	}
 
-	return "", fmt.Errorf("no user message found in transcript")
+	if len(jsonlFiles) == 0 {
+		return "", fmt.Errorf("no jsonl files found in subagents dir")
+	}
+
+	// Sort by modification time (newest first)
+	sort.Slice(jsonlFiles, func(i, j int) bool {
+		return jsonlFiles[i].ModTime().After(jsonlFiles[j].ModTime())
+	})
+
+	return filepath.Join(subagentsDir, jsonlFiles[0].Name()), nil
 }
