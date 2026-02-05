@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,159 +37,257 @@ func NewOpenCodeAdapter(config OpenCodeAdapterConfig) (*OpenCodeAdapter, error) 
 
 // HandleHookData handles raw hook data from OpenCode
 // Expected data format (JSON):
-//   {"cwd": "/path/to/workdir", "session_id": "...", "transcript_path": "...", ...}
+//   {"cwd": "/path/to/workdir", "session_id": "...", "hook_event_name": "..."}
 //
-// This returns the cwd as the session identifier, which will be matched against
-// the configured session's work_dir in the engine.
-//
-// Parameter data: raw hook data (JSON bytes)
 // Returns: (cwd, lastUserPrompt, response, error)
 func (o *OpenCodeAdapter) HandleHookData(data []byte) (string, string, string, error) {
 	// Parse JSON
-	var hookData map[string]interface{}
+	var hookData struct {
+		CWD       string `json:"cwd"`
+		SessionID string `json:"session_id"`
+		EventName string `json:"hook_event_name"`
+	}
 	if err := json.Unmarshal(data, &hookData); err != nil {
 		logger.WithField("error", err).Error("failed-to-parse-hook-json-data")
 		return "", "", "", fmt.Errorf("failed to parse JSON data: %w", err)
 	}
 
-	// Extract cwd (current working directory) - used to match the tmux session
-	cwd, ok := hookData["cwd"].(string)
-	if !ok {
-		logger.Warn("missing-cwd-in-hook-data")
+	if hookData.CWD == "" {
 		return "", "", "", fmt.Errorf("missing cwd in hook data")
 	}
 
-	// Extract transcript_path (contains the conversation history)
-	transcriptPath, ok := hookData["transcript_path"].(string)
-	if !ok {
-		logger.Warn("missing-transcript-path-in-hook-data")
-		return "", "", "", fmt.Errorf("missing transcript_path in hook data")
-	}
-
-	// Extract hook_event_name to check if this is a notification event
-	hookEventName := ""
-	if v, ok := hookData["hook_event_name"].(string); ok {
-		hookEventName = v
-	}
-
 	logger.WithFields(logrus.Fields{
-		"cwd":             cwd,
-		"transcript_path": transcriptPath,
-		"hook_event_name": hookEventName,
+		"cwd":             hookData.CWD,
+		"session_id":      hookData.SessionID,
+		"hook_event_name": hookData.EventName,
 	}).Debug("hook-data-parsed")
 
 	var lastUserPrompt, response string
 	var err error
 
-	// Extract interaction in one pass
-	if transcriptPath != "" {
-		lastUserPrompt, response, err = extractLatestOpenCodeInteraction(transcriptPath)
-		if err != nil {
-			logger.WithFields(logrus.Fields{
-				"transcript": transcriptPath,
-				"error":      err,
-			}).Warn("failed-to-extract-interaction-from-transcript")
-		}
+	// Extract interaction
+	lastUserPrompt, response, err = o.extractLatestInteractionFromStorage(hookData.CWD, hookData.SessionID)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"cwd":   hookData.CWD,
+			"error": err,
+		}).Warn("failed-to-extract-interaction-from-storage")
+	}
 
-		// Clear response for notification events
-		if strings.EqualFold(hookEventName, "Notification") {
-			response = ""
-		}
+	// Clear response for notification events
+	if strings.EqualFold(hookData.EventName, "Notification") {
+		response = ""
 	}
 
 	logger.WithFields(logrus.Fields{
-		"cwd":          cwd,
+		"cwd":          hookData.CWD,
 		"prompt_len":   len(lastUserPrompt),
 		"response_len": len(response),
-	}).Info("response-extracted-from-transcript")
+	}).Info("response-extracted-from-storage")
 
-	return cwd, lastUserPrompt, response, nil
+	return hookData.CWD, lastUserPrompt, response, nil
 }
 
-// ========== OpenCode Transcript Parsing ==========
+// ========== OpenCode Storage Parsing ==========
 
-// OpenCodeTranscript represents the structure of OpenCode's conversation history
-// OpenCode stores conversations in JSON files similar to Claude's format
-type OpenCodeTranscript struct {
-	Messages []OpenCodeMessage `json:"messages"`
+// OpenCodeMessageInfo represents the structure of an OpenCode message file
+type OpenCodeMessageInfo struct {
+	ID       string            `json:"id"`
+	Role     string            `json:"role"` // "user", "assistant"
+	Parts    []OpenCodePart    `json:"parts"`
+	Metadata OpenCodeMetadata  `json:"metadata"`
 }
 
-// OpenCodeMessage represents a single message in OpenCode's transcript
-type OpenCodeMessage struct {
-	Type    string `json:"type"`     // "user", "assistant", "progress", "error"
-	Content string `json:"content"`   // Message content
-	Metadata Metadata              `json:"metadata,omitempty"`
+// OpenCodePart represents a part of a message
+type OpenCodePart struct {
+	Type string `json:"type"` // "text", "reasoning", "tool-invocation", etc.
+	Text string `json:"text,omitempty"`
 }
 
-// Metadata represents additional message metadata
-type Metadata struct {
-	SessionID   string `json:"session_id"`
-	Timestamp   string `json:"timestamp"`
-	Model       string `json:"model,omitempty"`
+// OpenCodeMetadata represents message metadata
+type OpenCodeMetadata struct {
+	SessionID string `json:"sessionID"`
+	Time      struct {
+		Created int64 `json:"created"`
+	} `json:"time"`
 }
 
-// ExtractLatestInteraction exports the latest OpenCode response extraction logic
-func (o *OpenCodeAdapter) ExtractLatestInteraction(transcriptPath string) (string, string, error) {
-	return extractLatestOpenCodeInteraction(transcriptPath)
+// OpenCodeSessionInfo represents the structure of an OpenCode session info file
+type OpenCodeSessionInfo struct {
+	ID        string `json:"id"`
+	ProjectID string `json:"projectID"`
+	Time      struct {
+		Updated int64 `json:"updated"`
+	} `json:"time"`
 }
 
-// extractLatestOpenCodeInteraction extracts the last interaction from OpenCode's transcript file
-func extractLatestOpenCodeInteraction(transcriptPath string) (string, string, error) {
-	logger.WithField("transcript", transcriptPath).Debug("starting-opencode-transcript-extraction")
-
-	// Read transcript file
-	file, err := os.Open(transcriptPath)
+// extractLatestInteractionFromStorage extracts the latest interaction from OpenCode's local storage
+func (o *OpenCodeAdapter) extractLatestInteractionFromStorage(cwd string, sessionID string) (string, string, error) {
+	storageDir, err := getStorageDir()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to open transcript file: %w", err)
-	}
-	defer file.Close()
-
-	// Parse JSON
-	var transcript OpenCodeTranscript
-	if err := json.NewDecoder(file).Decode(&transcript); err != nil {
-		return "", "", fmt.Errorf("failed to parse transcript JSON: %w", err)
+		return "", "", err
 	}
 
+	// 1. Determine session ID if not provided
+	if sessionID == "" {
+		projectID, err := getProjectID(cwd)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get project ID: %w", err)
+		}
+
+		sessionID, err = getLatestSessionID(storageDir, projectID)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get latest session ID: %w", err)
+		}
+	}
+
+	// 2. Read all messages for the session
+	messageDir := filepath.Join(storageDir, "message", sessionID)
+	files, err := filepath.Glob(filepath.Join(messageDir, "*.json"))
+	if err != nil || len(files) == 0 {
+		return "", "", fmt.Errorf("no messages found for session %s", sessionID)
+	}
+
+	// Files are named msg_... and are sortable by name (ascending)
+	sort.Strings(files)
+
+	var messages []OpenCodeMessageInfo
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var msg OpenCodeMessageInfo
+		if err := json.Unmarshal(data, &msg); err == nil {
+			messages = append(messages, msg)
+		}
+	}
+
+	if len(messages) == 0 {
+		return "", "", fmt.Errorf("no valid messages parsed for session %s", sessionID)
+	}
+
+	// 3. Find last interaction
 	var prompt, response string
+	var lastUserIndex = -1
 
 	// Find last user message
-	for i := len(transcript.Messages) - 1; i >= 0; i-- {
-		msg := transcript.Messages[i]
-		if msg.Type == "user" && msg.Content != "" {
-			prompt = msg.Content
-			// Match logic from original extractLastUserPromptFromTranscript:
-			// Extract first line or first 50 chars for matching
-			if strings.Contains(prompt, "\n") {
-				prompt = strings.Split(prompt, "\n")[0]
-			}
-			if len(prompt) > 50 {
-				prompt = prompt[:50]
-			}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			lastUserIndex = i
+			prompt = getOpencodeMessageText(messages[i])
 			break
 		}
 	}
 
-	// Find last assistant message
-	for i := len(transcript.Messages) - 1; i >= 0; i-- {
-		msg := transcript.Messages[i]
-		if msg.Type == "assistant" && msg.Content != "" {
-			response = msg.Content
-			break
+	if lastUserIndex == -1 {
+		return "", "", fmt.Errorf("no user message found in session %s", sessionID)
+	}
+
+	// Collect all subsequent assistant messages
+	var responseParts []string
+	for i := lastUserIndex + 1; i < len(messages); i++ {
+		if messages[i].Role == "assistant" {
+			if text := getOpencodeMessageText(messages[i]); text != "" {
+				responseParts = append(responseParts, text)
+			}
 		}
 	}
-
-	if prompt == "" && response == "" {
-		return "", "", fmt.Errorf("no interaction found in transcript")
-	}
-
-	logger.WithFields(logrus.Fields{
-		"transcript":   transcriptPath,
-		"prompt_len":   len(prompt),
-		"response_len": len(response),
-	}).Info("opencode-interaction-extracted")
+	response = strings.Join(responseParts, "\n\n")
 
 	return prompt, response, nil
 }
 
-// GetLastOpenCodeResponse is removed - no longer needed as OpenCode uses hook mode
-// which provides transcript_path directly in the hook data.
+// ExtractLatestInteraction legacy support
+func (o *OpenCodeAdapter) ExtractLatestInteraction(transcriptPath string) (string, string, error) {
+	// If transcriptPath is actually a directory (cwd), try storage extraction
+	if info, err := os.Stat(transcriptPath); err == nil && info.IsDir() {
+		return o.extractLatestInteractionFromStorage(transcriptPath, "")
+	}
+	// Fallback to simple file parsing if it looks like a single JSON file
+	return extractLatestInteractionFromFile(transcriptPath)
+}
+
+// Helper functions
+
+func getStorageDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	// Default XDG_DATA_HOME/opencode/storage
+	return filepath.Join(home, ".local", "share", "opencode", "storage"), nil
+}
+
+func getProjectID(cwd string) (string, error) {
+	// Get first commit hash
+	cmd := exec.Command("git", "rev-list", "--max-parents=0", "--all")
+	cmd.Dir = cwd
+	out, err := cmd.Output()
+	if err != nil {
+		// Fallback to "global" if not a git repo
+		return "global", nil
+	}
+	commits := strings.Fields(string(out))
+	if len(commits) == 0 {
+		return "global", nil
+	}
+	// Sort to be consistent with opencode logic
+	sort.Strings(commits)
+	return commits[0], nil
+}
+
+func getLatestSessionID(storageDir, projectID string) (string, error) {
+	sessionDir := filepath.Join(storageDir, "session", projectID)
+	files, err := filepath.Glob(filepath.Join(sessionDir, "*.json"))
+	if err != nil || len(files) == 0 {
+		return "", fmt.Errorf("no sessions found for project %s", projectID)
+	}
+
+	var latestID string
+	var latestTime int64
+
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var info OpenCodeSessionInfo
+		if err := json.Unmarshal(data, &info); err == nil {
+			if info.Time.Updated > latestTime {
+				latestTime = info.Time.Updated
+				latestID = info.ID
+			}
+		}
+	}
+
+	if latestID == "" {
+		return "", fmt.Errorf("could not find latest session in %s", sessionDir)
+	}
+	return latestID, nil
+}
+
+func getOpencodeMessageText(msg OpenCodeMessageInfo) string {
+	var texts []string
+	for _, part := range msg.Parts {
+		if part.Type == "text" && part.Text != "" {
+			texts = append(texts, part.Text)
+		}
+	}
+	return strings.Join(texts, "\n\n")
+}
+
+func extractLatestInteractionFromFile(path string) (string, string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Try parsing as a single message first
+	var msg OpenCodeMessageInfo
+	if err := json.Unmarshal(data, &msg); err == nil {
+		return "", getOpencodeMessageText(msg), nil
+	}
+
+	return "", "", fmt.Errorf("unsupported opencode file format: %s", path)
+}
