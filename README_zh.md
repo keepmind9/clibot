@@ -148,6 +148,7 @@ new <name> <cli>      # 创建新会话
 whoami                # 显示当前会话信息
 status                # 显示所有会话状态
 view [lines]          # 查看 CLI 输出 (默认: 20 行)
+echo                  # 回显您的 IM 信息 (平台, 用户ID, 频道ID)
 help                  # 显示帮助信息
 ```
 

@@ -44,6 +44,7 @@ var specialCommands = map[string]struct{}{
 	"sessions": {},
 	"whoami":   {},
 	"view":     {},
+	"echo":     {},
 }
 
 // isSpecialCommand checks if input is a special command.
@@ -490,6 +491,8 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		// Reconstruct parts for captureView (expects full parts array)
 		parts := append([]string{command}, args...)
 		e.captureView(msg, parts)
+	case "echo":
+		e.handleEcho(msg)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
 			fmt.Sprintf("❌ Unknown command: %s\nUse 'help' to see available commands", command))
@@ -554,6 +557,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   status       - Show status of all sessions
   whoami       - Show current session info
   view [n]     - View CLI output (default: 20 lines)
+  echo         - Echo your IM user info (for whitelist config)
 
 **Special Keywords** (exact match, case-insensitive):
   tab          - Send Tab key
@@ -576,6 +580,17 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   - Use "help" anytime to see this message`
 
 	e.SendToBot(msg.Platform, msg.Channel, help)
+}
+
+// handleEcho returns the user's IM information to help with whitelist configuration
+func (e *Engine) handleEcho(msg bot.BotMessage) {
+	response := fmt.Sprintf("🔍 **Your IM Information**\n\n"+
+		"**Platform:** %s\n"+
+		"**User ID:** `%s` (Use this for whitelist)\n"+
+		"**Channel ID:** `%s`",
+		msg.Platform, msg.UserID, msg.Channel)
+
+	e.SendToBot(msg.Platform, msg.Channel, response)
 }
 
 // captureView captures and displays CLI tool output

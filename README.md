@@ -176,6 +176,7 @@ new <name> <cli>      # Create new session
 whoami                # Display current session info
 status                # Display all session status
 view [lines]          # View CLI output (default: 20 lines)
+echo                  # Echo your IM info (Platform, UserID, Channel)
 help                  # Show help information
 ```
 

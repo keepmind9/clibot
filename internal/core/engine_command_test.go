@@ -50,6 +50,13 @@ func TestIsSpecialCommand_ExactMatch(t *testing.T) {
 			expectedIsCmd: true,
 			expectedArgs:  nil,
 		},
+		{
+			name:          "echo command",
+			input:         "echo",
+			expectedCmd:   "echo",
+			expectedIsCmd: true,
+			expectedArgs:  nil,
+		},
 
 		// === View command with numeric arguments ===
 		{
