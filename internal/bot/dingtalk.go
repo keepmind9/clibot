@@ -38,7 +38,7 @@ func (d *DingTalkBot) Start(messageHandler func(BotMessage)) error {
 	d.ctx, d.cancel = context.WithCancel(context.Background())
 
 	logger.WithFields(logrus.Fields{
-		"client_id": maskClientID(d.clientID),
+		"client_id": maskSecret(d.clientID),
 	}).Info("starting-dingtalk-bot-with-websocket-long-connection")
 
 	// Create stream client with credentials
@@ -173,12 +173,4 @@ func (d *DingTalkBot) GetMessageHandler() func(BotMessage) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.messageHandler
-}
-
-// maskClientID masks sensitive client ID information for logging
-func maskClientID(clientID string) string {
-	if len(clientID) <= constants.MinAppIDLengthForMasking {
-		return "***"
-	}
-	return clientID[:constants.AppIDMaskPrefixLength] + "***" + clientID[len(clientID)-constants.AppIDMaskSuffixLength:]
 }

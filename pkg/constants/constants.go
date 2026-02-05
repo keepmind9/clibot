@@ -81,14 +81,14 @@ const (
 	MaxSnapshotSize = 10 * 1024 * 1024 // 10MB
 )
 
-// Token masking
+// Secret masking
 const (
-	// MinTokenLengthForMasking is the minimum token length to apply masking
-	MinTokenLengthForMasking = 10
-	// TokenMaskPrefixLength is the length of prefix to show before masking
-	TokenMaskPrefixLength = 7
-	// TokenMaskSuffixLength is the length of suffix to show after masking
-	TokenMaskSuffixLength = 4
+	// MinSecretLengthForMasking is the minimum secret length to apply masking
+	MinSecretLengthForMasking = 10
+	// SecretMaskPrefixLength is the length of prefix to show before masking
+	SecretMaskPrefixLength = 4
+	// SecretMaskSuffixLength is the length of suffix to show after masking
+	SecretMaskSuffixLength = 4
 )
 
 // Logging defaults
@@ -99,14 +99,4 @@ const (
 	DefaultLogMaxAge = 30
 	// HTTPSuccessStatusCode is the standard HTTP success status code
 	HTTPSuccessStatusCode = 200
-)
-
-// AppID masking
-const (
-	// MinAppIDLengthForMasking is the minimum app ID length to apply masking
-	MinAppIDLengthForMasking = 8
-	// AppIDMaskPrefixLength is the length of prefix to show before masking
-	AppIDMaskPrefixLength = 4
-	// AppIDMaskSuffixLength is the length of suffix to show after masking
-	AppIDMaskSuffixLength = 4
 )

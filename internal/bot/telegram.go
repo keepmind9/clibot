@@ -35,7 +35,7 @@ func (t *TelegramBot) Start(messageHandler func(BotMessage)) error {
 	t.ctx, t.cancel = context.WithCancel(context.Background())
 
 	logger.WithFields(logrus.Fields{
-		"token": maskToken(t.token),
+		"token": maskSecret(t.token),
 	}).Info("starting-telegram-bot-with-long-polling")
 
 	// Initialize Telegram bot

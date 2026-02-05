@@ -49,7 +49,7 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 
 	// Log bot startup
 	logger.WithFields(logrus.Fields{
-		"token":   maskToken(d.token),
+		"token":   maskSecret(d.token),
 		"channel": d.channelID,
 	}).Info("starting-discord-bot")
 
@@ -161,14 +161,6 @@ func (d *DiscordBot) Stop() error {
 	}
 
 	return nil
-}
-
-// maskToken masks sensitive token information for logging
-func maskToken(token string) string {
-	if len(token) <= constants.MinTokenLengthForMasking {
-		return "***"
-	}
-	return token[:constants.TokenMaskPrefixLength] + "***" + token[len(token)-constants.TokenMaskSuffixLength:]
 }
 
 // SetMessageHandler sets the message handler in a thread-safe manner

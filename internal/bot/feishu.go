@@ -48,7 +48,7 @@ func (f *FeishuBot) Start(messageHandler func(BotMessage)) error {
 
 	// Log bot startup
 	logger.WithFields(logrus.Fields{
-		"app_id": maskAppID(f.appID),
+		"app_id": maskSecret(f.appID),
 	}).Info("starting-feishu-bot-with-websocket-long-connection")
 
 	// Create event dispatcher
@@ -275,14 +275,6 @@ func (f *FeishuBot) SetVerificationToken(token string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.verificationToken = token
-}
-
-// maskAppID masks sensitive app ID information for logging
-func maskAppID(appID string) string {
-	if len(appID) <= constants.MinAppIDLengthForMasking {
-		return "***"
-	}
-	return appID[:constants.AppIDMaskPrefixLength] + "***" + appID[len(appID)-constants.AppIDMaskSuffixLength:]
 }
 
 // TextContent represents the JSON structure of Feishu text message content

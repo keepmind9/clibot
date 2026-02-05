@@ -85,32 +85,32 @@ func TestEscapeJSONString(t *testing.T) {
 	}
 }
 
-func TestMaskAppID(t *testing.T) {
+func TestMaskSecret(t *testing.T) {
 	tests := []struct {
 		name     string
-		appID    string
+		secret   string
 		expected string
 	}{
 		{
-			name:     "normal appID",
-			appID:    "cli_1234567890abcdef",
+			name:     "normal secret",
+			secret:   "cli_1234567890abcdef",
 			expected: "cli_***cdef",
 		},
 		{
-			name:     "short appID",
-			appID:    "12345678",
+			name:     "short secret",
+			secret:   "1234567890",
 			expected: "***",
 		},
 		{
-			name:     "very short appID",
-			appID:    "1234",
+			name:     "very short secret",
+			secret:   "1234",
 			expected: "***",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := maskAppID(tt.appID)
+			result := maskSecret(tt.secret)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
