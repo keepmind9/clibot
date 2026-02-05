@@ -1,5 +1,7 @@
 # clibot
 
+English | [中文版](./README_zh.md)
+
 clibot is a lightweight middleware that connects various IM platforms (Feishu, Discord, Telegram, etc.) with AI CLI tools (Claude Code, Gemini CLI, OpenCode, etc.), enabling users to remotely use AI programming assistants through chat interfaces.
 
 ## Features
