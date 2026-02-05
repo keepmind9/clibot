@@ -206,12 +206,6 @@ ctrlc/ctrl-c # Send Ctrl+C (interrupt)
 
 clibot is essentially a remote code execution tool. **User whitelist must be enabled**. By default, `whitelist_enabled: true`, meaning only whitelisted users can use the system.
 
-## Version
-
-Current version: v0.3
-
-For detailed design documentation, see: [docs/plans/2026-01-28-clibot-design.md](docs/plans/2026-01-28-clibot-design.md)
-
 ## Contributing
 
 Please read [AGENTS.md](AGENTS.md) for development guidelines and language requirements before contributing.
