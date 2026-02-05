@@ -1,71 +1,71 @@
-# HTTP Hook 服务端口
+# HTTP Hook Server Port
 hook_server:
   port: 8080
 
-# ========== 安全配置（白名单机制） ==========
-# clibot 本质上是远程代码执行工具，必须启用用户白名单
+# ========== Security Configuration (Whitelist) ==========
+# clibot is essentially a Remote Code Execution (RCE) tool, so whitelist MUST be enabled.
 security:
-  # 白名单开关（默认启用）
+  # Whitelist enabled (default: true)
   whitelist_enabled: true
 
-  # 允许的用户列表（平台 -> 用户ID）
+  # Allowed users (Platform -> User ID)
   allowed_users:
     telegram:
-      - 123456789      # Telegram user_id 示例
+      - 123456789      # Telegram user_id example
       - 987654321
     discord:
-      - "123456789012345678"  # Discord user_id 示例
+      - "123456789012345678"  # Discord user_id example
     feishu:
-      - "ou_xxx"        # 飞书 open_id 示例（user_id）
+      - "ou_xxx"        # Feishu open_id example (user_id)
     dingtalk:
-      - "123456789"     # 钉钉 staff_id 示例
+      - "123456789"     # DingTalk staff_id example
 
-  # 管理员列表（可以执行危险命令）
+  # Admin list (Can execute dangerous commands)
   admins:
     telegram:
       - 123456789
 
-# ========== Watchdog 配置 ==========
+# ========== Watchdog Configuration ==========
 watchdog:
   enabled: true
-  # 分阶段轮询间隔（避免频繁查询）
+  # Polling intervals (staged to avoid frequent queries)
   check_intervals:
-    - 1s    # 第1秒：检测立即交互
-    - 2s    # 第3秒：检测快速交互
-    - 5s    # 第8秒：检测慢速交互
-  timeout: 5m  # 超时时间
+    - 1s    # 1st sec: Check immediate interaction
+    - 2s    # 3rd sec: Check fast interaction
+    - 5s    # 8th sec: Check slow interaction
+  timeout: 5m  # Timeout duration
 
-# ========== Session 配置 ==========
+# ========== Session Configuration ==========
 session:
-  # 保留最近的 N 个用户输入用于响应提取（默认: 10）
-  # 这些输入用于从 tmux 输出中提取正确的响应部分
-  # 特别是对于短输入（菜单选择如 "1", "2", "y", "n"）不显示在 tmux 中的情况
-  input_history_size: 10  # 范围: 1-100
+  # Keep the last N user inputs for response extraction (Default: 10)
+  # Used to extract the correct response part from tmux output,
+  # especially for short inputs (menu selections like "1", "2", "y", "n") not shown in tmux.
+  input_history_size: 10  # Range: 1-100
 
-# tmux session 管理
+# tmux session management
 sessions:
-  # 自动发现已有 tmux session，或手动配置
+  # Auto-discover existing tmux sessions, or manually configure
   - name: "project-a"
     cli_type: "claude"      # claude/gemini/opencode
     work_dir: "/home/user/project-a"
-    auto_start: true        # 如果不存在是否自动创建
+    auto_start: true        # Auto-create if not exists
 
   - name: "backend-test"
     cli_type: "gemini"
     work_dir: "/home/user/tests"
     auto_start: false
 
-# 默认 session（Bot 未指定时使用）
+# Default session (Used when Bot doesn't specify one)
 default_session: "project-a"
 
-# Bot 配置
+# Bot Configuration
 bots:
   feishu:
     enabled: true
-    app_id: "${FEISHU_APP_ID}"        # 从环境变量读取
+    app_id: "${FEISHU_APP_ID}"        # Read from environment variable
     app_secret: "${FEISHU_APP_SECRET}"
-    # encrypt_key: "${FEISHU_ENCRYPT_KEY}"         # 可选：事件加密密钥
-    # verification_token: "${FEISHU_VERIFY_TOKEN}"  # 可选：验证令牌
+    # encrypt_key: "${FEISHU_ENCRYPT_KEY}"         # Optional: Event encryption key
+    # verification_token: "${FEISHU_VERIFY_TOKEN}"  # Optional: Verification token
 
   discord:
     enabled: true
@@ -78,42 +78,42 @@ bots:
 
   dingtalk:
     enabled: false
-    app_id: "${DINGTALK_APP_ID}"          # 钉钉 Client ID
-    app_secret: "${DINGTALK_APP_SECRET}"  # 钉钉 Client Secret
+    app_id: "${DINGTALK_APP_ID}"          # DingTalk Client ID
+    app_secret: "${DINGTALK_APP_SECRET}"  # DingTalk Client Secret
 
-# CLI 适配器配置
+# CLI Adapter Configuration
 cli_adapters:
   claude:
-    # ========== 响应模式选择 ==========
-    # hook 模式（推荐）：需要 CLI 配置 hook 命令，实时响应
-    # polling 模式：无需 CLI 配置，通过轮询 tmux 输出来检测完成
-    use_hook: true  # 默认: true（hook 模式）
+    # ========== Response Mode ==========
+    # hook mode (Recommended): Requires CLI hook config, real-time response
+    # polling mode: No CLI config needed, detects completion by polling tmux output
+    use_hook: true  # Default: true (hook mode)
 
-    # ========== Polling 模式配置（仅当 use_hook: false 时使用）==========
-    # poll_interval: "1s"     # 轮询间隔（默认: 1s）
-    # stable_count: 3         # 需要连续几次稳定输出才算完成（默认: 3）
-    # poll_timeout: "1h"      # 硬保底超时（默认: 1h，实际由 stable_count 决定完成时机）
+    # ========== Polling Mode Config (Used only when use_hook: false) ==========
+    # poll_interval: "1s"     # Polling interval (Default: 1s)
+    # stable_count: 3         # Number of stable outputs required to consider complete (Default: 3)
+    # poll_timeout: "1h"      # Hard timeout (Default: 1h, completion usually determined by stable_count)
 
   gemini:
     use_hook: true
-    # Polling 模式配置（如需要）
+    # Polling Mode Config (If needed)
     # poll_interval: "2s"
     # stable_count: 4
-    # poll_timeout: "1h"      # 硬保底超时（默认: 1h，实际由 stable_count 决定完成时机）
+    # poll_timeout: "1h"
 
   opencode:
     use_hook: true
-    # Polling 模式配置（如需要）
+    # Polling Mode Config (If needed)
     # poll_interval: "1s"
     # stable_count: 3
-    # poll_timeout: "1h"      # 硬保底超时（默认: 1h，实际由 stable_count 决定完成时机）
+    # poll_timeout: "1h"
 
-# 日志配置
+# Logging Configuration
 logging:
   level: "info"               # debug/info/warn/error
   file: "/data/logs/clibot/clibot.log"
   max_size: 100               # MB
-  max_backups: 5              # 保留5个备份文件
-  max_age: 30                 # 保留30天
-  compress: true              # 压缩旧日志
-  enable_stdout: true         # 同时输出到控制台
+  max_backups: 5              # Keep 5 backups
+  max_age: 30                 # Keep 30 days
+  compress: true              # Compress old logs
+  enable_stdout: true         # Output to console as well

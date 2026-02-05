@@ -1,6 +1,6 @@
 module github.com/keepmind9/clibot
 
-go 1.25.1
+go 1.24.0
 
 require (
 	github.com/bwmarrin/discordgo v0.27.1

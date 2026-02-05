@@ -57,8 +57,8 @@ func BenchmarkIsSpecialCommand_NormalInput(b *testing.B) {
 	}
 }
 
-// BenchmarkIsSpecialCommand_ChineseInput benchmarks Chinese input
-func BenchmarkIsSpecialCommand_ChineseInput(b *testing.B) {
+// BenchmarkIsSpecialCommand_UnicodeInput benchmarks non-ASCII Unicode input
+func BenchmarkIsSpecialCommand_UnicodeInput(b *testing.B) {
 	tests := []string{
 		"帮我写代码",
 		"请分析这个函数",
@@ -98,7 +98,7 @@ func BenchmarkIsSpecialCommand_Mixed(b *testing.B) {
 		"status",                 // 20% - exact match
 		"view 100",               // 15% - view with args
 		"help me write code",     // 20% - normal input
-		"帮我优化这段代码",          // 15% - Chinese input
+		"帮我优化这段代码",          // 15% - Unicode input
 		"sessions",               // 10% - exact match
 	}
 

@@ -19,9 +19,9 @@ func TestCanSkipUIBorders(t *testing.T) {
 		{"double dash border", "═════", true},
 		{"double dash border long", "═════════════════════════════════════════════════════════", true},
 		{"mixed borders", "─┌┐", true},
-		{"text with border prefix", "─── text", false},  // 包含文本，不应该跳过
+		{"text with border prefix", "─── text", false},  // contains text, should not skip
 		{"normal text", "Here is the response", false},
-		{"thinking with dashes", "Thinking────────", false}, // 包含文本，不应该跳过
+		{"thinking with dashes", "Thinking────────", false}, // contains text, should not skip
 	}
 
 	for _, tt := range tests {

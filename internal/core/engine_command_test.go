@@ -273,16 +273,16 @@ func TestIsSpecialCommand_ExactMatch(t *testing.T) {
 			expectedArgs:  nil,
 		},
 
-		// === Chinese input ===
+		// === Unicode input (non-ASCII) ===
 		{
-			name:          "Chinese text",
+			name:          "Unicode Chinese text",
 			input:         "帮我写代码",
 			expectedCmd:   "",
 			expectedIsCmd: false,
 			expectedArgs:  nil,
 		},
 		{
-			name:          "Mixed - help in Chinese",
+			name:          "Mixed Unicode - help in Chinese",
 			input:         "帮助 help",
 			expectedCmd:   "",
 			expectedIsCmd: false,
