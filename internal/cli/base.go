@@ -7,10 +7,14 @@ import (
 
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/keepmind9/clibot/internal/watchdog"
+	"github.com/sirupsen/logrus"
 )
 
 // BaseAdapter provides common fields and methods for CLI adapters
 type BaseAdapter struct {
+	cliName      string
+	startCmd     string
+	inputDelayMs int
 	useHook      bool
 	pollInterval time.Duration
 	stableCount  int
@@ -18,7 +22,7 @@ type BaseAdapter struct {
 }
 
 // NewBaseAdapter creates a new BaseAdapter with normalized polling config
-func NewBaseAdapter(useHook bool, interval time.Duration, count int, timeout time.Duration) BaseAdapter {
+func NewBaseAdapter(name, startCmd string, delay int, useHook bool, interval time.Duration, count int, timeout time.Duration) BaseAdapter {
 	// Default to hook mode (true) if not explicitly configured
 	if !useHook && interval == 0 && timeout == 0 {
 		useHook = true
@@ -27,6 +31,9 @@ func NewBaseAdapter(useHook bool, interval time.Duration, count int, timeout tim
 	pollInterval, stableCount, pollTimeout := normalizePollingConfig(interval, count, timeout)
 
 	return BaseAdapter{
+		cliName:      name,
+		startCmd:     startCmd,
+		inputDelayMs: delay,
 		useHook:      useHook,
 		pollInterval: pollInterval,
 		stableCount:  stableCount,
@@ -54,8 +61,8 @@ func (b *BaseAdapter) IsSessionAlive(sessionName string) bool {
 	return watchdog.IsSessionAlive(sessionName)
 }
 
-// CreateTmuxSession is a shared helper to create a tmux session and run a start command
-func (b *BaseAdapter) CreateTmuxSession(sessionName, cliType, workDir string, starter func(string) error) error {
+// CreateSession creates a new tmux session and starts the CLI
+func (b *BaseAdapter) CreateSession(sessionName, workDir string) error {
 	// Create tmux session
 	args := []string{"new-session", "-d", "-s", sessionName}
 
@@ -74,16 +81,38 @@ func (b *BaseAdapter) CreateTmuxSession(sessionName, cliType, workDir string, st
 	}
 
 	// Start the CLI in the session
-	if err := starter(sessionName); err != nil {
-		return fmt.Errorf("failed to start %s: %w", cliType, err)
+	if err := b.Start(sessionName); err != nil {
+		return fmt.Errorf("failed to start %s: %w", b.cliName, err)
 	}
 
 	return nil
 }
 
-// SendInputWithDelay is a shared helper for SendInput
-func (b *BaseAdapter) SendInputWithDelay(sessionName, input string, delayMs ...int) error {
-	if err := watchdog.SendKeys(sessionName, input, delayMs...); err != nil {
+// Start starts the CLI in the specified tmux session
+func (b *BaseAdapter) Start(sessionName string) error {
+	logger.WithFields(logrus.Fields{
+		"session":   sessionName,
+		"cli":       b.cliName,
+		"start_cmd": b.startCmd,
+	}).Info("starting-cli-in-tmux-session")
+
+	if err := watchdog.SendKeys(sessionName, b.startCmd); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// SendInput sends input to the CLI via tmux
+func (b *BaseAdapter) SendInput(sessionName, input string) error {
+	logger.WithFields(logrus.Fields{
+		"session": sessionName,
+		"cli":     b.cliName,
+		"input":   input,
+		"delay":   b.inputDelayMs,
+	}).Debug("sending-input-to-tmux-session")
+
+	if err := watchdog.SendKeys(sessionName, input, b.inputDelayMs); err != nil {
 		logger.Errorf("failed to send input to tmux: %v", err)
 		return err
 	}

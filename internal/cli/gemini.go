@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
-	"github.com/keepmind9/clibot/internal/watchdog"
 	"github.com/sirupsen/logrus"
 )
 
@@ -32,20 +31,8 @@ type GeminiAdapter struct {
 // NewGeminiAdapter creates a new Gemini CLI adapter
 func NewGeminiAdapter(config GeminiAdapterConfig) (*GeminiAdapter, error) {
 	return &GeminiAdapter{
-		BaseAdapter: NewBaseAdapter(config.UseHook, config.PollInterval, config.StableCount, config.PollTimeout),
+		BaseAdapter: NewBaseAdapter("gemini", "gemini", 200, config.UseHook, config.PollInterval, config.StableCount, config.PollTimeout),
 	}, nil
-}
-
-// SendInput sends input to Gemini CLI via tmux
-func (g *GeminiAdapter) SendInput(sessionName, input string) error {
-	logger.WithFields(logrus.Fields{
-		"session": sessionName,
-		"input":   input,
-		"length":  len(input),
-	}).Debug("sending-input-to-tmux-session")
-
-	// Gemini CLI needs a delay before Enter key to properly process the input
-	return g.SendInputWithDelay(sessionName, input, 200)
 }
 
 // HandleHookData handles raw hook data from Gemini CLI
@@ -255,22 +242,4 @@ func computeProjectHash(projectPath string) string {
 
 	hash := sha256.Sum256([]byte(absPath))
 	return fmt.Sprintf("%x", hash)
-}
-
-// CreateSession creates a new tmux session and starts Gemini CLI
-func (g *GeminiAdapter) CreateSession(sessionName, cliType, workDir string) error {
-	return g.CreateTmuxSession(sessionName, cliType, workDir, g.start)
-}
-
-// start starts Gemini CLI in a tmux session
-func (g *GeminiAdapter) start(sessionName string) error {
-	logger.WithField("session", sessionName).Info("starting-gemini-cli-in-tmux-session")
-
-	// Start Gemini CLI using "gemini" command
-	if err := watchdog.SendKeys(sessionName, "gemini"); err != nil {
-		return fmt.Errorf("failed to start Gemini CLI: %w", err)
-	}
-
-	logger.WithField("session", sessionName).Info("gemini-cli-started")
-	return nil
 }

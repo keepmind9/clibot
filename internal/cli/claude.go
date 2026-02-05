@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
-	"github.com/keepmind9/clibot/internal/watchdog"
 	"github.com/sirupsen/logrus"
 )
 
@@ -32,19 +31,8 @@ type ClaudeAdapter struct {
 // NewClaudeAdapter creates a new Claude Code adapter
 func NewClaudeAdapter(config ClaudeAdapterConfig) (*ClaudeAdapter, error) {
 	return &ClaudeAdapter{
-		BaseAdapter: NewBaseAdapter(config.UseHook, config.PollInterval, config.StableCount, config.PollTimeout),
+		BaseAdapter: NewBaseAdapter("claude", "claude", 0, config.UseHook, config.PollInterval, config.StableCount, config.PollTimeout),
 	}, nil
-}
-
-// SendInput sends input to Claude Code via tmux
-func (c *ClaudeAdapter) SendInput(sessionName, input string) error {
-	logger.WithFields(logrus.Fields{
-		"session": sessionName,
-		"input":   input,
-		"length":  len(input),
-	}).Debug("sending-input-to-tmux-session")
-
-	return c.SendInputWithDelay(sessionName, input)
 }
 
 // HandleHookData handles raw hook data from Claude Code
@@ -105,21 +93,6 @@ func (c *ClaudeAdapter) HandleHookData(data []byte) (string, string, string, err
 	}).Info("interaction-extracted-from-transcript")
 
 	return hookData.CWD, lastUserPrompt, response, nil
-}
-
-// CreateSession creates a new tmux session and starts Claude Code
-func (c *ClaudeAdapter) CreateSession(sessionName, cliType, workDir string) error {
-	return c.CreateTmuxSession(sessionName, cliType, workDir, c.start)
-}
-
-// start starts Claude Code in the specified tmux session
-func (c *ClaudeAdapter) start(sessionName string) error {
-	// Send "claude" command to start Claude Code
-	if err := watchdog.SendKeys(sessionName, "claude"); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // ========== Transcript.jsonl Parsing ==========

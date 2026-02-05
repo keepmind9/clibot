@@ -62,7 +62,7 @@ type CLIAdapter interface {
 	IsSessionAlive(sessionName string) bool
 
 	// CreateSession creates a new session (optional)
-	CreateSession(sessionName, cliType, workDir string) error
+	CreateSession(sessionName, workDir string) error
 
 	// UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
 	// Hook mode: Real-time notifications via CLI hooks (requires CLI configuration)

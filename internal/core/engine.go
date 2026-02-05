@@ -189,7 +189,7 @@ func (e *Engine) initializeSessions() error {
 			log.Printf("Session %s is already running", session.Name)
 		} else if sessionConfig.AutoStart {
 			log.Printf("Auto-starting session %s", session.Name)
-			if err := adapter.CreateSession(session.Name, session.CLIType, session.WorkDir); err != nil {
+			if err := adapter.CreateSession(session.Name, session.WorkDir); err != nil {
 				log.Printf("Failed to create session %s: %v", session.Name, err)
 				continue
 			}

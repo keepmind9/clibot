@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
-	"github.com/keepmind9/clibot/internal/watchdog"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,19 +28,8 @@ type OpenCodeAdapter struct {
 // NewOpenCodeAdapter creates a new OpenCode adapter
 func NewOpenCodeAdapter(config OpenCodeAdapterConfig) (*OpenCodeAdapter, error) {
 	return &OpenCodeAdapter{
-		BaseAdapter: NewBaseAdapter(config.UseHook, config.PollInterval, config.StableCount, config.PollTimeout),
+		BaseAdapter: NewBaseAdapter("opencode", "opencode", 0, config.UseHook, config.PollInterval, config.StableCount, config.PollTimeout),
 	}, nil
-}
-
-// SendInput sends input to OpenCode via tmux
-func (o *OpenCodeAdapter) SendInput(sessionName, input string) error {
-	logger.WithFields(logrus.Fields{
-		"session": sessionName,
-		"input":   input,
-		"length":  len(input),
-	}).Debug("sending-input-to-tmux-session")
-
-	return o.SendInputWithDelay(sessionName, input)
 }
 
 // HandleHookData handles raw hook data from OpenCode
@@ -113,24 +101,6 @@ func (o *OpenCodeAdapter) HandleHookData(data []byte) (string, string, string, e
 	}).Info("response-extracted-from-transcript")
 
 	return cwd, lastUserPrompt, response, nil
-}
-
-// CreateSession creates a new tmux session and starts OpenCode
-func (o *OpenCodeAdapter) CreateSession(sessionName, cliType, workDir string) error {
-	return o.CreateTmuxSession(sessionName, cliType, workDir, o.start)
-}
-
-// start starts OpenCode in the specified tmux session
-func (o *OpenCodeAdapter) start(sessionName string) error {
-	logger.WithField("session", sessionName).Info("starting-opencode-cli-in-tmux-session")
-
-	// Start OpenCode using "opencode" command
-	if err := watchdog.SendKeys(sessionName, "opencode"); err != nil {
-		return fmt.Errorf("failed to start OpenCode CLI: %w", err)
-	}
-
-	logger.WithField("session", sessionName).Info("opencode-cli-started-successfully")
-	return nil
 }
 
 // ========== OpenCode Transcript Parsing ==========
