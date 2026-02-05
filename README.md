@@ -32,73 +32,10 @@ cp configs/config.yaml ~/.config/clibot/config.yaml
 
 3. Choose your mode (see below):
 
-**Option A: Hook Mode (Default)**
+**Option A: Hook Mode (Default, Recommended)**
 - Requires CLI hook configuration
 - Real-time notifications
-- Best for production use
-
-Configure Claude Code Hook (`~/.claude/settings.json`):
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "clibot hook --cli-type claude"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "clibot hook --cli-type claude"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Configure Gemini CLI Hook (`~/.gemini/settings.json`):
-```json
-{
-  "tools": {
-    "enableHooks": true
-  },
-  "hooks": {
-    "AfterAgent": [
-      {
-        "hooks": [
-          {
-            "name": "clibot-post-command-hook",
-            "type": "command",
-            "command": "clibot hook --cli-type gemini",
-            "description": "post command hook for clibot"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "name": "clibot-notification-command-hook",
-            "type": "command",
-            "command": "clibot hook --cli-type gemini",
-            "description": "notification command hook for clibot"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+- See [CLI Hook Configuration Guide](./docs/en/setup/cli-hooks.md) for detailed setup.
 
 **Option B: Polling Mode (Zero Config)**
 - No CLI configuration required
