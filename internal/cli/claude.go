@@ -413,6 +413,11 @@ func extractLatestInteraction(transcriptPath string) (string, string, error) {
 	return prompt, strings.Join(responseTexts, "\n\n"), nil
 }
 
+// ExtractLatestInteraction exports the latest user prompt and assistant response extraction logic
+func ExtractLatestInteraction(transcriptPath string) (string, string, error) {
+	return extractLatestInteraction(transcriptPath)
+}
+
 // ExtractLastAssistantResponse extracts all assistant messages after the last user message
 func ExtractLastAssistantResponse(transcriptPath string) (string, error) {
 	_, response, err := extractLatestInteraction(transcriptPath)

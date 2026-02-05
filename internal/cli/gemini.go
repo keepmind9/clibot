@@ -185,6 +185,11 @@ func (g *GeminiAdapter) lastSessionFile(cwd string)(string, error){
 	return latestFile, nil
 }
 
+// ExtractGeminiResponse exports the latest Gemini response extraction logic
+func (g *GeminiAdapter) ExtractGeminiResponse(transcriptPath string, cwd string) (string, string, error) {
+	return g.extractGeminiResponse(transcriptPath, cwd)
+}
+
 // extractGeminiResponse extracts the latest Gemini response from history
 // JSON structure: {"messages": [{"type": "user", ...}, {"type": "gemini", "content": "...", "thoughts": [...]}, ...]}
 func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string) (string, string, error) {
