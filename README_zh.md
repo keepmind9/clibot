@@ -59,6 +59,122 @@ clibot serve --config ~/.config/clibot/config.yaml
 clibot status
 ```
 
+## 命令
+
+### serve
+
+启动 clibot 服务以处理 IM 消息和管理 CLI 会话。
+
+```bash
+clibot serve [flags]
+```
+
+**参数:**
+- `-c, --config <file>`: 配置文件路径（默认: `~/.config/clibot/config.yaml`）
+- `--validate`: 验证配置后退出
+
+**示例:**
+```bash
+clibot serve
+clibot serve --config /etc/clibot/config.yaml
+clibot serve --config ~/.config/clibot/config.yaml
+```
+
+### validate
+
+验证 clibot 配置文件而不启动服务。
+
+```bash
+clibot validate [flags]
+```
+
+**参数:**
+- `-c, --config <file>`: 配置文件路径（自动检测默认位置）
+- `--show`: 显示完整配置详情
+- `--json`: 以 JSON 格式输出
+
+**退出码:**
+- `0`: 配置有效
+- `1`: 配置有错误
+
+**示例:**
+```bash
+clibot validate
+clibot validate --config ~/my-config.yaml
+clibot validate --show
+clibot validate --json
+```
+
+### status
+
+显示 clibot 状态和版本信息。
+
+```bash
+clibot status [flags]
+```
+
+**参数:**
+- `-p, --port <number>`: 检查服务是否在指定端口运行
+- `--json`: 以 JSON 格式输出
+
+**示例:**
+```bash
+clibot status
+clibot status --port 8080
+clibot status --json
+```
+
+**输出:**
+- 显示 clibot 版本
+- 检查服务是否运行（当使用 `--port` 时）
+
+### version
+
+显示详细的版本信息。
+
+```bash
+clibot version [flags]
+```
+
+**参数:**
+- `--json`: 以 JSON 格式输出
+
+**示例:**
+```bash
+clibot version
+clibot version --json
+```
+
+**输出包括:**
+- 版本号
+- 构建时间
+- Git 分支
+- Git 提交哈希
+
+### hook
+
+内部命令，由 CLI hook 调用，用于通知主进程事件。此命令由 hook 模式配置使用。
+
+```bash
+clibot hook --cli-type <type> [flags]
+```
+
+**参数:**
+- `--cli-type <type>`: CLI 类型（claude/gemini/opencode）**[必填]**
+- `-p, --port <number>`: Hook 服务器端口（默认: 8080）
+
+**用法:**
+此命令从标准输入读取 JSON 事件数据，并通过 HTTP 转发到主进程。
+
+**示例:**
+```bash
+echo '{"session":"my-session","event":"completed"}' | clibot hook --cli-type claude
+cat hook-data.json | clibot hook --cli-type gemini
+cat hook-data.json | clibot hook --cli-type claude --port 9000
+```
+
+**注意:** 此命令通常由配置了 hook 的 CLI 工具自动调用，而不是由用户手动调用。
+
 ## 运行模式
 
 clibot 支持两种模式来检测 CLI 何时完成响应：

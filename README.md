@@ -59,6 +59,122 @@ clibot serve --config ~/.config/clibot/config.yaml
 clibot status
 ```
 
+## Commands
+
+### serve
+
+Start the clibot service to handle IM messages and manage CLI sessions.
+
+```bash
+clibot serve [flags]
+```
+
+**Flags:**
+- `-c, --config <file>`: Configuration file path (default: `~/.config/clibot/config.yaml`)
+- `--validate`: Validate configuration and exit
+
+**Examples:**
+```bash
+clibot serve
+clibot serve --config /etc/clibot/config.yaml
+clibot serve --config ~/.config/clibot/config.yaml
+```
+
+### validate
+
+Validate the clibot configuration file without starting the service.
+
+```bash
+clibot validate [flags]
+```
+
+**Flags:**
+- `-c, --config <file>`: Configuration file path (auto-detects default locations)
+- `--show`: Show full configuration details
+- `--json`: Output in JSON format
+
+**Exit Codes:**
+- `0`: Configuration is valid
+- `1`: Configuration has errors
+
+**Examples:**
+```bash
+clibot validate
+clibot validate --config ~/my-config.yaml
+clibot validate --show
+clibot validate --json
+```
+
+### status
+
+Show clibot status and version information.
+
+```bash
+clibot status [flags]
+```
+
+**Flags:**
+- `-p, --port <number>`: Check if the service is running on the specified port
+- `--json`: Output in JSON format
+
+**Examples:**
+```bash
+clibot status
+clibot status --port 8080
+clibot status --json
+```
+
+**Output:**
+- Shows clibot version
+- Checks if service is running (when `--port` is specified)
+
+### version
+
+Show detailed version information.
+
+```bash
+clibot version [flags]
+```
+
+**Flags:**
+- `--json`: Output in JSON format
+
+**Examples:**
+```bash
+clibot version
+clibot version --json
+```
+
+**Output includes:**
+- Version number
+- Build time
+- Git branch
+- Git commit hash
+
+### hook
+
+Internal command called by CLI hooks to notify the main process of events. This is used by the hook mode configuration.
+
+```bash
+clibot hook --cli-type <type> [flags]
+```
+
+**Flags:**
+- `--cli-type <type>`: CLI type (claude/gemini/opencode) **[required]**
+- `-p, --port <number>`: Hook server port (default: 8080)
+
+**Usage:**
+This command reads JSON event data from stdin and forwards it to the main process via HTTP.
+
+**Examples:**
+```bash
+echo '{"session":"my-session","event":"completed"}' | clibot hook --cli-type claude
+cat hook-data.json | clibot hook --cli-type gemini
+cat hook-data.json | clibot hook --cli-type claude --port 9000
+```
+
+**Note:** This command is typically called automatically by CLI tools configured with hooks, not manually by users.
+
 ## Operation Modes
 
 clibot supports two modes for detecting when the CLI has finished responding:
