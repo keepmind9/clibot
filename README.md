@@ -170,15 +170,41 @@ clibot/
 ## Special Commands
 
 ```
-sessions              # List all sessions
-use <session>         # Switch current session
-new <name> <cli>      # Create new session
-whoami                # Display current session info
-status                # Display all session status
-view [lines]          # View CLI output (default: 20 lines)
-echo                  # Echo your IM info (Platform, UserID, Channel)
-help                  # Show help information
+sessions                           # List all sessions (static and dynamic)
+use <session>                      # Switch current session
+new <name> <cli_type> <work_dir> [cmd]  # Create new dynamic session (admin only)
+delete <name>                      # Delete dynamic session (admin only)
+whoami                             # Display current session info
+status                             # Display all session status
+view [lines]                       # View CLI output (default: 20 lines)
+echo                               # Echo your IM info (Platform, UserID, Channel)
+help                               # Show help information
 ```
+
+### Dynamic Session Management
+
+clibot supports creating and managing dynamic sessions through IM commands:
+
+**Create a new session** (admin only):
+```bash
+new myproject claude ~/projects/myproject
+new backend gemini ~/backend my-custom-gemini
+```
+
+**Delete a dynamic session** (admin only):
+```bash
+delete myproject
+```
+
+**Session types**:
+- **Static sessions**: Configured in config.yaml, persist across restarts
+- **Dynamic sessions**: Created via IM commands, stored in memory only, lost on restart
+
+**Notes**:
+- Only admins can create/delete dynamic sessions
+- Work directory must exist before creating a session
+- Dynamic sessions count against `max_dynamic_sessions` limit (default: 50)
+- Static sessions cannot be deleted via IM (must modify config file manually)
 
 ## Special Keywords
 

@@ -142,15 +142,41 @@ clibot/
 ## 特殊命令
 
 ```
-sessions              # 列出所有会话
-use <session>         # 切换当前会话
-new <name> <cli>      # 创建新会话
-whoami                # 显示当前会话信息
-status                # 显示所有会话状态
-view [lines]          # 查看 CLI 输出 (默认: 20 行)
-echo                  # 回显您的 IM 信息 (平台, 用户ID, 频道ID)
-help                  # 显示帮助信息
+sessions                           # 列出所有会话（静态和动态）
+use <session>                      # 切换当前会话
+new <name> <cli_type> <work_dir> [cmd]  # 创建新的动态会话（仅管理员）
+delete <name>                      # 删除动态会话（仅管理员）
+whoami                             # 显示当前会话信息
+status                             # 显示所有会话状态
+view [lines]                       # 查看 CLI 输出（默认: 20 行）
+echo                               # 回显您的 IM 信息（平台, 用户ID, 频道ID）
+help                               # 显示帮助信息
 ```
+
+### 动态会话管理
+
+clibot 支持通过 IM 命令创建和管理动态会话：
+
+**创建新会话**（仅管理员）：
+```bash
+new myproject claude ~/projects/myproject
+new backend gemini ~/backend my-custom-gemini
+```
+
+**删除动态会话**（仅管理员）：
+```bash
+delete myproject
+```
+
+**会话类型**：
+- **静态会话**：在 config.yaml 中配置，重启后保留
+- **动态会话**：通过 IM 命令创建，仅存储在内存中，重启后丢失
+
+**注意事项**：
+- 只有管理员可以创建/删除动态会话
+- 工作目录必须在创建会话前存在
+- 动态会话会计入 `max_dynamic_sessions` 限制（默认: 50）
+- 静态会话无法通过 IM 删除（需要手动修改配置文件）
 
 ## 特殊关键词
 
