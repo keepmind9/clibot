@@ -10,9 +10,11 @@ func BenchmarkIsSpecialCommand_ExactMatch(b *testing.B) {
 	tests := []string{
 		"help",
 		"status",
-		"sessions",
+		"slist",
 		"whoami",
 		"view",
+		"snew",
+		"sdel",
 	}
 
 	b.ResetTimer()
@@ -99,7 +101,7 @@ func BenchmarkIsSpecialCommand_Mixed(b *testing.B) {
 		"view 100",               // 15% - view with args
 		"help me write code",     // 20% - normal input
 		"帮我优化这段代码",          // 15% - Unicode input
-		"sessions",               // 10% - exact match
+		"slist",                  // 10% - exact match
 	}
 
 	b.ResetTimer()
@@ -113,14 +115,14 @@ func BenchmarkIsSpecialCommand_Mixed(b *testing.B) {
 // BenchmarkMapLookup compares pure map lookup performance
 func BenchmarkMapLookup(b *testing.B) {
 	m := map[string]struct{}{
-		"help":     {},
-		"status":   {},
-		"sessions": {},
-		"whoami":   {},
-		"view":     {},
+		"help":   {},
+		"status": {},
+		"slist":  {},
+		"whoami": {},
+		"view":   {},
 	}
 
-	keys := []string{"help", "status", "sessions", "whoami", "view"}
+	keys := []string{"help", "status", "slist", "whoami", "view"}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -153,11 +155,11 @@ func BenchmarkHasPrefix(b *testing.B) {
 // BenchmarkOldApproach benchmarks the old Fields-first approach (for comparison)
 func BenchmarkOldApproach(b *testing.B) {
 	specialCommands := map[string]struct{}{
-		"help":     {},
-		"status":   {},
-		"sessions": {},
-		"whoami":   {},
-		"view":     {},
+		"help":   {},
+		"status": {},
+		"slist":  {},
+		"whoami": {},
+		"view":   {},
 	}
 
 	tests := []string{

@@ -142,10 +142,10 @@ clibot/
 ## 特殊命令
 
 ```
-sessions                           # 列出所有会话（静态和动态）
-use <session>                      # 切换当前会话
-new <name> <cli_type> <work_dir> [cmd]  # 创建新的动态会话（仅管理员）
-delete <name>                      # 删除动态会话（仅管理员）
+slist                              # 列出所有会话（静态和动态）
+use <session>                      # 切换当前会话（尚未实现）
+snew <name> <cli_type> <work_dir> [cmd]  # 创建新的动态会话（仅管理员）
+sdel <name>                        # 删除动态会话（仅管理员）
 whoami                             # 显示当前会话信息
 status                             # 显示所有会话状态
 view [lines]                       # 查看 CLI 输出（默认: 20 行）
@@ -159,13 +159,13 @@ clibot 支持通过 IM 命令创建和管理动态会话：
 
 **创建新会话**（仅管理员）：
 ```bash
-new myproject claude ~/projects/myproject
-new backend gemini ~/backend my-custom-gemini
+snew myproject claude ~/projects/myproject
+snew backend gemini ~/backend my-custom-gemini
 ```
 
 **删除动态会话**（仅管理员）：
 ```bash
-delete myproject
+sdel myproject
 ```
 
 **会话类型**：

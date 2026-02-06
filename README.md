@@ -170,10 +170,10 @@ clibot/
 ## Special Commands
 
 ```
-sessions                           # List all sessions (static and dynamic)
-use <session>                      # Switch current session
-new <name> <cli_type> <work_dir> [cmd]  # Create new dynamic session (admin only)
-delete <name>                      # Delete dynamic session (admin only)
+slist                              # List all sessions (static and dynamic)
+use <session>                      # Switch current session (not implemented yet)
+snew <name> <cli_type> <work_dir> [cmd]  # Create new dynamic session (admin only)
+sdel <name>                        # Delete dynamic session (admin only)
 whoami                             # Display current session info
 status                             # Display all session status
 view [lines]                       # View CLI output (default: 20 lines)
@@ -187,13 +187,13 @@ clibot supports creating and managing dynamic sessions through IM commands:
 
 **Create a new session** (admin only):
 ```bash
-new myproject claude ~/projects/myproject
-new backend gemini ~/backend my-custom-gemini
+snew myproject claude ~/projects/myproject
+snew backend gemini ~/backend my-custom-gemini
 ```
 
 **Delete a dynamic session** (admin only):
 ```bash
-delete myproject
+sdel myproject
 ```
 
 **Session types**:

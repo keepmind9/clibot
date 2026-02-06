@@ -41,14 +41,14 @@ const (
 // Performance: O(1) map lookup for exact match commands.
 // Only "view" command supports arguments (special case).
 var specialCommands = map[string]struct{}{
-	"help":     {},
-	"status":   {},
-	"sessions": {},
-	"whoami":   {},
-	"view":     {},
-	"echo":     {},
-	"new":      {},
-	"delete":   {},
+	"help":   {},
+	"status": {},
+	"slist":  {},
+	"whoami": {},
+	"view":   {},
+	"echo":   {},
+	"snew":   {},
+	"sdel":   {},
 }
 
 // isSpecialCommand checks if input is a special command.
@@ -470,7 +470,7 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 	switch command {
 	case "help":
 		e.showHelp(msg)
-	case "sessions":
+	case "slist":
 		e.listSessions(msg)
 	case "status":
 		e.showStatus(msg)
@@ -482,9 +482,9 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		e.captureView(msg, parts)
 	case "echo":
 		e.handleEcho(msg)
-	case "new":
+	case "snew":
 		e.handleNewSession(args, msg)
-	case "delete":
+	case "sdel":
 		e.handleDeleteSession(args, msg)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
@@ -579,13 +579,13 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
 
 **Special Commands** (no prefix required):
   help         - Show this help message
-  sessions     - List all available sessions
+  slist        - List all available sessions
   status       - Show status of all sessions
   whoami       - Show current session info
   view [n]     - View CLI output (default: 20 lines)
   echo         - Echo your IM user info (for whitelist config)
-  new <name> <cli_type> <work_dir> [cmd] - Create new session (admin only)
-  delete <name> - Delete dynamic session (admin only)
+  snew <name> <cli_type> <work_dir> [cmd] - Create new session (admin only)
+  sdel <name>  - Delete dynamic session (admin only)
 
 **Special Keywords** (exact match, case-insensitive):
   tab            - Send Tab key
@@ -602,7 +602,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   ctrl-c            → Interrupt current process
   ctrl-t            → Trigger Ctrl+T action
   view 100          → View last 100 lines of output
-  new myproject claude ~/work  → Create new session
+  snew myproject claude ~/work  → Create new session
 
 **Tips:**
   - Special commands are exact match (case-sensitive)
