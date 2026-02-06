@@ -124,12 +124,31 @@ func expandEnv(input string) (string, error) {
 
 // validateConfig performs basic validation on the configuration
 func validateConfig(config *Config) error {
-	// Validate hook server port
+	setServerDefaults(config)
+	setLoggingDefaults(config)
+	setWatchdogDefaults(config)
+	if err := setSessionDefaults(config); err != nil {
+		return err
+	}
+	setCLIAdapterDefaults(config)
+	if err := validateCLIAdapters(config); err != nil {
+		return err
+	}
+	if err := validateSecuritySettings(config); err != nil {
+		return err
+	}
+	return validateBotAndSessionConfig(config)
+}
+
+// setServerDefaults sets default values for server configuration
+func setServerDefaults(config *Config) {
 	if config.HookServer.Port == 0 {
 		config.HookServer.Port = DefaultHookPort
 	}
+}
 
-	// Set default logging configuration
+// setLoggingDefaults sets default values for logging configuration
+func setLoggingDefaults(config *Config) {
 	if config.Logging.Level == "" {
 		config.Logging.Level = DefaultLogLevel
 	}
@@ -148,8 +167,10 @@ func validateConfig(config *Config) error {
 	if !config.Logging.EnableStdout {
 		config.Logging.EnableStdout = DefaultLogEnableStdout
 	}
+}
 
-	// Set default watchdog configuration
+// setWatchdogDefaults sets default values for watchdog configuration
+func setWatchdogDefaults(config *Config) {
 	if config.Watchdog.MaxRetries == 0 {
 		config.Watchdog.MaxRetries = DefaultWatchdogMaxRetries
 	}
@@ -159,17 +180,21 @@ func validateConfig(config *Config) error {
 	if config.Watchdog.RetryDelay == "" {
 		config.Watchdog.RetryDelay = DefaultWatchdogRetryDelay
 	}
+}
 
-	// Set default session configuration
+// setSessionDefaults sets and validates session configuration
+func setSessionDefaults(config *Config) error {
 	if config.Session.InputHistorySize == 0 {
 		config.Session.InputHistorySize = DefaultInputHistorySize
 	}
-	// Validate input history size
 	if config.Session.InputHistorySize < 1 || config.Session.InputHistorySize > 100 {
 		return fmt.Errorf("session.input_history_size must be between 1 and 100, got %d", config.Session.InputHistorySize)
 	}
+	return nil
+}
 
-	// Set default timeout values for CLI adapters
+// setCLIAdapterDefaults sets default values for CLI adapter configuration
+func setCLIAdapterDefaults(config *Config) {
 	for cliType, adapter := range config.CLIAdapters {
 		if adapter.PollTimeout == "" {
 			adapter.PollTimeout = DefaultPollTimeout
@@ -180,71 +205,74 @@ func validateConfig(config *Config) error {
 		if adapter.StableCount == 0 {
 			adapter.StableCount = DefaultStableCount
 		}
-		// UseHook defaults to true if not explicitly set in YAML
-		// Note: bool zero value is false, so we need to check if it was explicitly set
-		// For now, the adapter constructors will use the config value as-is
-		// This will be validated below
-
 		config.CLIAdapters[cliType] = adapter
 	}
+}
 
-	// Validate polling configuration and set UseHook default
+// validateCLIAdapters validates CLI adapter configurations
+func validateCLIAdapters(config *Config) error {
 	for cliType, adapter := range config.CLIAdapters {
 		if !adapter.UseHook {
-			// Polling mode - validate parameters
-			interval, err := time.ParseDuration(adapter.PollInterval)
-			if err != nil {
-				return fmt.Errorf("invalid poll_interval for %s: %w", cliType, err)
-			}
-			if interval < 100*time.Millisecond {
-				return fmt.Errorf("poll_interval for %s must be at least 100ms (got %v)", cliType, interval)
-			}
-			if interval > 60*time.Second {
-				return fmt.Errorf("poll_interval for %s is too large (max 60s, got %v)", cliType, interval)
-			}
-
-			timeout, err := time.ParseDuration(adapter.PollTimeout)
-			if err != nil {
-				return fmt.Errorf("invalid poll_timeout for %s: %w", cliType, err)
-			}
-			if timeout < interval {
-				return fmt.Errorf("poll_timeout for %s must be greater than poll_interval", cliType)
-			}
-			if timeout > 2*time.Hour {
-				return fmt.Errorf("poll_timeout for %s is too large (max 2h, got %v)", cliType, timeout)
-			}
-
-			if adapter.StableCount < 1 || adapter.StableCount > 20 {
-				return fmt.Errorf("stable_count for %s must be between 1 and 20 (got %d)", cliType, adapter.StableCount)
-			}
-
-			// Validate that timeout is sufficient for stable_count
-			// With 1h default timeout, this check is mostly a sanity check
-			minimumTimeout := time.Duration(adapter.StableCount+2) * interval
-			if timeout < minimumTimeout {
-				return fmt.Errorf("poll_timeout for %s must be at least %v (interval * (stable_count + 2)), got %v",
-					cliType, minimumTimeout, timeout)
+			if err := validatePollingConfig(cliType, adapter); err != nil {
+				return err
 			}
 		}
 	}
+	return nil
+}
 
-	// Validate security settings
-	if config.Security.WhitelistEnabled {
-		if len(config.Security.AllowedUsers) == 0 {
-			return fmt.Errorf("security.allowed_users cannot be empty when whitelist is enabled")
-		}
+// validatePollingConfig validates polling mode configuration
+func validatePollingConfig(cliType string, adapter CLIAdapterConfig) error {
+	interval, err := time.ParseDuration(adapter.PollInterval)
+	if err != nil {
+		return fmt.Errorf("invalid poll_interval for %s: %w", cliType, err)
+	}
+	if interval < 100*time.Millisecond {
+		return fmt.Errorf("poll_interval for %s must be at least 100ms (got %v)", cliType, interval)
+	}
+	if interval > 60*time.Second {
+		return fmt.Errorf("poll_interval for %s is too large (max 60s, got %v)", cliType, interval)
 	}
 
-	// Validate at least one bot is configured
+	timeout, err := time.ParseDuration(adapter.PollTimeout)
+	if err != nil {
+		return fmt.Errorf("invalid poll_timeout for %s: %w", cliType, err)
+	}
+	if timeout < interval {
+		return fmt.Errorf("poll_timeout for %s must be greater than poll_interval", cliType)
+	}
+	if timeout > 2*time.Hour {
+		return fmt.Errorf("poll_timeout for %s is too large (max 2h, got %v)", cliType, timeout)
+	}
+
+	if adapter.StableCount < 1 || adapter.StableCount > 20 {
+		return fmt.Errorf("stable_count for %s must be between 1 and 20 (got %d)", cliType, adapter.StableCount)
+	}
+
+	minimumTimeout := time.Duration(adapter.StableCount+2) * interval
+	if timeout < minimumTimeout {
+		return fmt.Errorf("poll_timeout for %s must be at least %v (interval * (stable_count + 2)), got %v",
+			cliType, minimumTimeout, timeout)
+	}
+	return nil
+}
+
+// validateSecuritySettings validates security configuration
+func validateSecuritySettings(config *Config) error {
+	if config.Security.WhitelistEnabled && len(config.Security.AllowedUsers) == 0 {
+		return fmt.Errorf("security.allowed_users cannot be empty when whitelist is enabled")
+	}
+	return nil
+}
+
+// validateBotAndSessionConfig validates bot and session configuration
+func validateBotAndSessionConfig(config *Config) error {
 	if len(config.Bots) == 0 {
 		return fmt.Errorf("at least one bot must be configured")
 	}
-
-	// Validate at least one session is configured
 	if len(config.Sessions) == 0 {
 		return fmt.Errorf("at least one session must be configured")
 	}
-
 	return nil
 }
 
