@@ -1,126 +1,226 @@
+# ==============================================================================
+# clibot Configuration Example
+# ==============================================================================
+# This is an example configuration file for clibot.
+#
+# Quick Start:
+#   1. Copy this file to ~/.config/clibot/config.yaml
+#   2. Fill in your bot credentials (see guides below)
+#   3. Add your user ID to the whitelist
+#   4. Run: clibot serve --config ~/.config/clibot/config.yaml
+#
+# For detailed setup guides, see: docs/en/setup/
+#
+# ==============================================================================
+# Environment Variables (RECOMMENDED for sensitive data)
+# ==============================================================================
+# You can use environment variables for sensitive configuration like tokens
+# and secrets. This keeps them out of your config file.
+#
+# Syntax: Use DOLLAR_SIGN + BRACES + ENV_NAME, e.g., DISCORD_TOKEN with $ and {}
+#
+# Setting environment variables:
+#   Linux/Mac:     export DISCORD_TOKEN="your_token_here"
+#   Windows (cmd):  set DISCORD_TOKEN=your_token_here
+#   Windows (PS):  env:DISCORD_TOKEN="your_token_here"
+#   Docker:        -e DISCORD_TOKEN=your_token_here
+#
+# Benefits:
+#   - More secure: credentials not in config file
+#   - Easier deployment: different envs for dev/prod
+#   - Git friendly: can commit config without exposing secrets
+# ==============================================================================
+
 # HTTP Hook Server Port
+# Used by CLI tools to notify clibot when they finish processing
 hook_server:
   port: 8080
 
-# ========== Security Configuration (Whitelist) ==========
-# clibot is essentially a Remote Code Execution (RCE) tool, so whitelist MUST be enabled.
+# ==============================================================================
+# Security Configuration (IMPORTANT)
+# ==============================================================================
+# clibot is essentially a Remote Code Execution (RCE) tool.
+# Whitelist MUST be enabled to prevent unauthorized access.
 security:
-  # Whitelist enabled (default: true)
+  # Enable whitelist (DO NOT set to false in production)
   whitelist_enabled: true
 
-  # Allowed users (Platform -> User ID)
+  # Allowed users - Add your user IDs here
+  #
+  # How to get your user ID:
+  #   - Telegram: Send any message to your bot, then use 'echo' command
+  #   - Discord: Send any message, use 'echo' command to see your User ID
+  #   - Feishu: Use 'echo' command to see your open_id
+  #   - DingTalk: Use 'echo' command to see your staff_id
   allowed_users:
     telegram:
-      - 123456789      # Telegram user_id example
-      - 987654321
-    discord:
-      - "123456789012345678"  # Discord user_id example
-    feishu:
-      - "ou_xxx"        # Feishu open_id example (user_id)
-    dingtalk:
-      - "123456789"     # DingTalk staff_id example
+      - "YOUR_TELEGRAM_USER_ID"     # Replace with your Telegram user_id (number)
+      # Example: 123456789
 
-  # Admin list (Can execute dangerous commands)
+    discord:
+      - "YOUR_DISCORD_USER_ID"      # Replace with your Discord user_id (snowflake)
+      # Example: "123456789012345678"
+
+    feishu:
+      - "YOUR_FEISHU_OPEN_ID"       # Replace with your Feishu open_id
+      # Example: "ou_1234567890abcdef1234567890ab"
+
+    dingtalk:
+      - "YOUR_DINGTALK_STAFF_ID"    # Replace with your DingTalk staff_id
+      # Example: "123456789"
+
+  # Admin list - Users who can create/delete dynamic sessions
   admins:
     telegram:
-      - 123456789
+      - "YOUR_TELEGRAM_USER_ID"     # Replace with admin user_id
 
-# ========== Watchdog Configuration ==========
+    discord:
+      - "YOUR_DISCORD_USER_ID"      # Replace with admin user_id
+
+    feishu:
+      - "YOUR_FEISHU_OPEN_ID"       # Replace with admin open_id
+
+# ==============================================================================
+# Watchdog Configuration
+# ==============================================================================
+# Monitors CLI tools to detect when they finish processing
 watchdog:
   enabled: true
-  # Polling intervals (staged to avoid frequent queries)
+
+  # Polling intervals (staged checks for optimal performance)
   check_intervals:
-    - 1s    # 1st sec: Check immediate interaction
-    - 2s    # 3rd sec: Check fast interaction
-    - 5s    # 8th sec: Check slow interaction
-  timeout: 5m  # Timeout duration
+    - "1s"    # 1st second: Check for quick responses
+    - "2s"    # 3rd second: Check for normal responses
+    - "5s"    # 8th second: Check for slow responses
 
-# ========== Session Configuration ==========
+  # Maximum time to wait for CLI response
+  timeout: "5m"
+
+# ==============================================================================
+# Session Configuration
+# ==============================================================================
 session:
-  # Keep the last N user inputs for response extraction (Default: 10)
-  # Used to extract the correct response part from tmux output,
-  # especially for short inputs (menu selections like "1", "2", "y", "n") not shown in tmux.
-  input_history_size: 10  # Range: 1-100
+  # Input history size for response extraction (1-100, default: 10)
+  # Keeps track of user inputs to extract the correct response from tmux output
+  input_history_size: 10
 
-  # Maximum number of dynamically created sessions allowed (Default: 50)
-  # Sessions created via IM commands (new/delete) count against this limit
-  # Configured sessions in this file are not limited
+  # Maximum dynamically created sessions (default: 50)
+  # Limits sessions created via 'snew' command
+  # Configured sessions below don't count against this limit
   max_dynamic_sessions: 50
 
-# tmux session management
+# ==============================================================================
+# Session Management
+# ==============================================================================
+# Configure which CLI sessions clibot should manage
 sessions:
-  # Auto-discover existing tmux sessions, or manually configure
-  - name: "project-a"
-    cli_type: "claude"      # claude/gemini/opencode
-    work_dir: "/home/user/project-a"
-    auto_start: true        # Auto-create if not exists
-    # start_cmd: "claude"   # Optional: Custom command to start CLI (default: same as cli_type)
+  # Example session 1: Claude Code
+  - name: "my-project"
+    cli_type: "claude"           # Options: claude, gemini, opencode
+    work_dir: "/home/user/projects/my-project"   # ABSOLUTE path required
+    auto_start: true            # Auto-create tmux session if not exists
+    # start_cmd: "claude"        # Optional: Custom startup command
 
-  - name: "backend-test"
+  # Example session 2: Gemini CLI
+  - name: "backend-tests"
     cli_type: "gemini"
-    work_dir: "/home/user/tests"
-    auto_start: false
-    # start_cmd: "gemini"  # Example: Use alternative command
+    work_dir: "/home/user/backend-tests"
+    auto_start: false           # Don't auto-start, must create manually
 
-# Default session (Used when Bot doesn't specify one)
-default_session: "project-a"
+  # Example session 3: OpenCode
+  # - name: "opencode-work"
+  #   cli_type: "opencode"
+  #   work_dir: "/path/to/workdir"
+  #   auto_start: true
 
+# Default session (fallback when user hasn't selected one)
+default_session: "my-project"
+
+# ==============================================================================
 # Bot Configuration
+# ==============================================================================
+# Configure your IM bot credentials here
+
 bots:
+  # Feishu (Lark) Bot
   feishu:
-    enabled: true
-    app_id: "${FEISHU_APP_ID}"        # Read from environment variable
-    app_secret: "${FEISHU_APP_SECRET}"
-    # encrypt_key: "${FEISHU_ENCRYPT_KEY}"         # Optional: Event encryption key
-    # verification_token: "${FEISHU_VERIFY_TOKEN}"  # Optional: Verification token
+    enabled: false  # Set to true to enable
+    # Get credentials from: https://open.feishu.cn/app
+    #
+    # TIP: Use environment variables for better security
+    # See docs above on how to use ENV variables in config
+    app_id: "cli_1234567890abcd"           # Replace with your app_id
+    app_secret: "abc123def456..."          # Replace with your app_secret
+    # encrypt_key: "your_encrypt_key"      # Optional: Event encryption
+    # verification_token: "your_token"     # Optional: Verification token
 
+  # Discord Bot
   discord:
-    enabled: true
-    token: "${DISCORD_TOKEN}"
-    channel_id: "123456789"
+    enabled: false  # Set to true to enable
+    # Get token from: https://discord.com/developers/applications
+    #
+    # TIP: Use environment variables for better security
+    # See docs above on how to use ENV variables in config
+    token: "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.GhIjKl..."  # Replace with your bot token
+    channel_id: "123456789012345678"              # Replace with your channel ID
 
+  # Telegram Bot
   telegram:
-    enabled: false
-    token: "${TELEGRAM_TOKEN}"  # Telegram Bot Token from BotFather
+    enabled: false  # Set to true to enable
+    # Get token from BotFather: https://t.me/BotFather
+    #
+    # TIP: Use environment variables for better security
+    # See docs above on how to use ENV variables in config
+    token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"  # Replace with your bot token
 
+  # DingTalk Bot
   dingtalk:
-    enabled: false
-    app_id: "${DINGTALK_APP_ID}"          # DingTalk Client ID
-    app_secret: "${DINGTALK_APP_SECRET}"  # DingTalk Client Secret
+    enabled: false  # Set to true to enable
+    # Get credentials from: https://open.dingtalk.com/document/org-app
+    #
+    # TIP: Use environment variables for better security
+    # See docs above on how to use ENV variables in config
+    app_id: "ding_1234567890abcd"         # Replace with your app_id
+    app_secret: "abc123def456..."         # Replace with your app_secret
 
+# ==============================================================================
 # CLI Adapter Configuration
+# ==============================================================================
+# Configure how clibot interacts with AI CLI tools
 cli_adapters:
   claude:
-    # ========== Response Mode ==========
-    # hook mode (Recommended): Requires CLI hook config, real-time response
-    # polling mode: No CLI config needed, detects completion by polling tmux output
-    use_hook: true  # Default: true (hook mode)
+    # Response Mode:
+    #   - hook (Recommended): Real-time notification via HTTP hook
+    #   - polling: Checks tmux output periodically (no CLI config needed)
+    use_hook: true  # Default: true
 
-    # ========== Polling Mode Config (Used only when use_hook: false) ==========
-    # poll_interval: "1s"     # Polling interval (Default: 1s)
-    # stable_count: 3         # Number of stable outputs required to consider complete (Default: 3)
-    # poll_timeout: "1h"      # Hard timeout (Default: 1h, completion usually determined by stable_count)
+    # Polling mode configuration (only used when use_hook: false)
+    # poll_interval: "1s"   # How often to check tmux output
+    # stable_count: 3       # How many stable outputs before considering complete
+    # poll_timeout: "1h"    # Maximum time to wait
 
   gemini:
     use_hook: true
-    # Polling Mode Config (If needed)
+    # Polling mode (if needed):
     # poll_interval: "2s"
     # stable_count: 4
     # poll_timeout: "1h"
 
   opencode:
     use_hook: true
-    # Polling Mode Config (If needed)
+    # Polling mode (if needed):
     # poll_interval: "1s"
     # stable_count: 3
     # poll_timeout: "1h"
 
+# ==============================================================================
 # Logging Configuration
+# ==============================================================================
 logging:
-  level: "info"               # debug/info/warn/error
-  file: "/data/logs/clibot/clibot.log"
-  max_size: 100               # MB
-  max_backups: 5              # Keep 5 backups
-  max_age: 30                 # Keep 30 days
-  compress: true              # Compress old logs
-  enable_stdout: true         # Output to console as well
+  level: "info"               # Options: debug, info, warn, error
+  file: "/var/log/clibot/clibot.log"
+  max_size: 100               # Max log file size in MB
+  max_backups: 5              # Number of backup files to keep
+  max_age: 30                 # Days to keep logs
+  compress: true              # Compress old log files (gzip)
+  enable_stdout: true         # Also output to console
