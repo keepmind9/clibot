@@ -22,6 +22,8 @@ import (
 //   - "enter"   → Enter key (C-m)
 //   - "ctrlc"   → Ctrl+C interrupt (C-c)
 //   - "ctrl-c"  → Ctrl+C interrupt (C-c) (alias)
+//   - "ctrlt"   → Ctrl+T (C-t)
+//   - "ctrl-t"  → Ctrl+T (C-t) (alias)
 //
 // Examples:
 //   ProcessKeyWords("tab")      → "C-i"
@@ -58,6 +60,8 @@ func ProcessKeyWords(input string) string {
 		return "C-m" // Enter key in tmux notation
 	case "ctrlc", "ctrl-c":
 		return "C-c" // Ctrl+C in tmux notation
+	case "ctrlt", "ctrl-t":
+		return "C-t" // Ctrl+T in tmux notation
 	default:
 		return input
 	}

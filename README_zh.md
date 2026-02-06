@@ -183,17 +183,19 @@ delete myproject
 直接向 CLI 工具发送特殊按键（无需前缀）：
 
 ```
-tab          # 发送 Tab 键 (用于自动补全)
-esc          # 发送 Escape 键
-stab/s-tab   # 发送 Shift+Tab
-enter        # 发送 Enter 键
-ctrlc/ctrl-c # 发送 Ctrl+C (中断)
+tab            # 发送 Tab 键 (用于自动补全)
+esc            # 发送 Escape 键
+stab/s-tab     # 发送 Shift+Tab
+enter          # 发送 Enter 键
+ctrlc/ctrl-c    # 发送 Ctrl+C (中断)
+ctrlt/ctrl-t    # 发送 Ctrl+T
 ```
 
 **示例:**
 - `tab` → 触发 CLI 中的自动补全
 - `s-tab` → 在建议中向后导航
 - `ctrl-c` → 中断当前进程
+- `ctrl-t` → 触发 Ctrl+T 操作
 
 ## 安全
 

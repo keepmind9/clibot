@@ -588,17 +588,19 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   delete <name> - Delete dynamic session (admin only)
 
 **Special Keywords** (exact match, case-insensitive):
-  tab          - Send Tab key
-  esc          - Send Escape key
-  stab/s-tab   - Send Shift+Tab
-  enter        - Send Enter key
-  ctrlc/ctrl-c - Send Ctrl+C (interrupt)
+  tab            - Send Tab key
+  esc            - Send Escape key
+  stab/s-tab     - Send Shift+Tab
+  enter          - Send Enter key
+  ctrlc/ctrl-c    - Send Ctrl+C (interrupt)
+  ctrlt/ctrl-t    - Send Ctrl+T
 
 **Usage Examples:**
   help              → Show help
   status            → Show status
   tab               → Send Tab key to CLI
   ctrl-c            → Interrupt current process
+  ctrl-t            → Trigger Ctrl+T action
   view 100          → View last 100 lines of output
   new myproject claude ~/work  → Create new session
 

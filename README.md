@@ -211,17 +211,19 @@ delete myproject
 Send special keys directly to the CLI tool (no prefix needed):
 
 ```
-tab          # Send Tab key (for autocomplete)
-esc          # Send Escape key
-stab/s-tab   # Send Shift+Tab
-enter        # Send Enter key
-ctrlc/ctrl-c # Send Ctrl+C (interrupt)
+tab            # Send Tab key (for autocomplete)
+esc            # Send Escape key
+stab/s-tab     # Send Shift+Tab
+enter          # Send Enter key
+ctrlc/ctrl-c    # Send Ctrl+C (interrupt)
+ctrlt/ctrl-t    # Send Ctrl+T
 ```
 
 **Examples:**
 - `tab` → Trigger autocomplete in CLI
 - `s-tab` → Navigate back through suggestions
 - `ctrl-c` → Interrupt current process
+- `ctrl-t` → Trigger Ctrl+T action
 
 ## Security
 

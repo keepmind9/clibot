@@ -150,3 +150,34 @@ func TestProcessKeyWords_CtrlcInText_ReturnsOriginal(t *testing.T) {
 	result := ProcessKeyWords(input)
 	assert.Equal(t, input, result)
 }
+
+func TestProcessKeyWords_Ctrlt_ConvertsToCtrlT(t *testing.T) {
+	result := ProcessKeyWords("ctrlt")
+	assert.Equal(t, "C-t", result)
+}
+
+func TestProcessKeyWords_CtrltUpperCase_ConvertsToCtrlT(t *testing.T) {
+	result := ProcessKeyWords("CTRLT")
+	assert.Equal(t, "C-t", result)
+}
+
+func TestProcessKeyWords_CtrlDashT_ConvertsToCtrlT(t *testing.T) {
+	result := ProcessKeyWords("ctrl-t")
+	assert.Equal(t, "C-t", result)
+}
+
+func TestProcessKeyWords_CtrlDashTUpperCase_ConvertsToCtrlT(t *testing.T) {
+	result := ProcessKeyWords("CTRL-T")
+	assert.Equal(t, "C-t", result)
+}
+
+func TestProcessKeyWords_CtrltWithSpaces_TrimsAndConverts(t *testing.T) {
+	result := ProcessKeyWords("  ctrlt  ")
+	assert.Equal(t, "C-t", result)
+}
+
+func TestProcessKeyWords_CtrltInText_ReturnsOriginal(t *testing.T) {
+	input := "press ctrlt to trigger"
+	result := ProcessKeyWords(input)
+	assert.Equal(t, input, result)
+}
