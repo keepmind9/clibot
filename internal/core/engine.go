@@ -330,13 +330,24 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	// Step 2: Get the active session for this user
 	userKey := getUserKey(msg.Platform, msg.UserID)
 
-	e.sessionMu.RLock()
+	e.sessionMu.Lock()
 	sessionName, userHasSession := e.userSessions[userKey]
 	var session *Session
+	sessionInvalid := false
+
 	if userHasSession {
 		session = e.sessions[sessionName]
+		if session == nil {
+			// User's selected session no longer exists, clean up the stale reference
+			delete(e.userSessions, userKey)
+			sessionInvalid = true
+			logger.WithFields(logrus.Fields{
+				"user":         userKey,
+				"stale_session": sessionName,
+			}).Warn("cleaned-stale-user-session-reference")
+		}
 	}
-	e.sessionMu.RUnlock()
+	e.sessionMu.Unlock()
 
 	if session == nil {
 		// Fallback to first available session
@@ -348,9 +359,16 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 			e.SendToBot(msg.Platform, msg.Channel, "❌ No active session. Use 'slist' to see available sessions, then 'suse <name>' to select one")
 			return
 		}
-		logger.WithFields(logrus.Fields{
-			"user": userKey,
-		}).Info("user-has-no-session-selected-using-fallback")
+		if sessionInvalid {
+			logger.WithFields(logrus.Fields{
+				"user":    userKey,
+				"fallback": session.Name,
+			}).Info("user-fallback-after-stale-session-cleanup")
+		} else {
+			logger.WithFields(logrus.Fields{
+				"user": userKey,
+			}).Info("user-has-no-session-selected-using-fallback")
+		}
 	}
 
 	logger.WithFields(logrus.Fields{
@@ -920,6 +938,22 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	// 6. Remove from sessions map
 	delete(e.sessions, name)
 
+	// 7. Clean up user sessions that reference this deleted session
+	cleanedUsers := 0
+	for userKey, sessionName := range e.userSessions {
+		if sessionName == name {
+			delete(e.userSessions, userKey)
+			cleanedUsers++
+		}
+	}
+
+	if cleanedUsers > 0 {
+		logger.WithFields(logrus.Fields{
+			"session":      name,
+			"cleaned_users": cleanedUsers,
+		}).Info("cleaned-user-sessions-after-deletion")
+	}
+
 	logger.WithFields(logrus.Fields{
 		"action":   "delete_session",
 		"session":  name,
@@ -927,9 +961,12 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 		"user_id":  msg.UserID,
 	}).Info("admin-deleted-dynamic-session")
 
-	// 7. Success response
-	e.SendToBot(msg.Platform, msg.Channel,
-		fmt.Sprintf("✅ Session '%s' deleted successfully", name))
+	// 8. Success response
+	response := fmt.Sprintf("✅ Session '%s' deleted successfully", name)
+	if cleanedUsers > 0 {
+		response += fmt.Sprintf("\n🔄 %d user(s) switched to default session", cleanedUsers)
+	}
+	e.SendToBot(msg.Platform, msg.Channel, response)
 }
 
 // captureView captures and displays CLI tool output
