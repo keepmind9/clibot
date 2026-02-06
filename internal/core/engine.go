@@ -350,25 +350,39 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	e.sessionMu.Unlock()
 
 	if session == nil {
-		// Fallback to first available session
-		session = e.GetActiveSession(msg.Channel)
-		if session == nil {
-			logger.WithFields(logrus.Fields{
-				"user": userKey,
-			}).Warn("no-active-session-found")
-			e.SendToBot(msg.Platform, msg.Channel, "❌ No active session. Use 'slist' to see available sessions, then 'suse <name>' to select one")
-			return
+		// Build list of available sessions for the user
+		e.sessionMu.RLock()
+		availableSessions := make([]string, 0, len(e.sessions))
+		for _, s := range e.sessions {
+			availableSessions = append(availableSessions,
+				fmt.Sprintf("  • %s (%s)", s.Name, s.CLIType))
 		}
+		e.sessionMu.RUnlock()
+
 		if sessionInvalid {
 			logger.WithFields(logrus.Fields{
-				"user":    userKey,
-				"fallback": session.Name,
-			}).Info("user-fallback-after-stale-session-cleanup")
+				"user":         userKey,
+				"stale_session": sessionName,
+			}).Warn("user-selected-session-no-longer-exists")
 		} else {
 			logger.WithFields(logrus.Fields{
 				"user": userKey,
-			}).Info("user-has-no-session-selected-using-fallback")
+			}).Warn("user-has-no-session-selected")
 		}
+
+		// Build error message with available sessions
+		errorMsg := "❌ Please select a session first\n\n"
+		if sessionInvalid {
+			errorMsg += fmt.Sprintf("⚠️  Your previous session '%s' no longer exists\n\n", sessionName)
+		}
+		errorMsg += "Available sessions:\n"
+		for _, s := range availableSessions {
+			errorMsg += s + "\n"
+		}
+		errorMsg += "\n💡 Use: suse <session_name> to select a session"
+
+		e.SendToBot(msg.Platform, msg.Channel, errorMsg)
+		return
 	}
 
 	logger.WithFields(logrus.Fields{
@@ -536,7 +550,17 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 	e.sessionMu.RLock()
 	defer e.sessionMu.RUnlock()
 
+	// Get user's current session
+	userKey := getUserKey(msg.Platform, msg.UserID)
+	currentSessionName, hasCurrent := e.userSessions[userKey]
+
 	response := "📋 Available Sessions:\n\n"
+
+	if hasCurrent {
+		response += fmt.Sprintf("✅ Your current session: **%s**\n\n", currentSessionName)
+	} else {
+		response += "⚠️  You haven't selected a session yet\n\n"
+	}
 
 	// Categorize sessions
 	var staticSessions, dynamicSessions []*Session
@@ -552,8 +576,12 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 	if len(staticSessions) > 0 {
 		response += "Static Sessions (configured):\n"
 		for _, session := range staticSessions {
-			response += fmt.Sprintf("  • %s (%s) - %s [static]\n",
-				session.Name, session.CLIType, session.State)
+			marker := ""
+			if hasCurrent && session.Name == currentSessionName {
+				marker = " ⬅️ **CURRENT**"
+			}
+			response += fmt.Sprintf("  • %s (%s) - %s [static]%s\n",
+				session.Name, session.CLIType, session.State, marker)
 		}
 		response += "\n"
 	}
@@ -562,9 +590,17 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 	if len(dynamicSessions) > 0 {
 		response += "Dynamic Sessions (created via IM):\n"
 		for _, session := range dynamicSessions {
-			response += fmt.Sprintf("  • %s (%s) - %s [dynamic, created by %s]\n",
-				session.Name, session.CLIType, session.State, session.CreatedBy)
+			marker := ""
+			if hasCurrent && session.Name == currentSessionName {
+				marker = " ⬅️ **CURRENT**"
+			}
+			response += fmt.Sprintf("  • %s (%s) - %s [dynamic, created by %s]%s\n",
+				session.Name, session.CLIType, session.State, session.CreatedBy, marker)
 		}
+	}
+
+	if !hasCurrent && len(e.sessions) > 0 {
+		response += "\n💡 Use: suse <session_name> to select a session\n"
 	}
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
@@ -616,22 +652,30 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 			"**Platform:** %s\n"+
 			"**User ID:** `%s`\n"+
 			"**Channel ID:** `%s`\n"+
-			"**Current Session:** Not selected (using default)",
+			"**Current Session:** ⚠️  Not selected\n\n"+
+			"💡 Use 'slist' to see available sessions\n"+
+			"   Use 'suse <name>' to select a session",
 			msg.Platform, msg.UserID, msg.Channel)
 		e.SendToBot(msg.Platform, msg.Channel, response)
 		return
 	}
 
+	sessionType := "Static (configured)"
+	if session.IsDynamic {
+		sessionType = fmt.Sprintf("Dynamic (created by %s)", session.CreatedBy)
+	}
+
 	response := fmt.Sprintf("🔍 **Your Information**\n\n"+
 		"**Platform:** %s\n"+
 		"**User ID:** `%s`\n"+
-		"**Channel ID:** `%s`\n"+
-		"**Current Session:** %s\n"+
+		"**Channel ID:** `%s`\n\n"+
+		"**✅ Current Session:** %s\n"+
 		"**CLI Type:** %s\n"+
 		"**State:** %s\n"+
-		"**WorkDir:** %s",
+		"**WorkDir:** %s\n"+
+		"**Type:** %s",
 		msg.Platform, msg.UserID, msg.Channel,
-		session.Name, session.CLIType, session.State, session.WorkDir)
+		session.Name, session.CLIType, session.State, session.WorkDir, sessionType)
 	e.SendToBot(msg.Platform, msg.Channel, response)
 }
 
@@ -869,6 +913,7 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	}
 
 	// 3. Update user's current session
+	wasSwitched := e.userSessions[userKey] != sessionName
 	e.userSessions[userKey] = sessionName
 
 	logger.WithFields(logrus.Fields{
@@ -878,9 +923,22 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	}).Info("user-switched-session")
 
 	// 4. Success response
-	e.SendToBot(msg.Platform, msg.Channel,
-		fmt.Sprintf("✅ Switched to session '%s'\nCLI: %s\nWorkDir: %s",
-			sessionName, session.CLIType, session.WorkDir))
+	response := fmt.Sprintf("✅ Your current session is now: **%s**\n\n", sessionName)
+	response += fmt.Sprintf("📊 Session Info:\n")
+	response += fmt.Sprintf("  • CLI: %s\n", session.CLIType)
+	response += fmt.Sprintf("  • State: %s\n", session.State)
+	response += fmt.Sprintf("  • WorkDir: %s\n", session.WorkDir)
+	if session.IsDynamic {
+		response += fmt.Sprintf("  • Type: Dynamic (created by %s)\n", session.CreatedBy)
+	} else {
+		response += "  • Type: Static (configured)\n"
+	}
+
+	if !wasSwitched {
+		response += "\nℹ️  You were already using this session"
+	}
+
+	e.SendToBot(msg.Platform, msg.Channel, response)
 }
 
 // handleDeleteSession deletes a dynamic session (admin only)
