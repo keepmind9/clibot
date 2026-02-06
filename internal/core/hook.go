@@ -187,16 +187,18 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 // - Multiple retry attempts with configurable delays
 //
 // Parameters:
-//   session: The CLI session
-//   lastUserPrompt: The last user input prompt (used for content filtering)
+//
+//	session: The CLI session
+//	lastUserPrompt: The last user input prompt (used for content filtering)
 //
 // Returns:
-//   The captured response, or empty string if all retries fail
+//
+//	The captured response, or empty string if all retries fail
 func (e *Engine) captureResponseWithRetry(session *Session, lastUserPrompt string) string {
 	logger.WithFields(logrus.Fields{
-		"session":         session.Name,
+		"session":          session.Name,
 		"last_user_prompt": lastUserPrompt,
-		"reason":          "adapter returned empty response",
+		"reason":           "adapter returned empty response",
 	}).Info("using-tmux-capture-as-fallback-with-user-prompt-filtering")
 
 	// Get retry configuration
@@ -295,7 +297,7 @@ func (e *Engine) captureResponseWithRetry(session *Session, lastUserPrompt strin
 		if response != "" {
 			logger.WithFields(logrus.Fields{
 				"source":           "tmux",
-				"attempt":           attempt,
+				"attempt":          attempt,
 				"response_length":  len(response),
 				"response_preview": truncateString(response, 200),
 				"algorithm":        lastAlgorithmUsed,
@@ -305,18 +307,18 @@ func (e *Engine) captureResponseWithRetry(session *Session, lastUserPrompt strin
 		}
 
 		logger.WithFields(logrus.Fields{
-			"attempt":          attempt,
+			"attempt":         attempt,
 			"response_length": len(response),
-			"reason":           "empty response",
+			"reason":          "empty response",
 		}).Debug("response-validation-failed-will-retry")
 	}
 
 	// If still no valid response after all retries, use the last capture
 	if lastResponse != "" {
 		logger.WithFields(logrus.Fields{
-			"max_retries":       maxRetries,
+			"max_retries":        maxRetries,
 			"using_last_attempt": true,
-			"response_length":   len(lastResponse),
+			"response_length":    len(lastResponse),
 		}).Info("using-last-attempt-capture-still-may-be-thinking")
 		return watchdog.RemoveUIStatusLines(lastResponse)
 	}

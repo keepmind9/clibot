@@ -6,22 +6,22 @@ import "context"
 type SessionState string
 
 const (
-	StateIdle         SessionState = "idle"            // Idle and ready for new tasks
-	StateProcessing   SessionState = "processing"      // Currently processing a command
-	StateWaitingInput SessionState = "waiting_input"   // Waiting for user input (mid-interaction)
-	StateError        SessionState = "error"           // Error state
+	StateIdle         SessionState = "idle"          // Idle and ready for new tasks
+	StateProcessing   SessionState = "processing"    // Currently processing a command
+	StateWaitingInput SessionState = "waiting_input" // Waiting for user input (mid-interaction)
+	StateError        SessionState = "error"         // Error state
 )
 
 // Session represents a tmux session with its metadata
 type Session struct {
-	Name      string                // tmux session name
-	CLIType   string                // claude/gemini/opencode
-	WorkDir   string                // Working directory
-	StartCmd  string                // Command to start the CLI (default: same as CLIType)
-	State     SessionState         // Current state
-	CreatedAt string                // Creation timestamp
-	IsDynamic bool                 // true if session was created dynamically via IM
-	CreatedBy string               // creator identity (format: "platform:userID")
+	Name      string             // tmux session name
+	CLIType   string             // claude/gemini/opencode
+	WorkDir   string             // Working directory
+	StartCmd  string             // Command to start the CLI (default: same as CLIType)
+	State     SessionState       // Current state
+	CreatedAt string             // Creation timestamp
+	IsDynamic bool               // true if session was created dynamically via IM
+	CreatedBy string             // creator identity (format: "platform:userID")
 	cancelCtx context.CancelFunc // Cancel function for active watchdog goroutine
 }
 
@@ -34,14 +34,14 @@ type ResponseEvent struct {
 
 // Config represents the complete clibot configuration structure
 type Config struct {
-	HookServer    HookServerConfig        `yaml:"hook_server"`
-	Security      SecurityConfig          `yaml:"security"`
-	Watchdog      WatchdogConfig          `yaml:"watchdog"`
-	Session       SessionGlobalConfig     `yaml:"session"`
-	Sessions      []SessionConfig         `yaml:"sessions"`
-	Bots          map[string]BotConfig    `yaml:"bots"`
-	CLIAdapters   map[string]CLIAdapterConfig `yaml:"cli_adapters"`
-	Logging       LoggingConfig           `yaml:"logging"`
+	HookServer  HookServerConfig            `yaml:"hook_server"`
+	Security    SecurityConfig              `yaml:"security"`
+	Watchdog    WatchdogConfig              `yaml:"watchdog"`
+	Session     SessionGlobalConfig         `yaml:"session"`
+	Sessions    []SessionConfig             `yaml:"sessions"`
+	Bots        map[string]BotConfig        `yaml:"bots"`
+	CLIAdapters map[string]CLIAdapterConfig `yaml:"cli_adapters"`
+	Logging     LoggingConfig               `yaml:"logging"`
 }
 
 // HookServerConfig represents HTTP Hook server configuration
@@ -87,8 +87,8 @@ type BotConfig struct {
 	AppID             string `yaml:"app_id"`
 	AppSecret         string `yaml:"app_secret"`
 	Token             string `yaml:"token"`
-	ChannelID         string `yaml:"channel_id"`       // For Discord: server channel ID
-	EncryptKey        string `yaml:"encrypt_key"`      // Feishu: event encryption key (optional)
+	ChannelID         string `yaml:"channel_id"`         // For Discord: server channel ID
+	EncryptKey        string `yaml:"encrypt_key"`        // Feishu: event encryption key (optional)
 	VerificationToken string `yaml:"verification_token"` // Feishu: verification token (optional)
 }
 
@@ -104,7 +104,7 @@ type CLIAdapterConfig struct {
 	// Polling mode configuration (alternative to hook mode)
 	UseHook      bool   `yaml:"use_hook"`      // Use hook mode (true) or polling mode (false). Default: true
 	PollInterval string `yaml:"poll_interval"` // Polling interval (e.g., "1s"). Default: "1s"
-	StableCount   int    `yaml:"stable_count"`  // Consecutive stable checks required. Default: 3
+	StableCount  int    `yaml:"stable_count"`  // Consecutive stable checks required. Default: 3
 }
 
 // LoggingConfig represents logging configuration

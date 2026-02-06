@@ -25,7 +25,7 @@ func ExtractIncrement(afterSnapshot, beforeSnapshot string) string {
 	if len(afterLines) == 0 {
 		return ""
 	}
-	
+
 	if len(beforeLines) == 0 {
 		return cleanIncrementalContent(afterSnapshot)
 	}
@@ -58,13 +58,13 @@ func ExtractIncrement(afterSnapshot, beforeSnapshot string) string {
 		result := strings.Join(newLines, "\n")
 
 		logger.WithFields(logrus.Fields{
-			"best_match_len": bestMatchLen,
+			"best_match_len":  bestMatchLen,
 			"new_lines_count": len(newLines),
 		}).Debug("extracted-increment-by-alignment")
 
 		return cleanIncrementalContent(result)
 	}
-	
+
 	// If matchLen covers all of afterLines, it means afterLines is a subset of beforeLines.
 	// No new content.
 	logger.Debug("after-snapshot-is-subset-of-before-returning-empty")

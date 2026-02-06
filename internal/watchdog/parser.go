@@ -81,7 +81,7 @@ func hasPromptCharacterPrefix(line string) bool {
 }
 
 // ExtractNewContent identifies new AI content from tmux output using dual anchors.
-// It first tries to locate the user's prompt. If not found, it uses the 
+// It first tries to locate the user's prompt. If not found, it uses the
 // beforeSnapshot to identify the increment.
 func ExtractNewContent(output, userPrompt, beforeSnapshot string) string {
 	var inputs []InputRecord
@@ -127,7 +127,7 @@ func ExtractNewContentWithHistory(output string, inputs []InputRecord, beforeSna
 
 	// Step 3: No anchors found, use basic assistant extraction.
 	if activeContent == "" {
-		// CRITICAL: We only use the last 10 lines here to avoid 
+		// CRITICAL: We only use the last 10 lines here to avoid
 		// leaking massive amounts of historical data from the 200-line capture.
 		smallWindow := lines
 		if len(lines) > 10 {
@@ -198,8 +198,8 @@ func isLikelyUserPromptLine(line, userPrompt string) bool {
 
 			// Menu indicators: ". " (period), ", " (comma), etc.
 			if strings.HasPrefix(afterPrompt, ". ") ||
-			   strings.HasPrefix(afterPrompt, ",") ||
-			   strings.HasPrefix(afterPrompt, "、") {
+				strings.HasPrefix(afterPrompt, ",") ||
+				strings.HasPrefix(afterPrompt, "、") {
 				logger.WithFields(logrus.Fields{
 					"line":        line,
 					"user_prompt": userPrompt,
@@ -252,11 +252,11 @@ func isLikelyUserPromptLine(line, userPrompt string) bool {
 
 	// Reject all other cases (including AI responses like "test content follows")
 	logger.WithFields(logrus.Fields{
-		"line":       line,
+		"line":        line,
 		"user_prompt": userPrompt,
-		"line_len":   len(line),
-		"prompt_len": len(userPrompt),
-		"reason":     "no valid cursor prefix and not exact match",
+		"line_len":    len(line),
+		"prompt_len":  len(userPrompt),
+		"reason":      "no valid cursor prefix and not exact match",
 	}).Debug("rejecting-line-does-not-look-like-user-prompt")
 
 	return false
@@ -282,8 +282,8 @@ func isMenuOption(line string) bool {
 					if len(cleanLine) > 2 {
 						secondPart := cleanLine[1:]
 						if strings.HasPrefix(secondPart, ". ") ||
-						   strings.HasPrefix(secondPart, ",") ||
-						   strings.HasPrefix(secondPart, "、") {
+							strings.HasPrefix(secondPart, ",") ||
+							strings.HasPrefix(secondPart, "、") {
 							return true
 						}
 					}
@@ -335,10 +335,10 @@ func isPromptOrCommand(line string) bool {
 
 			// AI status messages: verbs with common endings
 			if strings.HasSuffix(word, "ing") || strings.HasSuffix(word, "ed") {
-				return false  // "Thinking...", "Processing...", "Compiling..." are AI status
+				return false // "Thinking...", "Processing...", "Compiling..." are AI status
 			}
 
-			return true  // Single word like "Loading..." is a UI prompt
+			return true // Single word like "Loading..." is a UI prompt
 		}
 
 		// Multi-word phrases with ellipsis are AI responses, not prompts
@@ -354,7 +354,7 @@ func canSkip(line string) bool {
 	// First strip ANSI codes to ensure we're looking at pure characters
 	cleanLine := StripANSI(line)
 	trimmed := strings.TrimSpace(cleanLine)
-	
+
 	if trimmed == "" {
 		return true
 	}
@@ -435,7 +435,7 @@ func (pm *PromptMatcher) findPromptIndex(lines []string) int {
 		// Without this, HasPrefix("> ") fails.
 		cleanLine := StripANSI(lines[i])
 		trimmed := strings.TrimSpace(cleanLine)
-		
+
 		if trimmed == "" {
 			continue
 		}
@@ -539,8 +539,8 @@ func ExtractContentAfterPrompt(tmuxOutput, userPrompt string) string {
 	contentLines := matcher.extractContent(lines, promptIndex)
 
 	logger.WithFields(logrus.Fields{
-		"total_lines":  len(lines),
-		"prompt_index": promptIndex,
+		"total_lines":   len(lines),
+		"prompt_index":  promptIndex,
 		"content_lines": len(contentLines),
 	}).Debug("extracted-content-after-prompt")
 
@@ -593,11 +593,11 @@ func ExtractContentAfterAnyInput(tmuxOutput string, inputs []InputRecord) string
 			contentLines := matcher.extractContent(lines, promptIndex)
 
 			logger.WithFields(logrus.Fields{
-				"matched_input":      input.Content,
-				"matched_timestamp":  input.Timestamp,
-				"total_lines":        len(lines),
-				"prompt_index":       promptIndex,
-				"content_lines":      len(contentLines),
+				"matched_input":     input.Content,
+				"matched_timestamp": input.Timestamp,
+				"total_lines":       len(lines),
+				"prompt_index":      promptIndex,
+				"content_lines":     len(contentLines),
 			}).Info("found-input-match-extracting-content")
 
 			if len(contentLines) > 0 {

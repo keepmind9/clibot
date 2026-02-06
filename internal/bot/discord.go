@@ -70,11 +70,11 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 
 		// Log received message
 		logger.WithFields(logrus.Fields{
-			"platform":  "discord",
-			"user_id":   m.Author.ID,
-			"username":  m.Author.Username,
-			"channel":   m.ChannelID,
-			"content":   m.Content,
+			"platform": "discord",
+			"user_id":  m.Author.ID,
+			"username": m.Author.Username,
+			"channel":  m.ChannelID,
+			"content":  m.Content,
 		}).Debug("received-discord-message")
 
 		// Call the handler with BotMessage

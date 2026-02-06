@@ -233,4 +233,3 @@ func TestClaudeAdapter_CreateSession_Idempotent(t *testing.T) {
 	// Clean up
 	exec.Command("tmux", "kill-session", "-t", sessionName).Run()
 }
-

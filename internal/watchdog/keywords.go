@@ -26,15 +26,16 @@ import (
 //   - "ctrl-t"  → Ctrl+T (C-t) (alias)
 //
 // Examples:
-//   ProcessKeyWords("tab")      → "C-i"
-//   ProcessKeyWords("TAB")      → "C-i"
-//   ProcessKeyWords("  tab  ")  → "C-i"
-//   ProcessKeyWords("esc")      → "C-["
-//   ProcessKeyWords("stab")     → "S-Tab"
-//   ProcessKeyWords("s-tab")    → "S-Tab"
-//   ProcessKeyWords("ctrlc")    → "C-c"
-//   ProcessKeyWords("CTRL-C")   → "C-c"
-//   ProcessKeyWords("help tab") → "help tab" (no match, return as-is)
+//
+//	ProcessKeyWords("tab")      → "C-i"
+//	ProcessKeyWords("TAB")      → "C-i"
+//	ProcessKeyWords("  tab  ")  → "C-i"
+//	ProcessKeyWords("esc")      → "C-["
+//	ProcessKeyWords("stab")     → "S-Tab"
+//	ProcessKeyWords("s-tab")    → "S-Tab"
+//	ProcessKeyWords("ctrlc")    → "C-c"
+//	ProcessKeyWords("CTRL-C")   → "C-c"
+//	ProcessKeyWords("help tab") → "help tab" (no match, return as-is)
 //
 // Returns the original input if no keyword match is found.
 //

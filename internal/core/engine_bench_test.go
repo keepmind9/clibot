@@ -97,12 +97,12 @@ func BenchmarkIsSpecialCommand_LongInput(b *testing.B) {
 // BenchmarkIsSpecialCommand_Mixed benchmarks mixed workload
 func BenchmarkIsSpecialCommand_Mixed(b *testing.B) {
 	tests := []string{
-		"help",                   // 20% - exact match
-		"status",                 // 20% - exact match
-		"view 100",               // 15% - view with args
-		"help me write code",     // 20% - normal input
-		"帮我优化这段代码",          // 15% - Unicode input
-		"slist",                  // 10% - exact match
+		"help",               // 20% - exact match
+		"status",             // 20% - exact match
+		"view 100",           // 15% - view with args
+		"help me write code", // 20% - normal input
+		"帮我优化这段代码",           // 15% - Unicode input
+		"slist",              // 10% - exact match
 	}
 
 	b.ResetTimer()

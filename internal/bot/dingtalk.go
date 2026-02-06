@@ -15,13 +15,13 @@ import (
 
 // DingTalkBot implements BotAdapter interface for DingTalk using WebSocket long connection
 type DingTalkBot struct {
-	mu               sync.RWMutex
-	clientID         string
-	clientSecret     string
-	streamClient     *client.StreamClient
-	messageHandler   func(BotMessage)
-	ctx              context.Context
-	cancel           context.CancelFunc
+	mu             sync.RWMutex
+	clientID       string
+	clientSecret   string
+	streamClient   *client.StreamClient
+	messageHandler func(BotMessage)
+	ctx            context.Context
+	cancel         context.CancelFunc
 }
 
 // NewDingTalkBot creates a new DingTalk bot instance

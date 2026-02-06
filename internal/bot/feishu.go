@@ -35,9 +35,9 @@ type FeishuBot struct {
 // NewFeishuBot creates a new Feishu bot instance
 func NewFeishuBot(appID, appSecret string) *FeishuBot {
 	return &FeishuBot{
-		appID:       appID,
-		appSecret:   appSecret,
-		larkClient:  lark.NewClient(appID, appSecret),
+		appID:      appID,
+		appSecret:  appSecret,
+		larkClient: lark.NewClient(appID, appSecret),
 	}
 }
 

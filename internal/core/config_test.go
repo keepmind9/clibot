@@ -479,4 +479,3 @@ func TestExpandHome_AbsolutePath_ReturnsUnchanged(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "/absolute/path/to/file", result)
 }
-

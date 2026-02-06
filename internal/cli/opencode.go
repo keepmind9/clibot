@@ -37,7 +37,8 @@ func NewOpenCodeAdapter(config OpenCodeAdapterConfig) (*OpenCodeAdapter, error) 
 
 // HandleHookData handles raw hook data from OpenCode
 // Expected data format (JSON):
-//   {"cwd": "/path/to/workdir", "session_id": "...", "hook_event_name": "..."}
+//
+//	{"cwd": "/path/to/workdir", "session_id": "...", "hook_event_name": "..."}
 //
 // Returns: (cwd, lastUserPrompt, response, error)
 func (o *OpenCodeAdapter) HandleHookData(data []byte) (string, string, string, error) {
@@ -92,10 +93,10 @@ func (o *OpenCodeAdapter) HandleHookData(data []byte) (string, string, string, e
 
 // OpenCodeMessageInfo represents the structure of an OpenCode message file
 type OpenCodeMessageInfo struct {
-	ID       string            `json:"id"`
-	Role     string            `json:"role"` // "user", "assistant"
-	Parts    []OpenCodePart    `json:"parts"`
-	Metadata OpenCodeMetadata  `json:"metadata"`
+	ID       string           `json:"id"`
+	Role     string           `json:"role"` // "user", "assistant"
+	Parts    []OpenCodePart   `json:"parts"`
+	Metadata OpenCodeMetadata `json:"metadata"`
 }
 
 // OpenCodePart represents a part of a message

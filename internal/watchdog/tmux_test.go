@@ -226,4 +226,3 @@ func TestIntegration_TmuxWorkflow(t *testing.T) {
 	// Test overall: we successfully created and managed a tmux session
 	t.Log("Successfully tested tmux workflow")
 }
-

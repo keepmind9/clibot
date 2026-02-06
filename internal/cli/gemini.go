@@ -37,7 +37,8 @@ func NewGeminiAdapter(config GeminiAdapterConfig) (*GeminiAdapter, error) {
 
 // HandleHookData handles raw hook data from Gemini CLI
 // Expected data format (JSON):
-//   {"session_id": "...", "cwd": "...", ...}
+//
+//	{"session_id": "...", "cwd": "...", ...}
 //
 // Gemini stores history in: ~/.gemini/tmp/{project_hash}/chats/session-*.json
 // where project_hash = SHA256(project_path)
@@ -76,7 +77,7 @@ func (g *GeminiAdapter) HandleHookData(data []byte) (string, string, string, err
 
 	logger.WithFields(logrus.Fields{
 		"cwd":             cwd,
-		"transcript_path":  transcriptPath,
+		"transcript_path": transcriptPath,
 		"hook_event_name": hookEventName,
 	}).Debug("hook-data-parsed")
 
@@ -109,7 +110,7 @@ func (g *GeminiAdapter) HandleHookData(data []byte) (string, string, string, err
 }
 
 // Gemini stores history in: ~/.gemini/tmp/{project_hash}/chats/session-*.json
-func (g *GeminiAdapter) lastSessionFile(cwd string)(string, error){
+func (g *GeminiAdapter) lastSessionFile(cwd string) (string, error) {
 	// Build path to chats directory
 	projectHash := computeProjectHash(cwd)
 	homeDir, _ := os.UserHomeDir()
@@ -142,7 +143,7 @@ func (g *GeminiAdapter) lastSessionFile(cwd string)(string, error){
 
 	logger.WithFields(logrus.Fields{
 		"latest_file": latestFile,
-		"chats_dir":    chatsDir,
+		"chats_dir":   chatsDir,
 	}).Debug("found-latest-gemini-session-file")
 	return latestFile, nil
 }

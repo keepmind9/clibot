@@ -28,20 +28,19 @@
 //
 // # Example Configuration
 //
-//   hook_server:
-//     port: 8080
-//   sessions:
-//     - name: "my-session"
-//       cli_type: "claude"
-//       work_dir: "/path/to/project"
-//   bots:
-//     discord:
-//       enabled: true
-//       token: "your-bot-token"
-//   cli_adapters:
-//     claude:
-//       history_dir: "~/.config/claude"
-//
+//	hook_server:
+//	  port: 8080
+//	sessions:
+//	  - name: "my-session"
+//	    cli_type: "claude"
+//	    work_dir: "/path/to/project"
+//	bots:
+//	  discord:
+//	    enabled: true
+//	    token: "your-bot-token"
+//	cli_adapters:
+//	  claude:
+//	    history_dir: "~/.config/claude"
 package core
 
 import (
@@ -54,12 +53,12 @@ import (
 )
 
 const (
-	DefaultHookPort       = 8080
-	DefaultLogLevel       = "info"
-	DefaultLogMaxSize     = 100 // MB
-	DefaultLogMaxBackups  = 5
-	DefaultLogMaxAge      = 30  // days
-	DefaultLogCompress    = true
+	DefaultHookPort        = 8080
+	DefaultLogLevel        = "info"
+	DefaultLogMaxSize      = 100 // MB
+	DefaultLogMaxBackups   = 5
+	DefaultLogMaxAge       = 30 // days
+	DefaultLogCompress     = true
 	DefaultLogEnableStdout = true
 
 	// Default timeout values
@@ -71,8 +70,8 @@ const (
 	DefaultPollTimeout = "1h"
 
 	// Default polling mode values
-	DefaultPollInterval = "1s"  // Poll every 1 second
-	DefaultStableCount   = 3    // Require 3 consecutive stable checks
+	DefaultPollInterval = "1s" // Poll every 1 second
+	DefaultStableCount  = 3    // Require 3 consecutive stable checks
 )
 
 // LoadConfig loads configuration from file and expands environment variables

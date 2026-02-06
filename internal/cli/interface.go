@@ -19,18 +19,17 @@
 // The CLI adapter pattern separates the transport layer (HTTP, file I/O, tmux)
 // from the protocol logic. Each adapter:
 //
-//   1. Creates/manages tmux sessions for the CLI
-//   2. Sends user input via tmux send-keys
-//   3. Receives responses via two mechanisms:
-//      - Hook mode: Real-time notifications when CLI completes a task (use_hook: true)
-//      - Polling mode: Periodic tmux capture when output becomes stable (use_hook: false)
-//   4. Detects interactive states (prompts, confirmations)
+//  1. Creates/manages tmux sessions for the CLI
+//  2. Sends user input via tmux send-keys
+//  3. Receives responses via two mechanisms:
+//     - Hook mode: Real-time notifications when CLI completes a task (use_hook: true)
+//     - Polling mode: Periodic tmux capture when output becomes stable (use_hook: false)
+//  4. Detects interactive states (prompts, confirmations)
 //
 // # Thread Safety
 //
 // CLI adapters are not thread-safe and should not be accessed concurrently.
 // The engine ensures serialized access to each adapter.
-//
 package cli
 
 import "time"

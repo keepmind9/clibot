@@ -25,14 +25,13 @@
 //
 // # Example Usage
 //
-//   // Capture and parse tmux output
-//   output, err := watchdog.CapturePane("my-session", 100)
-//   if err != nil {
-//       log.Fatal(err)
-//   }
-//   clean := watchdog.StripANSI(output)
-//   filtered := watchdog.ExtractContentAfterPrompt(clean, "my prompt")
-//
+//	// Capture and parse tmux output
+//	output, err := watchdog.CapturePane("my-session", 100)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	clean := watchdog.StripANSI(output)
+//	filtered := watchdog.ExtractContentAfterPrompt(clean, "my prompt")
 package watchdog
 
 import (

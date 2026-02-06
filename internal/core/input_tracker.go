@@ -93,10 +93,11 @@ func validateSessionName(session string) error {
 // The input can contain newlines and special characters - they are preserved in JSON
 //
 // File format (JSONL - one JSON object per line):
-//   {"timestamp":1706878200123,"input":"help me\nwrite code"}
-//   {"timestamp":1706878201000,"input":"1"}
 //
-// After recording, the file is trimmed to keep only the most recent maxSize entries
+//	{"timestamp":1706878200123,"input":"help me\nwrite code"}
+//	{"timestamp":1706878201000,"input":"1"}
+//
+// # After recording, the file is trimmed to keep only the most recent maxSize entries
 //
 // Returns error if:
 //   - Session name is invalid (path traversal check)
@@ -243,7 +244,8 @@ func (t *InputTracker) GetAllInputs(session string) ([]InputRecord, error) {
 // Returns: (input, timestampInMillis, error)
 //
 // The timestamp can be used to calculate response time:
-//   responseTime = currentTime - inputTimestamp
+//
+//	responseTime = currentTime - inputTimestamp
 //
 // Returns error if:
 //   - Session name is invalid
@@ -380,8 +382,9 @@ func validateCLIType(cliType string) error {
 // This prevents snapshots from different CLI types from overwriting each other.
 //
 // Example:
-//   getSessionDirWithCLIType("project-a", "claude") → "~/.clibot/sessions/project-a_claude/"
-//   getSessionDirWithCLIType("project-a", "gemini") → "~/.clibot/sessions/project-a_gemini/"
+//
+//	getSessionDirWithCLIType("project-a", "claude") → "~/.clibot/sessions/project-a_claude/"
+//	getSessionDirWithCLIType("project-a", "gemini") → "~/.clibot/sessions/project-a_gemini/"
 func (t *InputTracker) getSessionDirWithCLIType(session, cliType string) string {
 	isolatedDir := fmt.Sprintf("%s_%s", session, cliType)
 	return filepath.Join(t.baseDir, isolatedDir)
@@ -390,7 +393,8 @@ func (t *InputTracker) getSessionDirWithCLIType(session, cliType string) string 
 // RecordBeforeSnapshot saves the before snapshot for a session
 //
 // The snapshot is saved in an isolated directory to prevent conflicts between CLI types:
-//   ~/.clibot/sessions/{sessionName}_{cliType}/before_snapshot.txt
+//
+//	~/.clibot/sessions/{sessionName}_{cliType}/before_snapshot.txt
 //
 // Returns error if:
 //   - Session name is invalid
@@ -433,7 +437,8 @@ func (t *InputTracker) RecordBeforeSnapshot(sessionName, cliType, content string
 // RecordAfterSnapshot saves the after snapshot for a session
 //
 // The snapshot is saved in an isolated directory to prevent conflicts between CLI types:
-//   ~/.clibot/sessions/{sessionName}_{cliType}/after_snapshot.txt
+//
+//	~/.clibot/sessions/{sessionName}_{cliType}/after_snapshot.txt
 //
 // Returns error if:
 //   - Session name is invalid

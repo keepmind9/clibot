@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/keepmind9/clibot/pkg/constants"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
 )
 
@@ -114,16 +114,16 @@ func (t *TelegramBot) handleMessage(message *tgbotapi.Message) {
 
 	// Log parsed message data
 	logger.WithFields(logrus.Fields{
-		"platform":     "telegram",
-		"user_id":      userID,
-		"username":     userName,
-		"first_name":   firstName,
-		"last_name":    lastName,
-		"chat_id":      chatID,
-		"chat_type":    message.Chat.Type,
-		"message_id":   message.MessageID,
-		"content":      content,
-		"content_len":  len(content),
+		"platform":    "telegram",
+		"user_id":     userID,
+		"username":    userName,
+		"first_name":  firstName,
+		"last_name":   lastName,
+		"chat_id":     chatID,
+		"chat_type":   message.Chat.Type,
+		"message_id":  message.MessageID,
+		"content":     content,
+		"content_len": len(content),
 	}).Info("received-telegram-message-parsed")
 
 	// Only process text messages

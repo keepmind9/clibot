@@ -19,10 +19,10 @@ var versionJSON bool
 
 // VersionOutput represents the version output structure
 type VersionOutput struct {
-	Version    string `json:"version"`
-	BuildTime  string `json:"build_time"`
-	GitBranch  string `json:"git_branch"`
-	GitCommit  string `json:"git_commit"`
+	Version   string `json:"version"`
+	BuildTime string `json:"build_time"`
+	GitBranch string `json:"git_branch"`
+	GitCommit string `json:"git_commit"`
 }
 
 var versionCmd = &cobra.Command{
@@ -31,10 +31,10 @@ var versionCmd = &cobra.Command{
 	Long:  "Display version number, build time, git branch, and commit ID",
 	Run: func(cmd *cobra.Command, args []string) {
 		version := VersionOutput{
-			Version:    Version,
-			BuildTime:  BuildTime,
-			GitBranch:  GitBranch,
-			GitCommit:  GitCommit,
+			Version:   Version,
+			BuildTime: BuildTime,
+			GitBranch: GitBranch,
+			GitCommit: GitCommit,
 		}
 
 		if versionJSON {

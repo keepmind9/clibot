@@ -19,8 +19,8 @@ Esc to cancel
 
 	// Input history (from newest to oldest)
 	inputs := []InputRecord{
-		{Timestamp: 1003, Content: "1"},      // Current input (won't match)
-		{Timestamp: 1002, Content: "yes"},    // Previous input (won't match)
+		{Timestamp: 1003, Content: "1"},       // Current input (won't match)
+		{Timestamp: 1002, Content: "yes"},     // Previous input (won't match)
 		{Timestamp: 1001, Content: "help me"}, // Oldest input (will match)
 	}
 

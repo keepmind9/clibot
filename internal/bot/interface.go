@@ -15,29 +15,28 @@
 //
 // To use a bot adapter:
 //
-//   1. Create a bot instance using the New* function for your platform
-//   2. Call Start() with a message handler callback
-//   3. Send messages using SendMessage()
-//   4. Call Stop() when shutting down
+//  1. Create a bot instance using the New* function for your platform
+//  2. Call Start() with a message handler callback
+//  3. Send messages using SendMessage()
+//  4. Call Stop() when shutting down
 //
 // Example:
 //
-//   discordBot := bot.NewDiscordBot(token, channelID)
-//   err := discordBot.Start(func(msg bot.BotMessage) {
-//       fmt.Printf("Received: %s\n", msg.Content)
-//   })
-//   if err != nil {
-//       log.Fatal(err)
-//   }
-//   discordBot.SendMessage(channelID, "Hello, world!")
-//   discordBot.Stop()
+//	discordBot := bot.NewDiscordBot(token, channelID)
+//	err := discordBot.Start(func(msg bot.BotMessage) {
+//	    fmt.Printf("Received: %s\n", msg.Content)
+//	})
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	discordBot.SendMessage(channelID, "Hello, world!")
+//	discordBot.Stop()
 //
 // # Thread Safety
 //
 // All bot adapters are thread-safe and use internal mutexes to protect
 // shared state. The message handler callback may be called concurrently
 // from multiple goroutines.
-//
 package bot
 
 import "time"
@@ -60,9 +59,9 @@ type BotAdapter interface {
 
 // BotMessage represents a bot message structure
 type BotMessage struct {
-	Platform  string    // feishu/discord/telegram
-	UserID    string    // Unique user identifier (for permission control)
-	Channel   string    // Channel/session ID
-	Content   string    // Message content
+	Platform  string // feishu/discord/telegram
+	UserID    string // Unique user identifier (for permission control)
+	Channel   string // Channel/session ID
+	Content   string // Message content
 	Timestamp time.Time
 }

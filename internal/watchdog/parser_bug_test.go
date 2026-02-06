@@ -79,7 +79,7 @@ More AI content here`
 
 	// User history shows they selected menu options, but those short inputs may not be visible
 	inputs := []InputRecord{
-		{Timestamp: 1003, Content: "1"},    // Most recent - menu selection
+		{Timestamp: 1003, Content: "1"},       // Most recent - menu selection
 		{Timestamp: 1002, Content: "help me"}, // Original input
 	}
 

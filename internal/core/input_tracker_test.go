@@ -411,8 +411,8 @@ func TestInputTracker_CorruptedFile(t *testing.T) {
 	os.MkdirAll(sessionDir, 0755)
 
 	testCases := []struct {
-		name          string
-		content       string
+		name           string
+		content        string
 		shouldHaveData bool
 	}{
 		{"empty file", "", false},

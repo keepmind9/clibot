@@ -452,56 +452,56 @@ func TestIsSpecialCommand_PerformanceFastPath(t *testing.T) {
 // TestIsSpecialCommand_ViewArgsParsing tests view command argument parsing
 func TestIsSpecialCommand_ViewArgsParsing(t *testing.T) {
 	tests := []struct {
-		name          string
-		input         string
-		expectedArgs  []string
-		expectMatch   bool
+		name         string
+		input        string
+		expectedArgs []string
+		expectMatch  bool
 	}{
 		{
-			name:        "view with single digit",
-			input:       "view 5",
+			name:         "view with single digit",
+			input:        "view 5",
 			expectedArgs: []string{"5"},
 			expectMatch:  true,
 		},
 		{
-			name:        "view with double digit",
-			input:       "view 50",
+			name:         "view with double digit",
+			input:        "view 50",
 			expectedArgs: []string{"50"},
 			expectMatch:  true,
 		},
 		{
-			name:        "view with triple digit",
-			input:       "view 100",
+			name:         "view with triple digit",
+			input:        "view 100",
 			expectedArgs: []string{"100"},
 			expectMatch:  true,
 		},
 		{
-			name:        "view with non-numeric argument - normal input",
-			input:       "view help",
-			expectedArgs:  nil,
+			name:         "view with non-numeric argument - normal input",
+			input:        "view help",
+			expectedArgs: nil,
 			expectMatch:  false,
 		},
 		{
-			name:        "view with multiple numeric args - only first used",
-			input:       "view 100 200",
-			expectedArgs: []string{"100"},  // Only first arg is used
+			name:         "view with multiple numeric args - only first used",
+			input:        "view 100 200",
+			expectedArgs: []string{"100"}, // Only first arg is used
 			expectMatch:  true,
 		},
 		{
-			name:        "view with multiple words - normal input",
-			input:       "view help me",
-			expectedArgs:  nil,
+			name:         "view with multiple words - normal input",
+			input:        "view help me",
+			expectedArgs: nil,
 			expectMatch:  false,
 		},
 		{
-			name:        "view with leading space - not matched (no trim)",
-			input:       " view 100",
-			expectedArgs:  nil,
+			name:         "view with leading space - not matched (no trim)",
+			input:        " view 100",
+			expectedArgs: nil,
 			expectMatch:  false,
 		},
 		{
-			name:        "view with trailing space",
-			input:       "view 100 ",
+			name:         "view with trailing space",
+			input:        "view 100 ",
 			expectedArgs: []string{"100"},
 			expectMatch:  true,
 		},

@@ -21,22 +21,21 @@
 //
 // # Usage
 //
-//   // Initialize logger with configuration
-//   config := logger.Config{
-//       Level: "debug",
-//       File: "/var/log/clibot/app.log",
-//       EnableStdout: true,
-//   }
-//   if err := logger.InitLogger(config); err != nil {
-//       log.Fatal(err)
-//   }
+//	// Initialize logger with configuration
+//	config := logger.Config{
+//	    Level: "debug",
+//	    File: "/var/log/clibot/app.log",
+//	    EnableStdout: true,
+//	}
+//	if err := logger.InitLogger(config); err != nil {
+//	    log.Fatal(err)
+//	}
 //
-//   // Use structured logging
-//   logger.WithFields(logrus.Fields{
-//       "user": "alice",
-//       "action": "login",
-//   }).Info("User logged in")
-//
+//	// Use structured logging
+//	logger.WithFields(logrus.Fields{
+//	    "user": "alice",
+//	    "action": "login",
+//	}).Info("User logged in")
 package logger
 
 import (

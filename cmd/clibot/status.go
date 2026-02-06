@@ -22,7 +22,7 @@ type StatusOutput struct {
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show clibot status",
-	Long:  "Display current status of all sessions and connection information. " +
+	Long: "Display current status of all sessions and connection information. " +
 		"If port is specified, check if the port is being listened on.",
 	Run: func(cmd *cobra.Command, args []string) {
 		status := StatusOutput{

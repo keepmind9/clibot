@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	capturePaneLine    = constants.SnapshotCaptureLines
+	capturePaneLine     = constants.SnapshotCaptureLines
 	tmuxCapturePaneLine = constants.DefaultManualCaptureLines
 
 	// maxSpecialCommandInputLength is the maximum allowed input length for special commands.
@@ -117,23 +117,23 @@ func isSpecialCommand(input string) (string, bool, []string) {
 // Engine is the core scheduling engine that manages CLI sessions and bot connections
 type Engine struct {
 	config          *Config
-	cliAdapters     map[string]cli.CLIAdapter  // CLI type -> adapter
-	activeBots      map[string]bot.BotAdapter  // Bot type -> adapter
-	sessions        map[string]*Session        // Session name -> Session
-	sessionMu       sync.RWMutex               // Mutex for session access
-	messageChan     chan bot.BotMessage        // Bot message channel
-	hookServer      *http.Server               // HTTP server for hooks
-	sessionChannels map[string]BotChannel      // Session name -> active bot channel (for routing responses)
-	userSessions    map[string]string          // User key (platform:userID) -> current session name
-	inputTracker    *InputTracker              // Tracks user input for response extraction
-	ctx             context.Context            // Context for cancellation
-	cancel          context.CancelFunc         // Cancel function for graceful shutdown
+	cliAdapters     map[string]cli.CLIAdapter // CLI type -> adapter
+	activeBots      map[string]bot.BotAdapter // Bot type -> adapter
+	sessions        map[string]*Session       // Session name -> Session
+	sessionMu       sync.RWMutex              // Mutex for session access
+	messageChan     chan bot.BotMessage       // Bot message channel
+	hookServer      *http.Server              // HTTP server for hooks
+	sessionChannels map[string]BotChannel     // Session name -> active bot channel (for routing responses)
+	userSessions    map[string]string         // User key (platform:userID) -> current session name
+	inputTracker    *InputTracker             // Tracks user input for response extraction
+	ctx             context.Context           // Context for cancellation
+	cancel          context.CancelFunc        // Cancel function for graceful shutdown
 }
 
 // BotChannel represents a bot channel for sending responses
 type BotChannel struct {
-	Platform string  // "discord", "telegram", "feishu", etc.
-	Channel  string  // Channel ID (platform-specific)
+	Platform string // "discord", "telegram", "feishu", etc.
+	Channel  string // Channel ID (platform-specific)
 }
 
 // NewEngine creates a new Engine instance
@@ -354,7 +354,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 			delete(e.userSessions, userKey)
 			sessionInvalid = true
 			logger.WithFields(logrus.Fields{
-				"user":         userKey,
+				"user":          userKey,
 				"stale_session": sessionName,
 			}).Warn("cleaned-stale-user-session-reference")
 		}
@@ -373,7 +373,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 
 		if sessionInvalid {
 			logger.WithFields(logrus.Fields{
-				"user":         userKey,
+				"user":          userKey,
 				"stale_session": sessionName,
 			}).Warn("user-selected-session-no-longer-exists")
 		} else {
@@ -416,7 +416,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	processedContent := watchdog.ProcessKeyWords(msg.Content)
 	if processedContent != msg.Content {
 		logger.WithFields(logrus.Fields{
-			"original": msg.Content,
+			"original":  msg.Content,
 			"processed": fmt.Sprintf("%q", processedContent),
 		}).Debug("keyword-converted-to-key-sequence")
 	}
@@ -1019,7 +1019,7 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 
 	if cleanedUsers > 0 {
 		logger.WithFields(logrus.Fields{
-			"session":      name,
+			"session":       name,
 			"cleaned_users": cleanedUsers,
 		}).Info("cleaned-user-sessions-after-deletion")
 	}
@@ -1097,9 +1097,9 @@ func (e *Engine) captureView(msg bot.BotMessage, parts []string) {
 	e.SendToBot(msg.Platform, msg.Channel, response)
 
 	logger.WithFields(logrus.Fields{
-		"session":        session.Name,
+		"session":         session.Name,
 		"lines_requested": lines,
-		"output_length":  len(cleanOutput),
+		"output_length":   len(cleanOutput),
 	}).Info("tmux-capture-command-executed")
 }
 
@@ -1346,10 +1346,10 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 	// Send response to user
 	if response != "" {
 		logger.WithFields(logrus.Fields{
-			"session":        session.Name,
+			"session":         session.Name,
 			"response_length": len(response),
-			"mode":           "polling",
-			"event":          "parser_response_completed",
+			"mode":            "polling",
+			"event":           "parser_response_completed",
 		}).Info("parser_response_completed_sending_to_user")
 
 		e.sendResponseToUser(session.Name, response)
@@ -1358,10 +1358,10 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 		// 1. Extraction logic correctly determined no new content
 		// 2. Extraction bug - need to investigate
 		logger.WithFields(logrus.Fields{
-			"session":           session.Name,
+			"session":            session.Name,
 			"raw_content_length": len(rawContent),
-			"mode":              "polling",
-			"event":             "parser_no_response_extracted",
+			"mode":               "polling",
+			"event":              "parser_no_response_extracted",
 		}).Warn("response-extraction-returned-empty-check-if-this-is-expected")
 	}
 
@@ -1395,9 +1395,9 @@ func (e *Engine) sendResponseToUser(sessionName string, content string) {
 
 	// Send response
 	logger.WithFields(logrus.Fields{
-		"session":        sessionName,
-		"platform":       botChannel.Platform,
-		"channel":        botChannel.Channel,
+		"session":         sessionName,
+		"platform":        botChannel.Platform,
+		"channel":         botChannel.Channel,
 		"response_length": len(content),
 	}).Info("sending-response-to-user")
 

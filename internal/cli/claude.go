@@ -37,7 +37,8 @@ func NewClaudeAdapter(config ClaudeAdapterConfig) (*ClaudeAdapter, error) {
 
 // HandleHookData handles raw hook data from Claude Code
 // Expected data format (JSON):
-//   {"cwd": "/path/to/workdir", "session_id": "...", "transcript_path": "...", ...}
+//
+//	{"cwd": "/path/to/workdir", "session_id": "...", "transcript_path": "...", ...}
 //
 // This returns the cwd as the session identifier, which will be matched against
 // the configured session's work_dir in the engine.
@@ -110,26 +111,26 @@ type TranscriptMessage struct {
 // Note: content can be either a string (user messages) or an array (assistant messages)
 type MessageContent struct {
 	ID          string         `json:"id,omitempty"`
-	Type        string         `json:"type,omitempty"`         // "message" for assistant
-	Role        string         `json:"role,omitempty"`         // "user" or "assistant"
-	Model       string         `json:"model,omitempty"`        // Model name
+	Type        string         `json:"type,omitempty"`  // "message" for assistant
+	Role        string         `json:"role,omitempty"`  // "user" or "assistant"
+	Model       string         `json:"model,omitempty"` // Model name
 	Content     []ContentBlock `json:"content,omitempty"`
-	ContentText string         `json:"-"`                      // Extracted when content is a string
-	StopReason  string         `json:"stop_reason,omitempty"`  // null if incomplete, "end_turn"/"max_tokens" if complete
+	ContentText string         `json:"-"`                     // Extracted when content is a string
+	StopReason  string         `json:"stop_reason,omitempty"` // null if incomplete, "end_turn"/"max_tokens" if complete
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for MessageContent
 func (mc *MessageContent) UnmarshalJSON(data []byte) error {
 	// Try to unmarshal as full message object first
 	var full struct {
-		ID          string `json:"id"`
-		Type        string `json:"type"`
-		Role        string `json:"role"`
-		Model       string `json:"model"`
-		Content     interface{} `json:"content"`
-		StopReason  string `json:"stop_reason"`
-		StopSequence string `json:"stop_sequence"`
-		Usage       map[string]interface{} `json:"usage"`
+		ID           string                 `json:"id"`
+		Type         string                 `json:"type"`
+		Role         string                 `json:"role"`
+		Model        string                 `json:"model"`
+		Content      interface{}            `json:"content"`
+		StopReason   string                 `json:"stop_reason"`
+		StopSequence string                 `json:"stop_sequence"`
+		Usage        map[string]interface{} `json:"usage"`
 	}
 	if err := json.Unmarshal(data, &full); err == nil {
 		mc.ID = full.ID

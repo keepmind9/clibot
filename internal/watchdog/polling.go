@@ -77,10 +77,10 @@ func WaitForCompletion(sessionName string, inputs []InputRecord, beforeContent s
 	}
 
 	logger.WithFields(logrus.Fields{
-		"session":     sessionName,
-		"interval":    config.Interval,
-		"stableCount": config.StableCount,
-		"timeout":     config.Timeout,
+		"session":      sessionName,
+		"interval":     config.Interval,
+		"stableCount":  config.StableCount,
+		"timeout":      config.Timeout,
 		"captureLines": config.CaptureLines,
 	}).Info("polling-wait-for-completion-started")
 
@@ -142,15 +142,15 @@ func WaitForCompletion(sessionName string, inputs []InputRecord, beforeContent s
 							"session":        sessionName,
 							"content_length": len(currentContent),
 						}).Info("polling-completed-detecting-stability")
-						
-						// CRITICAL FIX: Once stable, capture a LARGER window (200 lines) 
+
+						// CRITICAL FIX: Once stable, capture a LARGER window (200 lines)
 						// to ensure we can find the prompt and extract the FULL response.
 						fullOutput, err := CapturePane(sessionName, constants.SnapshotCaptureLines)
 						if err != nil {
 							logger.Warn("failed-to-capture-full-output-using-small-capture")
 							return currentContent, output, nil
 						}
-						
+
 						// Perform final extraction on the large window
 						finalResponse := ExtractNewContentWithHistory(fullOutput, inputs, beforeContent)
 						// Return both the extracted response AND the full raw output for snapshot saving
@@ -207,7 +207,7 @@ func isMenuMode(content string) bool {
 func hasNumberedOptions(content string) bool {
 	lines := strings.Split(content, "\n")
 	numberedLines := 0
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if len(trimmed) < 2 {
@@ -221,10 +221,10 @@ func hasNumberedOptions(content string) bool {
 			}
 
 			rest := trimmed[1:]
-			if strings.HasPrefix(rest, ".") || 
-			   strings.HasPrefix(rest, ")") || 
-			   strings.HasPrefix(rest, " ") ||
-			   strings.HasPrefix(rest, "、") {
+			if strings.HasPrefix(rest, ".") ||
+				strings.HasPrefix(rest, ")") ||
+				strings.HasPrefix(rest, " ") ||
+				strings.HasPrefix(rest, "、") {
 				numberedLines++
 			}
 		}
