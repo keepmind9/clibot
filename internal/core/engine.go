@@ -642,7 +642,7 @@ func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
 	// 2. Parameter validation
 	if len(args) < 3 {
 		e.SendToBot(msg.Platform, msg.Channel,
-			"❌ Invalid arguments\nUsage: new <name> <cli_type> <work_dir> [start_cmd]")
+			"❌ Invalid arguments\nUsage: snew <name> <cli_type> <work_dir> [start_cmd]")
 		return
 	}
 
@@ -773,7 +773,7 @@ func expandPath(path string) (string, error) {
 }
 
 // handleDeleteSession deletes a dynamic session (admin only)
-// Usage: delete <name>
+// Usage: sdel <name>
 func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	logger.WithFields(logrus.Fields{
 		"platform": msg.Platform,
@@ -790,7 +790,7 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	// 2. Parameter validation
 	if len(args) < 1 {
 		e.SendToBot(msg.Platform, msg.Channel,
-			"❌ Invalid arguments\nUsage: delete <name>")
+			"❌ Invalid arguments\nUsage: sdel <name>")
 		return
 	}
 
