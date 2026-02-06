@@ -175,6 +175,8 @@ cat hook-data.json | clibot hook --cli-type claude --port 9000
 
 **注意:** 此命令通常由配置了 hook 的 CLI 工具自动调用，而不是由用户手动调用。
 
+详见 [CLI Hook 配置指南](./docs/zh-CN/setup/cli-hooks.md)。
+
 ## 运行模式
 
 clibot 支持两种模式来检测 CLI 何时完成响应：

@@ -175,6 +175,8 @@ cat hook-data.json | clibot hook --cli-type claude --port 9000
 
 **Note:** This command is typically called automatically by CLI tools configured with hooks, not manually by users.
 
+See [CLI Hook Configuration Guide](./docs/en/setup/cli-hooks.md) for detailed setup instructions.
+
 ## Operation Modes
 
 clibot supports two modes for detecting when the CLI has finished responding:
