@@ -52,8 +52,8 @@ cli_adapters:
 ### Usage
 
 ```bash
-# Start the main process
-clibot start --config ~/.config/clibot/config.yaml
+# Run clibot as a service
+clibot serve --config ~/.config/clibot/config.yaml
 
 # Check status
 clibot status
@@ -155,7 +155,7 @@ clibot/
 │   └── clibot/             # Main program
 │       ├── main.go         # Main function
 │       ├── root.go         # Cobra root command
-│       ├── start.go        # start command
+│       ├── serve.go        # serve command
 │       ├── hook.go         # hook command
 │       └── status.go       # status command
 ├── internal/

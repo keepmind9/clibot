@@ -52,8 +52,8 @@ cli_adapters:
 ### 使用
 
 ```bash
-# 启动主进程
-clibot start --config ~/.config/clibot/config.yaml
+# 以服务模式运行
+clibot serve --config ~/.config/clibot/config.yaml
 
 # 检查状态
 clibot status
@@ -127,7 +127,7 @@ clibot/
 │   └── clibot/             # 主程序
 │       ├── main.go         # 入口函数
 │       ├── root.go         # Cobra 根命令
-│       ├── start.go        # start 命令
+│       ├── serve.go        # serve 命令
 │       ├── hook.go         # hook 命令
 │       └── status.go       # status 命令
 ├── internal/

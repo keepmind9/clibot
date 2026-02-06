@@ -20,10 +20,10 @@ import (
 var (
 	configFile string
 
-	startCmd = &cobra.Command{
-		Use:   "start",
-		Short: "Start clibot main process",
-		Long:  "Start clibot main process, listen to bot messages and dispatch to AI CLI tools",
+	serveCmd = &cobra.Command{
+		Use:   "serve",
+		Short: "Run clibot as a service",
+		Long:  "Run clibot as a service daemon, listening to bot messages and dispatching to AI CLI tools",
 		Run: func(cmd *cobra.Command, args []string) {
 			// Load configuration
 			config, err := core.LoadConfig(configFile)
@@ -31,7 +31,7 @@ var (
 				log.Fatalf("Failed to load config: %v", err)
 			}
 
-			fmt.Printf("Starting clibot with config: %s\n", configFile)
+			fmt.Printf("Running clibot service with config: %s\n", configFile)
 			fmt.Printf("Hook server port: %d\n", config.HookServer.Port)
 			fmt.Printf("Whitelist enabled: %v\n", config.Security.WhitelistEnabled)
 
@@ -117,7 +117,7 @@ var (
 )
 
 func init() {
-	startCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file path")
+	serveCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file path")
 }
 
 // registerCLIAdapters registers all configured CLI adapters using factory pattern

@@ -24,7 +24,7 @@ func Execute() {
 
 func init() {
 	// Add subcommands here
-	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(hookCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(versionCmd)
