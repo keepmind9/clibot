@@ -1,5 +1,9 @@
 # clibot
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Report Card](https://goreportcard.com/badge/github.com/keepmind9/clibot)](https://goreportcard.com/report/github.com/keepmind9/clibot)
+[![GoDoc](https://pkg.go.dev/badge/github.com/keepmind9/clibot.svg)](https://pkg.go.dev/github.com/keepmind9/clibot)
+
 [English](./README.md) | 中文版
 
 clibot 是一个轻量级的中间层，将各种 IM 平台（飞书、Discord、Telegram 等）与 AI CLI 工具（Claude Code、Gemini CLI、OpenCode 等）连接起来，让用户可以通过聊天界面远程使用 AI 编程助手。
