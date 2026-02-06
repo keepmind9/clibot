@@ -246,25 +246,6 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("at least one session must be configured")
 	}
 
-	// Set default session if not specified
-	if config.DefaultSession == "" && len(config.Sessions) > 0 {
-		config.DefaultSession = config.Sessions[0].Name
-	}
-
-	// Validate that default_session references an existing session
-	if config.DefaultSession != "" {
-		found := false
-		for _, session := range config.Sessions {
-			if session.Name == config.DefaultSession {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("default_session '%s' does not exist in sessions configuration", config.DefaultSession)
-		}
-	}
-
 	return nil
 }
 

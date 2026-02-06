@@ -39,7 +39,6 @@ type Config struct {
 	Watchdog      WatchdogConfig          `yaml:"watchdog"`
 	Session       SessionGlobalConfig     `yaml:"session"`
 	Sessions      []SessionConfig         `yaml:"sessions"`
-	DefaultSession string                 `yaml:"default_session"`
 	Bots          map[string]BotConfig    `yaml:"bots"`
 	CLIAdapters   map[string]CLIAdapterConfig `yaml:"cli_adapters"`
 	Logging       LoggingConfig           `yaml:"logging"`

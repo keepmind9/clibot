@@ -187,20 +187,6 @@ func validateConfigDetails(cfg *core.Config) []string {
 		warnings = append(warnings, "Whitelist is enabled but no users are allowed")
 	}
 
-	// Check if default session exists
-	if cfg.DefaultSession != "" {
-		found := false
-		for _, session := range cfg.Sessions {
-			if session.Name == cfg.DefaultSession {
-				found = true
-				break
-			}
-		}
-		if !found {
-			warnings = append(warnings, fmt.Sprintf("Default session '%s' not found in configured sessions", cfg.DefaultSession))
-		}
-	}
-
 	// Check if any bots are enabled
 	enabledBots := 0
 	for _, bot := range cfg.Bots {

@@ -133,9 +133,6 @@ sessions:
   #   work_dir: "/path/to/workdir"
   #   auto_start: true
 
-# Default session (fallback when user hasn't selected one)
-default_session: "my-project"
-
 # ==============================================================================
 # Bot Configuration
 # ==============================================================================

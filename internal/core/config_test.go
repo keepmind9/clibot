@@ -23,7 +23,6 @@ sessions:
     cli_type: "claude"
     work_dir: "/tmp/test"
     auto_start: false
-default_session: "test-session"
 bots:
   discord:
     enabled: true
@@ -76,7 +75,6 @@ sessions:
     cli_type: "claude"
     work_dir: "/tmp/test"
     auto_start: false
-default_session: "test-session"
 bots:
   discord:
     enabled: true
@@ -126,7 +124,6 @@ sessions:
     cli_type: "claude"
     work_dir: "/tmp/test"
     auto_start: false
-default_session: "test-session"
 bots:
   discord:
     enabled: true
@@ -370,7 +367,6 @@ sessions:
     cli_type: "claude"
     work_dir: "/tmp/test"
     auto_start: false
-default_session: "test-session"
 bots: {}
 cli_adapters:
   claude:
@@ -408,7 +404,6 @@ hook_server:
 security:
   whitelist_enabled: false
 sessions: []
-default_session: ""
 bots:
   discord:
     enabled: true
@@ -463,100 +458,6 @@ func TestExpandEnv_MultipleVariables_ExpandsAll(t *testing.T) {
 	// Assert
 	assert.NoError(t, err)
 	assert.Equal(t, "value1/value2", result)
-}
-
-func TestValidateConfig_DefaultSessionNotExists_ReturnsError(t *testing.T) {
-	configContent := `
-hook_server:
-  port: 8080
-
-security:
-  whitelist_enabled: false
-sessions:
-  - name: "session-one"
-    cli_type: "claude"
-    work_dir: "/tmp/one"
-    auto_start: false
-default_session: "non-existent-session"
-bots:
-  discord:
-    enabled: true
-    token: "test-token"
-cli_adapters:
-  claude:
-    history_dir: "~/.claude/conversations"
-    interactive:
-      enabled: true
-      check_lines: 3
-      patterns:
-        - "\\? [y/N]"
-`
-	tmpFile, err := os.CreateTemp("", "config-*.yaml")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(configContent); err != nil {
-		t.Fatalf("Failed to write config content: %v", err)
-	}
-	tmpFile.Close()
-
-	// Load config
-	_, err = LoadConfig(tmpFile.Name())
-
-	// Assert
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "default_session 'non-existent-session' does not exist")
-}
-
-func TestValidateConfig_DefaultSessionExists_Succeeds(t *testing.T) {
-	configContent := `
-hook_server:
-  port: 8080
-
-security:
-  whitelist_enabled: false
-sessions:
-  - name: "session-one"
-    cli_type: "claude"
-    work_dir: "/tmp/one"
-    auto_start: false
-  - name: "session-two"
-    cli_type: "gemini"
-    work_dir: "/tmp/two"
-    auto_start: false
-default_session: "session-two"
-bots:
-  discord:
-    enabled: true
-    token: "test-token"
-cli_adapters:
-  claude:
-    history_dir: "~/.claude/conversations"
-    interactive:
-      enabled: true
-      check_lines: 3
-      patterns:
-        - "\\? [y/N]"
-`
-	tmpFile, err := os.CreateTemp("", "config-*.yaml")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(configContent); err != nil {
-		t.Fatalf("Failed to write config content: %v", err)
-	}
-	tmpFile.Close()
-
-	// Load config
-	config, err := LoadConfig(tmpFile.Name())
-
-	// Assert
-	assert.NoError(t, err)
-	assert.Equal(t, "session-two", config.DefaultSession)
 }
 
 func TestExpandHome_RelativePath_ReturnsUnchanged(t *testing.T) {
