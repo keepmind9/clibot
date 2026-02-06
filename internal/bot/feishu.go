@@ -97,13 +97,13 @@ func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2Me
 		return nil
 	}
 
-	// // Log the complete event object as JSON for debugging
-	// eventJSON, err := json.Marshal(event)
-	// if err == nil {
-	// 	logger.WithField("event", string(eventJSON)).Info("Received Feishu event (raw JSON)")
-	// } else {
-	// 	logger.WithField("error", err).Warn("Failed to marshal event to JSON")
-	// }
+	// Log the complete event object as JSON for debugging
+	eventJSON, err := json.Marshal(event)
+	if err == nil {
+		logger.WithField("event", string(eventJSON)).Info("Received Feishu event (raw JSON)")
+	} else {
+		logger.WithField("error", err).Warn("Failed to marshal event to JSON")
+	}
 
 	// Extract message information
 	ev := event.Event
@@ -134,9 +134,12 @@ func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2Me
 		}
 	}
 
-	// Get sender ID
+	// Get sender ID (use open_id for whitelist)
 	if ev.Sender != nil && ev.Sender.SenderId != nil {
-		if ev.Sender.SenderId.UserId != nil {
+		if ev.Sender.SenderId.OpenId != nil {
+			senderID = *ev.Sender.SenderId.OpenId
+		} else if ev.Sender.SenderId.UserId != nil {
+			// Fallback to user_id if open_id is not available
 			senderID = *ev.Sender.SenderId.UserId
 		}
 	}
