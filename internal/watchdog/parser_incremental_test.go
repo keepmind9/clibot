@@ -106,15 +106,14 @@ Choose option:
 func TestExtractIncrement_EmptyBefore(t *testing.T) {
 	before := ""
 
-	after := `❯ test
+	after := `❯ actual test input
 Here is response`
 
 	result := ExtractIncrement(after, before)
 
 	// Should return non-empty content from after
 	assert.NotEmpty(t, result)
-	assert.Contains(t, result, "test")
-	assert.Contains(t, result, "response")
+	assert.Contains(t, result, "Here is response")
 }
 
 // TestExtractIncrement_NoNewContent tests when there's no new content

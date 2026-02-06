@@ -58,17 +58,99 @@ Helper Functions (shared by all parsers):
 
 // hasPromptCharacterPrefix checks if a line has a cursor prefix
 func hasPromptCharacterPrefix(line string) bool {
+	// Strip borders and icons first for robust detection
+	clean := StripANSI(line)
+	clean = strings.TrimPrefix(clean, "│")
+	clean = strings.TrimSpace(clean)
+	clean = strings.TrimPrefix(clean, "-") // Confirm icon
+	clean = strings.TrimPrefix(clean, "?") // Selection icon
+	clean = strings.TrimSpace(clean)
+
 	prefix := []string{
 		"> ",
 		"❯ ",
 		">>>",
+		"Shell", // Claude Code / Gemini CLI specific
 	}
 	for _, pattern := range prefix {
-		if strings.HasPrefix(line, pattern) {
+		if strings.HasPrefix(clean, pattern) {
 			return true
 		}
 	}
 	return false
+}
+
+// ExtractNewContent identifies new AI content from tmux output using dual anchors.
+// It first tries to locate the user's prompt. If not found, it uses the 
+// beforeSnapshot to identify the increment.
+func ExtractNewContent(output, userPrompt, beforeSnapshot string) string {
+	var inputs []InputRecord
+	if userPrompt != "" {
+		inputs = []InputRecord{{Content: userPrompt}}
+	}
+	return ExtractNewContentWithHistory(output, inputs, beforeSnapshot)
+}
+
+// ExtractNewContentWithHistory identifies new AI content from tmux output using multiple anchors.
+// It iterates through historical inputs (newest to oldest) to find a match.
+// If no prompt match is found, it falls back to using the beforeSnapshot to identify the increment.
+func ExtractNewContentWithHistory(output string, inputs []InputRecord, beforeSnapshot string) string {
+	if output == "" {
+		return ""
+	}
+
+	var activeContent string
+	lines := strings.Split(output, "\n")
+
+	// Step 1: Try to locate any user prompt from history (newest first)
+	for _, input := range inputs {
+		if input.Content == "" {
+			continue
+		}
+		matcher := NewPromptMatcher(input.Content)
+		promptIdx := matcher.findPromptIndex(lines)
+		if promptIdx != -1 {
+			activeContent = strings.Join(lines[promptIdx+1:], "\n")
+			logger.WithFields(logrus.Fields{
+				"match_type": "prompt",
+				"prompt":     truncateString(input.Content, 20),
+			}).Debug("identified-new-content-by-prompt")
+			break
+		}
+	}
+
+	// Step 2: Use beforeSnapshot anchor if no prompt match found
+	if activeContent == "" && beforeSnapshot != "" {
+		activeContent = ExtractIncrement(output, beforeSnapshot)
+		logger.WithField("match_type", "snapshot").Debug("identified-new-content-by-snapshot")
+	}
+
+	// Step 3: No anchors found, use basic assistant extraction.
+	if activeContent == "" {
+		// CRITICAL: We only use the last 10 lines here to avoid 
+		// leaking massive amounts of historical data from the 200-line capture.
+		smallWindow := lines
+		if len(lines) > 10 {
+			smallWindow = lines[len(lines)-10:]
+		}
+		activeContent = extractLastAssistantContent(strings.Join(smallWindow, "\n"))
+		logger.WithField("match_type", "basic_small_window").Debug("identified-new-content-by-basic-extraction")
+	}
+
+	// Always clean the result (remove UI status lines, consecutive newlines)
+	cleaned := cleanContent(activeContent)
+	cleaned = RemoveUIStatusLines(cleaned)
+
+	// FINAL STEP: Strip all ANSI escape codes.
+	return StripANSI(cleaned)
+}
+
+// truncateString truncates a string to a maximum length
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // eqPromptCharacterData checks if line exactly matches prefix + userPrompt
@@ -214,23 +296,26 @@ func isMenuOption(line string) bool {
 
 // isPromptOrCommand checks if a line is a prompt/command rather than assistant output
 func isPromptOrCommand(line string) bool {
+	clean := StripANSI(line)
+
 	// Exact patterns (must match from start or be standalone)
-	if strings.HasPrefix(line, "user@") ||
-	   strings.HasPrefix(line, "$ ") ||
-	   strings.HasPrefix(line, ">>>") ||
-	   line == "..." ||
-	   strings.Contains(line, "[?]") ||
-	   strings.Contains(line, "Press Enter") ||
-	   strings.Contains(line, "Confirm?") {
+	if strings.HasPrefix(clean, "user@") ||
+		strings.HasPrefix(clean, "$ ") ||
+		strings.HasPrefix(clean, ">>>") ||
+		strings.HasPrefix(clean, "Shell") || // Gemini CLI / Claude Code
+		clean == "..." ||
+		strings.Contains(clean, "[?]") ||
+		strings.Contains(clean, "Press Enter") ||
+		strings.Contains(clean, "Confirm?") ||
+		strings.Contains(clean, "lines hidden") { // TUI hidden lines message
 		return true
 	}
 
 	// Special case: Lines with cursor prefix "❯ "
-	// These could be either menu options (keep) or user input prompts (filter)
-	if strings.HasPrefix(line, "❯ ") {
+	if strings.HasPrefix(clean, "❯ ") || strings.HasPrefix(clean, "> ") {
 		// Menu options like "❯ 1. Yes" should be kept
 		if isMenuOption(line) {
-			return false  // Keep menu options
+			return false // Keep menu options
 		}
 		// User input prompts should be filtered
 		return true
@@ -266,16 +351,22 @@ func isPromptOrCommand(line string) bool {
 
 // canSkip checks if a line should be skipped (empty or UI border)
 func canSkip(line string) bool {
-	if line == "" {
+	// First strip ANSI codes to ensure we're looking at pure characters
+	cleanLine := StripANSI(line)
+	trimmed := strings.TrimSpace(cleanLine)
+	
+	if trimmed == "" {
 		return true
 	}
-	// Detect and skip UI borders (box drawing characters)
+
+	// Detect and skip UI borders (box drawing characters and blocks)
 	// Single-line: ─ │ ┌ └ ┐ ┘ ├ ┤
 	// Double-line: ═ ║ ╒ ╓ ╔ ╕ ╖ ╗ ╘ ╙ ╚ ╛ ╜ ╝ ╞ ╟ ╠ ╡ ╢ ╣ ╤ ╥ ╦ ╧ ╨ ╩
 	// Rounded: ╭ ╮ ╰ ╯
+	// Blocks: ▀ ▄ █ ▌ ▐
 	// Other space-like: · • ● ○ ◌ ■
-	for _, runeValue := range line {
-		if strings.ContainsRune("─│┌└┐┘├┤═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╭╮╰╯·•●○◌■ ▀▄", runeValue) {
+	for _, runeValue := range trimmed {
+		if strings.ContainsRune("─│┌└┐┘├┤═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╭╮╰╯·•●○◌■ ▀▄█▌▐", runeValue) {
 			continue
 		}
 		return false
@@ -339,7 +430,12 @@ func NewPromptMatcher(userPrompt string) *PromptMatcher {
 // findPromptIndex searches backwards to find the last occurrence of the user prompt
 func (pm *PromptMatcher) findPromptIndex(lines []string) int {
 	for i := len(lines) - 1; i >= 0; i-- {
-		trimmed := strings.TrimSpace(lines[i])
+		// CRITICAL: Strip ANSI codes first because CLI tools (like Gemini)
+		// wrap user input in color codes (e.g. \x1b[34m> input\x1b[0m)
+		// Without this, HasPrefix("> ") fails.
+		cleanLine := StripANSI(lines[i])
+		trimmed := strings.TrimSpace(cleanLine)
+		
 		if trimmed == "" {
 			continue
 		}
@@ -533,10 +629,11 @@ func IsThinking(output string) bool {
 	// Universal thinking indicators (work across Claude, Gemini, etc.)
 	thinkingIndicators := []string{
 		"thinking",
-		"esc to interrupt",
-		"press escape to interrupt",
-		"interrupt",
 		"loading",
+		"working",
+		"summoning",
+		"generating",
+		"computing",
 	}
 
 	recentOutput := strings.Join(recentLines, "\n")
@@ -559,6 +656,8 @@ func IsThinking(output string) bool {
 // isUIStatusLine checks if a line is a UI status line
 // UI status lines include indicators like "running stop hook", "esc to interrupt", etc.
 func isUIStatusLine(line string) bool {
+	clean := StripANSI(line)
+
 	// UI status line patterns
 	uiPatterns := []string{
 		"Undulating…",
@@ -568,7 +667,7 @@ func isUIStatusLine(line string) bool {
 		"? for shortcuts",
 	}
 
-	lowerLine := strings.ToLower(line)
+	lowerLine := strings.ToLower(clean)
 	for _, pattern := range uiPatterns {
 		if strings.Contains(lowerLine, strings.ToLower(pattern)) {
 			return true
@@ -576,7 +675,7 @@ func isUIStatusLine(line string) bool {
 	}
 
 	// Check for single-character cursor indicators
-	if line == "❯" || line == ">" || line == "$" {
+	if clean == "❯" || clean == ">" || clean == "$" {
 		return true
 	}
 
@@ -597,9 +696,9 @@ func RemoveUIStatusLines(output string) string {
 			continue
 		}
 
-		// Remove UI status lines
-		if isUIStatusLine(trimmed) {
-			logger.WithField("line", trimmed).Debug("removing-ui-status-line-from-response")
+		// Remove UI status lines or prompts
+		if isUIStatusLine(line) || isPromptOrCommand(line) {
+			logger.WithField("line", trimmed).Debug("removing-ui-status-or-prompt-line-from-response")
 			continue
 		}
 

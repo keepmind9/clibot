@@ -49,7 +49,7 @@ func TestWaitForCompletion_ContextCancellation(t *testing.T) {
 		Timeout:     1 * time.Second,
 	}
 
-	_, err := WaitForCompletion("test-session", config, ctx)
+	_, _, err := WaitForCompletion("test-session", []InputRecord{{Content: "test"}}, "", config, ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cancelled")
 }
@@ -60,7 +60,7 @@ func TestWaitForCompletion_EmptyConfig_UsesDefaults(t *testing.T) {
 
 	config := PollingConfig{} // Empty config
 
-	_, err := WaitForCompletion("nonexistent-session", config, ctx)
+	_, _, err := WaitForCompletion("nonexistent-session", []InputRecord{{Content: "test"}}, "", config, ctx)
 	// Will fail because session doesn't exist, but shouldn't panic
 	assert.Error(t, err)
 }
@@ -73,7 +73,7 @@ func TestPollingConfig_ZeroValues_UsingDefaults(t *testing.T) {
 
 	config := PollingConfig{} // All zeros - should use defaults
 
-	_, err := WaitForCompletion("nonexistent-session", config, ctx)
+	_, _, err := WaitForCompletion("nonexistent-session", []InputRecord{{Content: "test"}}, "", config, ctx)
 	// Should fail because session doesn't exist, but shouldn't panic
 	// The defaults should be applied internally
 	assert.Error(t, err)

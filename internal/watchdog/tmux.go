@@ -77,9 +77,11 @@ func CapturePane(sessionName string, lines int) (string, error) {
 
 // StripANSI removes ANSI escape codes from a string
 func StripANSI(input string) string {
-	// ANSI escape code regex pattern
-	ansiEscape := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-	return ansiEscape.ReplaceAllString(input, "")
+	// Comprehensive ANSI escape code regex pattern
+	// Handles colors, cursor movements, and other CSI/OSC sequences
+	const ansi = "[\u001B\u009B][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqrtuy=><]"
+	re := regexp.MustCompile(ansi)
+	return re.ReplaceAllString(input, "")
 }
 
 // IsSessionAlive checks if a tmux session exists and is running

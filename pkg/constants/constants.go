@@ -4,8 +4,10 @@ import "time"
 
 // Tmux capture line limits for different scenarios
 const (
-	// DefaultCaptureLines is used for hook retry: capture more lines for long responses
-	DefaultCaptureLines = 200
+	// SnapshotCaptureLines is used for before/after snapshots to ensure enough context
+	SnapshotCaptureLines = 200
+	// StatusCheckLines is used for state detection (Thinking/Menu): small range to avoid historical interference
+	StatusCheckLines = 10
 	// DefaultManualCaptureLines is used for manual command: smaller for readability
 	DefaultManualCaptureLines = 20
 	// MaxTmuxCaptureLines is the upper limit for tmux capture
@@ -63,7 +65,7 @@ const (
 // Incremental extraction limits
 const (
 	// IncrementalSnapshotTailLines is the number of lines from the end to use for incremental extraction
-	// Should be slightly less than DefaultCaptureLines to leave margin for overlap detection
+	// Should be slightly less than SnapshotCaptureLines to leave margin for overlap detection
 	IncrementalSnapshotTailLines = 150
 	// IncrementalSnapshotMinimumStartRatio is the minimum ratio (as numerator) to consider content as new
 	// Content after len(afterLines)/IncrementalSnapshotMinimumStartRatio is considered new content

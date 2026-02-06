@@ -37,8 +37,10 @@ func ExtractIncrement(afterSnapshot, beforeSnapshot string) string {
 	for k := 0; k < len(beforeLines); k++ {
 		matchLen := 0
 		for i := 0; i < len(afterLines) && k+i < len(beforeLines); i++ {
-			// Use TrimSpace for robust comparison (ignoring trailing whitespace changes)
-			if strings.TrimSpace(afterLines[i]) == strings.TrimSpace(beforeLines[k+i]) {
+			// Use StripANSI and TrimSpace for robust comparison (ignoring color/whitespace changes)
+			aClean := strings.TrimSpace(StripANSI(afterLines[i]))
+			bClean := strings.TrimSpace(StripANSI(beforeLines[k+i]))
+			if aClean == bClean {
 				matchLen++
 			} else {
 				break
