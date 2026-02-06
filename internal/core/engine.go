@@ -45,6 +45,8 @@ var specialCommands = map[string]struct{}{
 	"whoami":   {},
 	"view":     {},
 	"echo":     {},
+	"new":      {},
+	"delete":   {},
 }
 
 // isSpecialCommand checks if input is a special command.
@@ -478,6 +480,10 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		e.captureView(msg, parts)
 	case "echo":
 		e.handleEcho(msg)
+	case "new":
+		e.handleNewSession(args, msg)
+	case "delete":
+		e.handleDeleteSession(args, msg)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
 			fmt.Sprintf("❌ Unknown command: %s\nUse 'help' to see available commands", command))
@@ -576,6 +582,22 @@ func (e *Engine) handleEcho(msg bot.BotMessage) {
 		msg.Platform, msg.UserID, msg.Channel)
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
+}
+
+// handleNewSession creates a new dynamic session (admin only)
+// Usage: new <name> <cli_type> <work_dir> [start_cmd]
+func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
+	e.SendToBot(msg.Platform, msg.Channel,
+		"⚠️  'new' command is not implemented yet.\n"+
+			"This feature is coming soon!")
+}
+
+// handleDeleteSession deletes a dynamic session (admin only)
+// Usage: delete <name>
+func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
+	e.SendToBot(msg.Platform, msg.Channel,
+		"⚠️  'delete' command is not implemented yet.\n"+
+			"This feature is coming soon!")
 }
 
 // captureView captures and displays CLI tool output
