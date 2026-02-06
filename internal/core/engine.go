@@ -351,7 +351,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 				"session": session.Name,
 				"cliType": session.CLIType,
 				"error":   err,
-			}).Warn("failed-to-capture-before-snapshot-falling-back-to-full-extraction")
+			}).Warn("failed-to-capture-before-snapshot-will-use-prompt-matching-fallback")
 		} else {
 			// IMPORTANT: Strip ANSI codes to match after snapshot format
 			beforeCapture = watchdog.StripANSI(beforeCapture)
@@ -361,7 +361,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 					"session": session.Name,
 					"cliType": session.CLIType,
 					"error":   err,
-				}).Warn("failed-to-save-before-snapshot-will-use-full-extraction")
+				}).Warn("failed-to-save-before-snapshot-will-use-prompt-matching-fallback")
 			} else {
 				logger.WithFields(logrus.Fields{
 					"session":     session.Name,
@@ -371,6 +371,8 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 			}
 		}
 	}
+	// NOTE: If beforeCapture is empty due to capture failure, the system will use
+	// prompt matching as fallback (userPrompt is always passed to watchdog)
 
 	// Step 3.6: Record user input for response extraction (polling mode)
 	if e.inputTracker != nil {
@@ -876,6 +878,16 @@ func (e *Engine) runWatchdogPollingWithContext(ctx context.Context, session *Ses
 		}).Info("parser_response_completed_sending_to_user")
 
 		e.sendResponseToUser(session.Name, response)
+	} else {
+		// response is empty but rawContent has content - this might indicate:
+		// 1. Extraction logic correctly determined no new content
+		// 2. Extraction bug - need to investigate
+		logger.WithFields(logrus.Fields{
+			"session":           session.Name,
+			"raw_content_length": len(rawContent),
+			"mode":              "polling",
+			"event":             "parser_no_response_extracted",
+		}).Warn("response-extraction-returned-empty-check-if-this-is-expected")
 	}
 
 	// Update session state

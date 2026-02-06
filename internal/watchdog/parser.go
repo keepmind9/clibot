@@ -696,7 +696,9 @@ func RemoveUIStatusLines(output string) string {
 			continue
 		}
 
-		// Remove UI status lines or prompts
+		// Remove UI status lines and prompts
+		// NOTE: Prompts need to be removed as a safety net for extraction paths
+		// that may not fully filter them out (snapshot matching, basic extraction)
 		if isUIStatusLine(line) || isPromptOrCommand(line) {
 			logger.WithField("line", trimmed).Debug("removing-ui-status-or-prompt-line-from-response")
 			continue
