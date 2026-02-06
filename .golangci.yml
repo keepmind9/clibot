@@ -1,0 +1,104 @@
+run:
+  # Timeout for analysis
+  timeout: 5m
+  # Include test files
+  tests: true
+  # Which dirs to skip
+  skip-dirs:
+    - bin
+    - vendor
+  # Which files to skip
+  skip-files:
+    - ".*\\.pb\\.go$"
+
+linters:
+  disable-all: true
+  enable:
+    # Default enabled linters
+    - deadcode      # Finds unused code
+    - errcheck      # Find unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Reports suspicious constructs
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Go static analysis
+    - typecheck     # Type-check Go code
+    - unused        # Find unused constants, variables, functions and types
+    # Additional linters
+    - gofmt         # Check whether code was gofmt-ed
+    - goimports     # Check import statements are formatted
+    - misspell      # Find commonly misspelled English words
+    - revive        # Fast, configurable, extensible, flexible, and beautiful linter
+    - unconvert     # Remove unnecessary type conversions
+    - unparam       # Find unused function parameters
+    - whitespace    # Detection of leading and trailing whitespace
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+
+  goimports:
+    local-prefixes: github.com/keepmind9/clibot
+
+  misspell:
+    locale: US
+
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unused-parameter
+      - name: unreachable-code
+      - name: redefines-builtin-id
+
+issues:
+  # Show only new issues
+  new: false
+  # Maximum issues count per one linter
+  max-issues-per-linter: 0
+  # Maximum count of issues with the same text
+  max-same-issues: 0
+  # Exclude specific issues
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosimple
+        - govet
+    # Exclude some staticcheck messages
+    - linters:
+        - staticcheck
+      text: "SA9003:"
+  # Independently of option `exclude` we use default exclude patterns
+  exclude-use-default: false
+
+output:
+  # Format: colored-line-number|line-number|json|tab|checkstyle|code-climate
+  format: colored-line-number
+  # Sort results by: filepath, line and column
+  sort-results: true

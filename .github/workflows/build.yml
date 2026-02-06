@@ -1,0 +1,55 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build for Linux
+        run: make build-linux
+
+      - name: Build for macOS (Intel)
+        run: make build-darwin
+
+      - name: Build for current platform
+        run: make build
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: clibot-linux-amd64
+          path: bin/clibot-linux-amd64
+          retention-days: 7
+
+      - name: Upload macOS binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: clibot-darwin-amd64
+          path: bin/clibot-darwin-amd64
+          retention-days: 7
+
+      - name: Upload current binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: clibot-current
+          path: bin/clibot
+          retention-days: 7
