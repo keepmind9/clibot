@@ -156,13 +156,13 @@ func (g *GeminiAdapter) ExtractLatestInteraction(transcriptPath string, cwd stri
 // extractGeminiResponse extracts the latest Gemini response from history
 // JSON structure: {"messages": [{"type": "user", ...}, {"type": "gemini", "content": "...", "thoughts": [...]}, ...]}
 func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string) (string, string, error) {
-	var latestFile = ""
+	var latestFile string
 	if transcriptPath == "" {
-		_latestFile, _err := g.lastSessionFile(cwd)
-		if _err != nil {
-			return "", "", _err
+		var err error
+		latestFile, err = g.lastSessionFile(cwd)
+		if err != nil {
+			return "", "", err
 		}
-		latestFile = _latestFile
 	} else {
 		latestFile = transcriptPath
 	}
