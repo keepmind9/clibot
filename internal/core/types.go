@@ -17,6 +17,7 @@ type Session struct {
 	Name      string                // tmux session name
 	CLIType   string                // claude/gemini/opencode
 	WorkDir   string                // Working directory
+	StartCmd  string                // Command to start the CLI (default: same as CLIType)
 	State     SessionState         // Current state
 	CreatedAt string                // Creation timestamp
 	cancelCtx context.CancelFunc // Cancel function for active watchdog goroutine
@@ -75,6 +76,7 @@ type SessionConfig struct {
 	CLIType   string `yaml:"cli_type"`
 	WorkDir   string `yaml:"work_dir"`
 	AutoStart bool   `yaml:"auto_start"`
+	StartCmd  string `yaml:"start_cmd"` // Command to start the CLI (default: same as CLIType)
 }
 
 // BotConfig represents bot configuration

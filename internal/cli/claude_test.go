@@ -184,7 +184,7 @@ func TestClaudeAdapter_CreateSession(t *testing.T) {
 	// Test CreateSession with a unique name to avoid conflicts
 	sessionName := "test-clibot-session-12345"
 
-	err = adapter.CreateSession(sessionName, "/tmp")
+	err = adapter.CreateSession(sessionName, "/tmp", "claude")
 	// This might fail if tmux is not installed or not configured
 	// We're just testing that it doesn't panic
 	if err != nil {

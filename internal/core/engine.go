@@ -169,11 +169,18 @@ func (e *Engine) initializeSessions() error {
 			continue
 		}
 
+		// Determine start command: use configured value or default to CLI type
+		startCmd := sessionConfig.StartCmd
+		if startCmd == "" {
+			startCmd = sessionConfig.CLIType
+		}
+
 		// Create new session
 		session := &Session{
 			Name:      sessionConfig.Name,
 			CLIType:   sessionConfig.CLIType,
 			WorkDir:   sessionConfig.WorkDir,
+			StartCmd:  startCmd,
 			State:     StateIdle,
 			CreatedAt: time.Now().Format(time.RFC3339),
 		}
@@ -190,7 +197,7 @@ func (e *Engine) initializeSessions() error {
 			log.Printf("Session %s is already running", session.Name)
 		} else if sessionConfig.AutoStart {
 			log.Printf("Auto-starting session %s", session.Name)
-			if err := adapter.CreateSession(session.Name, session.WorkDir); err != nil {
+			if err := adapter.CreateSession(session.Name, session.WorkDir, session.StartCmd); err != nil {
 				log.Printf("Failed to create session %s: %v", session.Name, err)
 				continue
 			}

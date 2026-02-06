@@ -61,8 +61,9 @@ type CLIAdapter interface {
 	// IsSessionAlive checks if the session is still alive
 	IsSessionAlive(sessionName string) bool
 
-	// CreateSession creates a new session (optional)
-	CreateSession(sessionName, workDir string) error
+	// CreateSession creates a new session and starts the CLI with the specified command
+	// The startCmd parameter allows sessions to use different commands than the adapter default
+	CreateSession(sessionName, workDir, startCmd string) error
 
 	// UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
 	// Hook mode: Real-time notifications via CLI hooks (requires CLI configuration)

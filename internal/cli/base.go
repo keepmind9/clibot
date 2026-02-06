@@ -62,7 +62,7 @@ func (b *BaseAdapter) IsSessionAlive(sessionName string) bool {
 }
 
 // CreateSession creates a new tmux session and starts the CLI
-func (b *BaseAdapter) CreateSession(sessionName, workDir string) error {
+func (b *BaseAdapter) CreateSession(sessionName, workDir, startCmd string) error {
 	// Create tmux session
 	args := []string{"new-session", "-d", "-s", sessionName}
 
@@ -70,33 +70,42 @@ func (b *BaseAdapter) CreateSession(sessionName, workDir string) error {
 	if workDir != "" {
 		expandedDir, err := expandHome(workDir)
 		if err != nil {
-			return fmt.Errorf("invalid work_dir: %w", err)
+			return fmt.Errorf("session %s: invalid work_dir: %w", sessionName, err)
 		}
+
+		// Check if directory exists
+		if _, err := exec.Command("test", "-d", expandedDir).CombinedOutput(); err != nil {
+			return fmt.Errorf("session %s: work_dir does not exist: %s", sessionName, expandedDir)
+		}
+
 		args = append(args, "-c", expandedDir)
 	}
 
 	cmd := exec.Command("tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create tmux session %s: %w (output: %s)", sessionName, err, string(output))
+		return fmt.Errorf("session %s: failed to create tmux session: %w (output: %s)", sessionName, err, string(output))
 	}
 
-	// Start the CLI in the session
-	if err := b.Start(sessionName); err != nil {
-		return fmt.Errorf("failed to start %s: %w", b.cliName, err)
+	// Start the CLI in the session with the specified command
+	if err := b.Start(sessionName, startCmd); err != nil {
+		return fmt.Errorf("session %s: failed to start %s: %w", sessionName, b.cliName, err)
 	}
 
 	return nil
 }
 
 // Start starts the CLI in the specified tmux session
-func (b *BaseAdapter) Start(sessionName string) error {
+func (b *BaseAdapter) Start(sessionName, startCmd string) error {
+	if startCmd == "" {
+		startCmd = b.startCmd
+	}
 	logger.WithFields(logrus.Fields{
 		"session":   sessionName,
 		"cli":       b.cliName,
-		"start_cmd": b.startCmd,
+		"start_cmd": startCmd,
 	}).Info("starting-cli-in-tmux-session")
 
-	if err := watchdog.SendKeys(sessionName, b.startCmd); err != nil {
+	if err := watchdog.SendKeys(sessionName, startCmd); err != nil {
 		return err
 	}
 

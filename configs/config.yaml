@@ -49,11 +49,13 @@ sessions:
     cli_type: "claude"      # claude/gemini/opencode
     work_dir: "/home/user/project-a"
     auto_start: true        # Auto-create if not exists
+    # start_cmd: "claude"   # Optional: Custom command to start CLI (default: same as cli_type)
 
   - name: "backend-test"
     cli_type: "gemini"
     work_dir: "/home/user/tests"
     auto_start: false
+    # start_cmd: "gemini"  # Example: Use alternative command
 
 # Default session (Used when Bot doesn't specify one)
 default_session: "project-a"
