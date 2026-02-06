@@ -49,6 +49,7 @@ var specialCommands = map[string]struct{}{
 	"echo":   {},
 	"snew":   {},
 	"sdel":   {},
+	"suse":   {},
 }
 
 // isSpecialCommand checks if input is a special command.
@@ -111,6 +112,7 @@ type Engine struct {
 	messageChan     chan bot.BotMessage        // Bot message channel
 	hookServer      *http.Server               // HTTP server for hooks
 	sessionChannels map[string]BotChannel      // Session name -> active bot channel (for routing responses)
+	userSessions    map[string]string          // User key (platform:userID) -> current session name
 	inputTracker    *InputTracker              // Tracks user input for response extraction
 	ctx             context.Context            // Context for cancellation
 	cancel          context.CancelFunc         // Cancel function for graceful shutdown
@@ -151,6 +153,7 @@ func NewEngine(config *Config) *Engine {
 		sessions:        make(map[string]*Session),
 		messageChan:     make(chan bot.BotMessage, constants.MessageChannelBufferSize),
 		sessionChannels: make(map[string]BotChannel),
+		userSessions:    make(map[string]string), // user key -> current session name
 		inputTracker:    tracker,
 		ctx:             ctx,
 		cancel:          cancel,
@@ -324,14 +327,30 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		return
 	}
 
-	// Step 2: Get the active session for this channel
-	session := e.GetActiveSession(msg.Channel)
+	// Step 2: Get the active session for this user
+	userKey := getUserKey(msg.Platform, msg.UserID)
+
+	e.sessionMu.RLock()
+	sessionName, userHasSession := e.userSessions[userKey]
+	var session *Session
+	if userHasSession {
+		session = e.sessions[sessionName]
+	}
+	e.sessionMu.RUnlock()
+
 	if session == nil {
+		// Fallback to first available session
+		session = e.GetActiveSession(msg.Channel)
+		if session == nil {
+			logger.WithFields(logrus.Fields{
+				"user": userKey,
+			}).Warn("no-active-session-found")
+			e.SendToBot(msg.Platform, msg.Channel, "❌ No active session. Use 'slist' to see available sessions, then 'suse <name>' to select one")
+			return
+		}
 		logger.WithFields(logrus.Fields{
-			"channel": msg.Channel,
-		}).Warn("no-active-session-found-for-channel")
-		e.SendToBot(msg.Platform, msg.Channel, "❌ No active session. Use 'sessions' to list available sessions")
-		return
+			"user": userKey,
+		}).Info("user-has-no-session-selected-using-fallback")
 	}
 
 	logger.WithFields(logrus.Fields{
@@ -472,6 +491,8 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		e.showHelp(msg)
 	case "slist":
 		e.listSessions(msg)
+	case "suse":
+		e.handleUseSession(args, msg)
 	case "status":
 		e.showStatus(msg)
 	case "whoami":
@@ -562,13 +583,36 @@ func (e *Engine) showStatus(msg bot.BotMessage) {
 
 // showWhoami shows current session information
 func (e *Engine) showWhoami(msg bot.BotMessage) {
-	session := e.GetActiveSession(msg.Channel)
+	userKey := getUserKey(msg.Platform, msg.UserID)
+
+	e.sessionMu.RLock()
+	sessionName, hasSession := e.userSessions[userKey]
+	var session *Session
+	if hasSession {
+		session = e.sessions[sessionName]
+	}
+	e.sessionMu.RUnlock()
+
 	if session == nil {
-		e.SendToBot(msg.Platform, msg.Channel, "No active session")
+		response := fmt.Sprintf("🔍 **Your Information**\n\n"+
+			"**Platform:** %s\n"+
+			"**User ID:** `%s`\n"+
+			"**Channel ID:** `%s`\n"+
+			"**Current Session:** Not selected (using default)",
+			msg.Platform, msg.UserID, msg.Channel)
+		e.SendToBot(msg.Platform, msg.Channel, response)
 		return
 	}
 
-	response := fmt.Sprintf("Current Session:\n  Name: %s\n  CLI: %s\n  State: %s\n  WorkDir: %s",
+	response := fmt.Sprintf("🔍 **Your Information**\n\n"+
+		"**Platform:** %s\n"+
+		"**User ID:** `%s`\n"+
+		"**Channel ID:** `%s`\n"+
+		"**Current Session:** %s\n"+
+		"**CLI Type:** %s\n"+
+		"**State:** %s\n"+
+		"**WorkDir:** %s",
+		msg.Platform, msg.UserID, msg.Channel,
 		session.Name, session.CLIType, session.State, session.WorkDir)
 	e.SendToBot(msg.Platform, msg.Channel, response)
 }
@@ -580,8 +624,9 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
 **Special Commands** (no prefix required):
   help         - Show this help message
   slist        - List all available sessions
+  suse <name>  - Switch current session
   status       - Show status of all sessions
-  whoami       - Show current session info
+  whoami       - Show your current session info
   view [n]     - View CLI output (default: 20 lines)
   echo         - Echo your IM user info (for whitelist config)
   snew <name> <cli_type> <work_dir> [cmd] - Create new session (admin only)
@@ -597,6 +642,8 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
 
 **Usage Examples:**
   help              → Show help
+  slist             → List all sessions
+  suse myproject    → Switch to session 'myproject'
   status            → Show status
   tab               → Send Tab key to CLI
   ctrl-c            → Interrupt current process
@@ -608,6 +655,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   - Special commands are exact match (case-sensitive)
   - Special keywords are case-insensitive
   - Any other input will be sent to the CLI
+  - Use "suse" to switch between sessions
   - Use "help" anytime to see this message`
 
 	e.SendToBot(msg.Platform, msg.Channel, help)
@@ -772,6 +820,51 @@ func expandPath(path string) (string, error) {
 	return path, nil
 }
 
+// handleUseSession switches the user's current active session
+// Usage: suse <session_name>
+func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
+	logger.WithFields(logrus.Fields{
+		"platform": msg.Platform,
+		"user_id":  msg.UserID,
+		"args":     args,
+	}).Info("handle-use-session-command")
+
+	// 1. Parameter validation
+	if len(args) < 1 {
+		e.SendToBot(msg.Platform, msg.Channel,
+			"❌ Invalid arguments\nUsage: suse <session_name>")
+		return
+	}
+
+	sessionName := args[0]
+	userKey := getUserKey(msg.Platform, msg.UserID)
+
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+
+	// 2. Check if session exists
+	session, exists := e.sessions[sessionName]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Session '%s' does not exist\nUse 'slist' to see available sessions", sessionName))
+		return
+	}
+
+	// 3. Update user's current session
+	e.userSessions[userKey] = sessionName
+
+	logger.WithFields(logrus.Fields{
+		"user":    userKey,
+		"session": sessionName,
+		"cli":     session.CLIType,
+	}).Info("user-switched-session")
+
+	// 4. Success response
+	e.SendToBot(msg.Platform, msg.Channel,
+		fmt.Sprintf("✅ Switched to session '%s'\nCLI: %s\nWorkDir: %s",
+			sessionName, session.CLIType, session.WorkDir))
+}
+
 // handleDeleteSession deletes a dynamic session (admin only)
 // Usage: sdel <name>
 func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
@@ -912,17 +1005,17 @@ func (e *Engine) GetActiveSession(channel string) *Session {
 	e.sessionMu.RLock()
 	defer e.sessionMu.RUnlock()
 
-	// Return the default session
-	if session, exists := e.sessions[e.config.DefaultSession]; exists {
-		return session
-	}
-
-	// Return first available session
+	// Return first available session as fallback
 	for _, session := range e.sessions {
 		return session
 	}
 
 	return nil
+}
+
+// getUserKey generates a unique key for a user across platforms
+func getUserKey(platform, userID string) string {
+	return fmt.Sprintf("%s:%s", platform, userID)
 }
 
 // updateSessionState updates the state of a session

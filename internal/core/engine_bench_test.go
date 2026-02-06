@@ -15,6 +15,7 @@ func BenchmarkIsSpecialCommand_ExactMatch(b *testing.B) {
 		"view",
 		"snew",
 		"sdel",
+		"suse",
 	}
 
 	b.ResetTimer()

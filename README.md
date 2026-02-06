@@ -171,10 +171,10 @@ clibot/
 
 ```
 slist                              # List all sessions (static and dynamic)
-use <session>                      # Switch current session (not implemented yet)
+suse <session>                     # Switch current session
 snew <name> <cli_type> <work_dir> [cmd]  # Create new dynamic session (admin only)
 sdel <name>                        # Delete dynamic session (admin only)
-whoami                             # Display current session info
+whoami                             # Display your current session info
 status                             # Display all session status
 view [lines]                       # View CLI output (default: 20 lines)
 echo                               # Echo your IM info (Platform, UserID, Channel)
@@ -196,6 +196,12 @@ snew backend gemini ~/backend my-custom-gemini
 sdel myproject
 ```
 
+**Switch between sessions**:
+```bash
+suse myproject    # Switch to session 'myproject'
+suse backend      # Switch to session 'backend'
+```
+
 **Session types**:
 - **Static sessions**: Configured in config.yaml, persist across restarts
 - **Dynamic sessions**: Created via IM commands, stored in memory only, lost on restart
@@ -205,6 +211,7 @@ sdel myproject
 - Work directory must exist before creating a session
 - Dynamic sessions count against `max_dynamic_sessions` limit (default: 50)
 - Static sessions cannot be deleted via IM (must modify config file manually)
+- Each user can have their own current session selection (independent of others)
 
 ## Special Keywords
 

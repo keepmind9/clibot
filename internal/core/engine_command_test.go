@@ -51,6 +51,13 @@ func TestIsSpecialCommand_ExactMatch(t *testing.T) {
 			expectedArgs:  nil,
 		},
 		{
+			name:          "suse command",
+			input:         "suse",
+			expectedCmd:   "suse",
+			expectedIsCmd: true,
+			expectedArgs:  nil,
+		},
+		{
 			name:          "whoami command",
 			input:         "whoami",
 			expectedCmd:   "whoami",
