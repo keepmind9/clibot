@@ -497,9 +497,35 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 	e.sessionMu.RLock()
 	defer e.sessionMu.RUnlock()
 
-	response := "📋 Available Sessions:\n"
+	response := "📋 Available Sessions:\n\n"
+
+	// Categorize sessions
+	var staticSessions, dynamicSessions []*Session
 	for _, session := range e.sessions {
-		response += fmt.Sprintf("  • %s (%s) - %s\n", session.Name, session.CLIType, session.State)
+		if session.IsDynamic {
+			dynamicSessions = append(dynamicSessions, session)
+		} else {
+			staticSessions = append(staticSessions, session)
+		}
+	}
+
+	// Display static sessions
+	if len(staticSessions) > 0 {
+		response += "Static Sessions (configured):\n"
+		for _, session := range staticSessions {
+			response += fmt.Sprintf("  • %s (%s) - %s [static]\n",
+				session.Name, session.CLIType, session.State)
+		}
+		response += "\n"
+	}
+
+	// Display dynamic sessions
+	if len(dynamicSessions) > 0 {
+		response += "Dynamic Sessions (created via IM):\n"
+		for _, session := range dynamicSessions {
+			response += fmt.Sprintf("  • %s (%s) - %s [dynamic, created by %s]\n",
+				session.Name, session.CLIType, session.State, session.CreatedBy)
+		}
 	}
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
@@ -521,7 +547,14 @@ func (e *Engine) showStatus(msg bot.BotMessage) {
 		if alive {
 			status = "✅"
 		}
-		response += fmt.Sprintf("  %s %s (%s) - %s\n", status, session.Name, session.CLIType, session.State)
+
+		// Add origin tag
+		origin := "[static]"
+		if session.IsDynamic {
+			origin = fmt.Sprintf("[dynamic, created by %s]", session.CreatedBy)
+		}
+
+		response += fmt.Sprintf("  %s %s (%s) - %s %s\n", status, session.Name, session.CLIType, session.State, origin)
 	}
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
@@ -551,6 +584,8 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   whoami       - Show current session info
   view [n]     - View CLI output (default: 20 lines)
   echo         - Echo your IM user info (for whitelist config)
+  new <name> <cli_type> <work_dir> [cmd] - Create new session (admin only)
+  delete <name> - Delete dynamic session (admin only)
 
 **Special Keywords** (exact match, case-insensitive):
   tab          - Send Tab key
@@ -565,6 +600,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   tab               → Send Tab key to CLI
   ctrl-c            → Interrupt current process
   view 100          → View last 100 lines of output
+  new myproject claude ~/work  → Create new session
 
 **Tips:**
   - Special commands are exact match (case-sensitive)
