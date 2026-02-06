@@ -737,9 +737,68 @@ func expandPath(path string) (string, error) {
 // handleDeleteSession deletes a dynamic session (admin only)
 // Usage: delete <name>
 func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
+	logger.WithFields(logrus.Fields{
+		"platform": msg.Platform,
+		"user_id":  msg.UserID,
+		"args":     args,
+	}).Info("handle-delete-session-command")
+
+	// 1. Permission check
+	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ Permission denied: admin only")
+		return
+	}
+
+	// 2. Parameter validation
+	if len(args) < 1 {
+		e.SendToBot(msg.Platform, msg.Channel,
+			"❌ Invalid arguments\nUsage: delete <name>")
+		return
+	}
+
+	name := args[0]
+
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+
+	// 3. Check if session exists
+	session, exists := e.sessions[name]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Session '%s' not found", name))
+		return
+	}
+
+	// 4. Only allow deleting dynamic sessions
+	if !session.IsDynamic {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Cannot delete configured session '%s'\n"+
+				"Please remove it from the config file manually", name))
+		return
+	}
+
+	// 5. Kill tmux session
+	cmd := exec.Command("tmux", "kill-session", "-t", name)
+	if err := cmd.Run(); err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": name,
+			"error":   err,
+		}).Warn("failed-to-kill-tmux-session")
+	}
+
+	// 6. Remove from sessions map
+	delete(e.sessions, name)
+
+	logger.WithFields(logrus.Fields{
+		"action":   "delete_session",
+		"session":  name,
+		"platform": msg.Platform,
+		"user_id":  msg.UserID,
+	}).Info("admin-deleted-dynamic-session")
+
+	// 7. Success response
 	e.SendToBot(msg.Platform, msg.Channel,
-		"⚠️  'delete' command is not implemented yet.\n"+
-			"This feature is coming soon!")
+		fmt.Sprintf("✅ Session '%s' deleted successfully", name))
 }
 
 // captureView captures and displays CLI tool output
