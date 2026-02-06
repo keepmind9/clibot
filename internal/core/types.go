@@ -20,6 +20,8 @@ type Session struct {
 	StartCmd  string                // Command to start the CLI (default: same as CLIType)
 	State     SessionState         // Current state
 	CreatedAt string                // Creation timestamp
+	IsDynamic bool                 // true if session was created dynamically via IM
+	CreatedBy string               // creator identity (format: "platform:userID")
 	cancelCtx context.CancelFunc // Cancel function for active watchdog goroutine
 }
 
@@ -67,7 +69,8 @@ type WatchdogConfig struct {
 
 // SessionGlobalConfig represents global session configuration
 type SessionGlobalConfig struct {
-	InputHistorySize int `yaml:"input_history_size"` // Maximum number of input history entries to keep (default: 10)
+	InputHistorySize   int `yaml:"input_history_size"`   // Maximum number of input history entries to keep (default: 10)
+	MaxDynamicSessions int `yaml:"max_dynamic_sessions"` // Maximum number of dynamic sessions allowed (default: 50)
 }
 
 // SessionConfig represents a session configuration

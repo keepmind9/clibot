@@ -42,6 +42,11 @@ session:
   # especially for short inputs (menu selections like "1", "2", "y", "n") not shown in tmux.
   input_history_size: 10  # Range: 1-100
 
+  # Maximum number of dynamically created sessions allowed (Default: 50)
+  # Sessions created via IM commands (new/delete) count against this limit
+  # Configured sessions in this file are not limited
+  max_dynamic_sessions: 50
+
 # tmux session management
 sessions:
   # Auto-discover existing tmux sessions, or manually configure

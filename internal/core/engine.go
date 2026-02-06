@@ -129,6 +129,11 @@ func NewEngine(config *Config) *Engine {
 		historySize = DefaultInputHistorySize
 	}
 
+	// Set default for max dynamic sessions if not configured
+	if config.Session.MaxDynamicSessions == 0 {
+		config.Session.MaxDynamicSessions = 50
+	}
+
 	tracker, err := NewInputTrackerWithSize(filepath.Join(os.Getenv("HOME"), ".clibot", "sessions"), historySize)
 	if err != nil {
 		logger.WithField("error", err).Warn("failed-to-create-input-tracker-response-extraction-may-be-affected")
@@ -183,6 +188,8 @@ func (e *Engine) initializeSessions() error {
 			StartCmd:  startCmd,
 			State:     StateIdle,
 			CreatedAt: time.Now().Format(time.RFC3339),
+			IsDynamic: false, // Configured sessions are not dynamic
+			CreatedBy: "",
 		}
 
 		// Check if CLI adapter exists
