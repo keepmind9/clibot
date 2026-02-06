@@ -77,7 +77,6 @@ func isSpecialCommand(input string) (string, bool, []string) {
 	}
 
 	// Special case: view command with numeric arguments (e.g., "view 100", "view 50")
-	// This is the only command that supports arguments.
 	// Arguments must be numeric to avoid false positives (e.g., "view help" → normal input)
 	if len(input) >= 5 && input[:4] == "view" {
 		// Check if 5th character is whitespace (space or tab)
@@ -95,6 +94,19 @@ func isSpecialCommand(input string) (string, bool, []string) {
 					}
 				}
 				// Not a valid number or out of range → treat as normal input (e.g., "view help", "view abc")
+			}
+		}
+	}
+
+	// Handle commands with string arguments (suse, snew, sdel)
+	// These commands accept arbitrary string arguments (session names, paths, etc.)
+	fields := strings.Fields(input)
+	if len(fields) > 1 {
+		cmd := fields[0]
+		// Only check known commands that accept string arguments
+		if cmd == "suse" || cmd == "snew" || cmd == "sdel" {
+			if _, exists := specialCommands[cmd]; exists {
+				return cmd, true, fields[1:]
 			}
 		}
 	}

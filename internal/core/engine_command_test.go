@@ -153,6 +153,36 @@ func TestIsSpecialCommand_ExactMatch(t *testing.T) {
 			expectedArgs:  nil,
 		},
 
+		// === Session management commands with arguments ===
+		{
+			name:          "suse with session name",
+			input:         "suse clibot",
+			expectedCmd:   "suse",
+			expectedIsCmd: true,
+			expectedArgs:  []string{"clibot"},
+		},
+		{
+			name:          "snew with full arguments",
+			input:         "snew myproject claude ~/work",
+			expectedCmd:   "snew",
+			expectedIsCmd: true,
+			expectedArgs:  []string{"myproject", "claude", "~/work"},
+		},
+		{
+			name:          "snew with custom command",
+			input:         "snew myproject claude ~/work my-custom-command",
+			expectedCmd:   "snew",
+			expectedIsCmd: true,
+			expectedArgs:  []string{"myproject", "claude", "~/work", "my-custom-command"},
+		},
+		{
+			name:          "sdel with session name",
+			input:         "sdel myproject",
+			expectedCmd:   "sdel",
+			expectedIsCmd: true,
+			expectedArgs:  []string{"myproject"},
+		},
+
 		// === Normal input (should NOT match) ===
 		{
 			name:          "help with extra text - not exact match",
