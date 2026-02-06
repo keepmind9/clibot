@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -587,9 +589,149 @@ func (e *Engine) handleEcho(msg bot.BotMessage) {
 // handleNewSession creates a new dynamic session (admin only)
 // Usage: new <name> <cli_type> <work_dir> [start_cmd]
 func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
+	logger.WithFields(logrus.Fields{
+		"platform": msg.Platform,
+		"user_id":  msg.UserID,
+		"args":     args,
+	}).Info("handle-new-session-command")
+
+	// 1. Permission check
+	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ Permission denied: admin only")
+		return
+	}
+
+	// 2. Parameter validation
+	if len(args) < 3 {
+		e.SendToBot(msg.Platform, msg.Channel,
+			"❌ Invalid arguments\nUsage: new <name> <cli_type> <work_dir> [start_cmd]")
+		return
+	}
+
+	name := args[0]
+	cliType := args[1]
+	workDir := args[2]
+	startCmd := cliType
+	if len(args) >= 4 {
+		startCmd = args[3]
+	}
+
+	// 3. Validate session name format
+	if !isValidSessionName(name) {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Invalid session name: '%s'\nUse letters, numbers, hyphen, underscore only", name))
+		return
+	}
+
+	// 4. Validate CLI type
+	adapter, exists := e.cliAdapters[cliType]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Invalid CLI type: '%s'\nSupported: claude, gemini, opencode", cliType))
+		return
+	}
+
+	// 5. Validate and expand work directory
+	expandedDir, err := expandPath(workDir)
+	if err != nil {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Invalid work_dir: %v", err))
+		return
+	}
+
+	// Check if directory exists
+	if _, err := exec.Command("test", "-d", expandedDir).CombinedOutput(); err != nil {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Work directory does not exist: %s", expandedDir))
+		return
+	}
+
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+
+	// 6. Check for duplicate session name
+	if _, exists := e.sessions[name]; exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Session '%s' already exists", name))
+		return
+	}
+
+	// 7. Check dynamic session limit
+	dynamicCount := 0
+	for _, s := range e.sessions {
+		if s.IsDynamic {
+			dynamicCount++
+		}
+	}
+	if dynamicCount >= e.config.Session.MaxDynamicSessions {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Maximum dynamic session limit reached (%d)", e.config.Session.MaxDynamicSessions))
+		return
+	}
+
+	// 8. Create session object
+	session := &Session{
+		Name:      name,
+		CLIType:   cliType,
+		WorkDir:   expandedDir,
+		StartCmd:  startCmd,
+		State:     StateIdle,
+		CreatedAt: time.Now().Format(time.RFC3339),
+		IsDynamic: true,
+		CreatedBy: fmt.Sprintf("%s:%s", msg.Platform, msg.UserID),
+	}
+
+	// 9. Create tmux session and start CLI
+	if err := adapter.CreateSession(name, expandedDir, startCmd); err != nil {
+		logger.WithField("error", err).Error("failed-to-create-dynamic-session")
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Failed to create session: %v", err))
+		return
+	}
+
+	// 10. Add to sessions map
+	e.sessions[name] = session
+
+	logger.WithFields(logrus.Fields{
+		"action":     "create_session",
+		"session":    name,
+		"platform":   msg.Platform,
+		"user_id":    msg.UserID,
+		"cli_type":   cliType,
+		"work_dir":   expandedDir,
+		"start_cmd":  startCmd,
+		"is_dynamic": true,
+	}).Info("admin-created-dynamic-session")
+
+	// 11. Success response
 	e.SendToBot(msg.Platform, msg.Channel,
-		"⚠️  'new' command is not implemented yet.\n"+
-			"This feature is coming soon!")
+		fmt.Sprintf("✅ Session '%s' created successfully\nCLI: %s\nWorkDir: %s\nStartCmd: %s",
+			name, cliType, expandedDir, startCmd))
+}
+
+// isValidSessionName checks if session name is valid
+// Valid characters: letters, numbers, hyphen, underscore
+func isValidSessionName(name string) bool {
+	if name == "" || len(name) > 100 {
+		return false
+	}
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, name)
+	return matched
+}
+
+// expandPath expands ~ and environment variables in path
+func expandPath(path string) (string, error) {
+	if strings.HasPrefix(path, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(homeDir, path[2:]), nil
+	}
+	if path == "~" {
+		return os.UserHomeDir()
+	}
+	return path, nil
 }
 
 // handleDeleteSession deletes a dynamic session (admin only)
