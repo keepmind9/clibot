@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions & Discussion
+    url: https://github.com/keepmind9/clibot/discussions
+    about: Use GitHub Discussions for questions, troubleshooting, or general discussion
+  - name: Security Issues
+    url: mailto:security@keepmind9.com
+    about: Report security vulnerabilities privately (see SECURITY.md)
+  - name: Documentation
+    url: https://github.com/keepmind9/clibot/tree/main/docs
+    about: Check the documentation for setup guides and configuration examples
