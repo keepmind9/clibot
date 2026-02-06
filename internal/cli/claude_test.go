@@ -195,3 +195,42 @@ func TestClaudeAdapter_CreateSession(t *testing.T) {
 	// Clean up: try to kill the session if it was created
 	exec.Command("tmux", "kill-session", "-t", sessionName).Run()
 }
+
+func TestClaudeAdapter_CreateSession_Idempotent(t *testing.T) {
+	adapter, err := NewClaudeAdapter(ClaudeAdapterConfig{
+		UseHook:      true,
+		PollInterval: 1 * time.Second,
+		StableCount:  3,
+		PollTimeout:  120 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewClaudeAdapter failed: %v", err)
+	}
+
+	// Test idempotency: calling CreateSession multiple times should succeed
+	sessionName := "test-clibot-idempotent"
+
+	// Clean up first in case it exists from previous run
+	exec.Command("tmux", "kill-session", "-t", sessionName).Run()
+
+	// First call
+	err = adapter.CreateSession(sessionName, "/tmp", "echo 'test'")
+	if err != nil {
+		t.Fatalf("First CreateSession failed: %v", err)
+	}
+
+	// Second call should succeed due to idempotency (session already exists)
+	err = adapter.CreateSession(sessionName, "/tmp", "echo 'test'")
+	if err != nil {
+		t.Fatalf("Second CreateSession should succeed (idempotent), but failed: %v", err)
+	}
+
+	// Verify session still exists
+	if !adapter.IsSessionAlive(sessionName) {
+		t.Fatal("Session should still be alive after second CreateSession call")
+	}
+
+	// Clean up
+	exec.Command("tmux", "kill-session", "-t", sessionName).Run()
+}
+

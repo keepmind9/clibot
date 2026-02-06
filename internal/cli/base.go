@@ -62,7 +62,14 @@ func (b *BaseAdapter) IsSessionAlive(sessionName string) bool {
 }
 
 // CreateSession creates a new tmux session and starts the CLI
+// This method is idempotent: if the session already exists, it returns successfully
 func (b *BaseAdapter) CreateSession(sessionName, workDir, startCmd string) error {
+	// Idempotency check: if session already exists, return success
+	if b.IsSessionAlive(sessionName) {
+		logger.WithField("session", sessionName).Info("session already exists, skipping creation")
+		return nil
+	}
+
 	// Create tmux session
 	args := []string{"new-session", "-d", "-s", sessionName}
 
