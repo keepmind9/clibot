@@ -102,9 +102,9 @@ func TestGeminiAdapter_HandleHookData(t *testing.T) {
 		require.NoError(t, err)
 
 		hookData := map[string]interface{}{
-			"cwd":              "/home/user/project",
-			"hook_event_name":  "NotificationEvent",
-			"transcript_path":  "/path/to/session.json",
+			"cwd":             "/home/user/project",
+			"hook_event_name": "NotificationEvent",
+			"transcript_path": "/path/to/session.json",
 		}
 		data, _ := json.Marshal(hookData)
 

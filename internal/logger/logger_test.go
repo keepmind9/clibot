@@ -210,7 +210,7 @@ func TestWithFields(t *testing.T) {
 
 	// Test WithFields
 	WithFields(logrus.Fields{
-		"user": "alice",
+		"user":   "alice",
 		"action": "login",
 	}).Info("User action")
 

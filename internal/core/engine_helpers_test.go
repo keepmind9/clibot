@@ -222,7 +222,7 @@ func TestSession_CopyValue(t *testing.T) {
 	session1 := Session{
 		Name:      "session1",
 		CLIType:   "claude",
-			State:     StateIdle,
+		State:     StateIdle,
 		IsDynamic: false,
 	}
 

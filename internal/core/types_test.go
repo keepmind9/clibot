@@ -77,8 +77,8 @@ func TestSessionConfig_Struct(t *testing.T) {
 // TestBotConfig_Struct tests BotConfig struct
 func TestBotConfig_Struct(t *testing.T) {
 	config := BotConfig{
-		Enabled:  true,
-		Token:    "test-token",
+		Enabled:   true,
+		Token:     "test-token",
 		ChannelID: "123456",
 	}
 

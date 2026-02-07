@@ -145,7 +145,6 @@ func TestGetUserKey(t *testing.T) {
 	}
 }
 
-
 // TestSetServerDefaults tests the setServerDefaults function
 func TestSetServerDefaults(t *testing.T) {
 	t.Run("sets default port when zero", func(t *testing.T) {

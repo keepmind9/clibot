@@ -74,7 +74,7 @@ func TestEngine_ListSessions_WithMultipleSessions(t *testing.T) {
 		engine.sessions[cfg.Name] = &Session{
 			Name:    cfg.Name,
 			CLIType: cfg.CLIType,
-				State:   StateIdle,
+			State:   StateIdle,
 		}
 	}
 

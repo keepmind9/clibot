@@ -67,4 +67,3 @@ func TestIsValidSessionName_LengthLimits(t *testing.T) {
 		assert.False(t, isValidSessionName(name))
 	})
 }
-

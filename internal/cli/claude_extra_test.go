@@ -19,8 +19,8 @@ func TestIsRealUserMessage(t *testing.T) {
 
 	t.Run("real user message with content blocks", func(t *testing.T) {
 		msg := TranscriptMessage{
-			Type:    "user",
-			IsMeta:  false,
+			Type:   "user",
+			IsMeta: false,
 			Message: MessageContent{
 				Content: []ContentBlock{
 					{Type: "text", Text: "Hello"},
@@ -172,8 +172,8 @@ func TestTranscriptMessage_Fields(t *testing.T) {
 		SessionID: "session-123",
 		IsMeta:    false,
 		Message: MessageContent{
-			Role:    "user",
-			Type:    "message",
+			Role:        "user",
+			Type:        "message",
 			ContentText: "test",
 		},
 	}
@@ -187,10 +187,10 @@ func TestTranscriptMessage_Fields(t *testing.T) {
 // TestMessageContent_Structure tests MessageContent structure
 func TestMessageContent_Structure(t *testing.T) {
 	content := MessageContent{
-		ID:      "msg-123",
-		Type:    "message",
-		Role:    "user",
-		Model:   "claude-3",
+		ID:          "msg-123",
+		Type:        "message",
+		Role:        "user",
+		Model:       "claude-3",
 		ContentText: "Hello",
 		Content: []ContentBlock{
 			{Type: "text", Text: "Hello"},

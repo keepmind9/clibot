@@ -116,8 +116,8 @@ func TestOpenCodeAdapter_HandleHookData(t *testing.T) {
 		require.NoError(t, err)
 
 		hookData := map[string]interface{}{
-			"cwd":           "/home/user/project",
-			"session_id":    "test-session",
+			"cwd":             "/home/user/project",
+			"session_id":      "test-session",
 			"hook_event_name": "Notification",
 		}
 		data, _ := json.Marshal(hookData)
