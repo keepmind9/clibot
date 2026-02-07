@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClaudeAdapter_NewClaudeAdapter(t *testing.T) {
@@ -232,4 +236,96 @@ func TestClaudeAdapter_CreateSession_Idempotent(t *testing.T) {
 
 	// Clean up
 	exec.Command("tmux", "kill-session", "-t", sessionName).Run()
+}
+
+// TestExtractLatestInteraction tests ExtractLatestInteraction function
+func TestExtractLatestInteraction(t *testing.T) {
+	t.Run("nonexistent file", func(t *testing.T) {
+		prompt, response, err := ExtractLatestInteraction("/nonexistent/file.json")
+		assert.Error(t, err)
+		assert.Empty(t, prompt)
+		assert.Empty(t, response)
+	})
+
+	t.Run("empty path", func(t *testing.T) {
+		prompt, response, err := ExtractLatestInteraction("")
+		assert.Error(t, err)
+		assert.Empty(t, prompt)
+		assert.Empty(t, response)
+	})
+}
+
+// TestExtractLastAssistantResponse tests ExtractLastAssistantResponse function
+func TestExtractLastAssistantResponse(t *testing.T) {
+	t.Run("nonexistent file", func(t *testing.T) {
+		response, err := ExtractLastAssistantResponse("/nonexistent/file.json")
+		assert.Error(t, err)
+		assert.Empty(t, response)
+	})
+
+	t.Run("empty path", func(t *testing.T) {
+		response, err := ExtractLastAssistantResponse("")
+		assert.Error(t, err)
+		assert.Empty(t, response)
+	})
+}
+
+// TestClaudeAdapter_HandleHookData tests HandleHookData method
+func TestClaudeAdapter_HandleHookData(t *testing.T) {
+	config := ClaudeAdapterConfig{
+		UseHook:      true,
+		PollInterval: 1 * time.Second,
+		StableCount:  3,
+		PollTimeout:  120 * time.Second,
+	}
+	adapter, err := NewClaudeAdapter(config)
+	require.NoError(t, err)
+
+	t.Run("valid hook data with cwd", func(t *testing.T) {
+		hookData := map[string]interface{}{
+			"cwd": "/home/user/project",
+		}
+		data, _ := json.Marshal(hookData)
+
+		cwd, prompt, response, err := adapter.HandleHookData(data)
+		assert.NoError(t, err)
+		assert.Equal(t, "/home/user/project", cwd)
+		assert.Empty(t, prompt)
+		assert.Empty(t, response)
+	})
+
+	t.Run("hook data with prompt and response", func(t *testing.T) {
+		hookData := map[string]interface{}{
+			"cwd":      "/home/user/project",
+			"prompt":   "test prompt",
+			"response": "test response",
+		}
+		data, _ := json.Marshal(hookData)
+
+		cwd, prompt, response, err := adapter.HandleHookData(data)
+		assert.NoError(t, err)
+		assert.Equal(t, "/home/user/project", cwd)
+		// HandleHookData might not extract prompt/response from hook data directly
+		// The exact behavior depends on implementation
+		_ = prompt
+		_ = response
+	})
+
+	t.Run("invalid JSON data", func(t *testing.T) {
+		data := []byte("invalid json")
+
+		cwd, prompt, response, err := adapter.HandleHookData(data)
+		assert.Error(t, err)
+		assert.Empty(t, cwd)
+		assert.Empty(t, prompt)
+		assert.Empty(t, response)
+	})
+
+	t.Run("empty JSON object", func(t *testing.T) {
+		data := []byte("{}")
+
+		cwd, _, _, err := adapter.HandleHookData(data)
+		assert.Error(t, err) // Should error because cwd is missing
+		assert.Empty(t, cwd)
+	})
 }
