@@ -19,6 +19,27 @@ clibot is a lightweight middleware that connects various IM platforms (Feishu, D
 
 ## Quick Start
 
+### Prerequisites
+
+- **Go**: 1.24 or higher
+- **tmux**: Required for session management (clibot creates and manages tmux sessions)
+- **Git**: For cloning the repository (if installing from source)
+
+**Installing tmux**:
+```bash
+# Ubuntu/Debian
+sudo apt-get install tmux
+
+# macOS
+brew install tmux
+
+# Fedora/CentOS/RHEL
+sudo dnf install tmux
+
+# Arch Linux
+sudo pacman -S tmux
+```
+
 ### Installation
 
 ```bash

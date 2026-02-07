@@ -19,6 +19,27 @@ clibot 是一个轻量级的中间层，将各种 IM 平台（飞书、Discord�
 
 ## 快速开始
 
+### 前置要求
+
+- **Go**：1.24 或更高版本
+- **tmux**：会话管理所需（clibot 创建和管理 tmux 会话）
+- **Git**：克隆仓库所需（如果从源码安装）
+
+**安装 tmux**：
+```bash
+# Ubuntu/Debian
+sudo apt-get install tmux
+
+# macOS
+brew install tmux
+
+# Fedora/CentOS/RHEL
+sudo dnf install tmux
+
+# Arch Linux
+sudo pacman -S tmux
+```
+
 ### 安装
 
 ```bash
