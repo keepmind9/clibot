@@ -2,6 +2,18 @@
 
 本指南介绍如何使用 systemd 或 supervisor 在生产环境中部署 clibot。
 
+## 平台支持
+
+**支持的平台**：
+- ✅ **Linux** - 完全支持，推荐用于生产环境
+- ✅ **macOS** - 完全支持
+- ⚠️ **Windows** - 仅通过 WSL2 支持（不推荐用于生产环境）
+
+**Windows 用户**：
+- 使用 WSL2 进行开发/测试
+- 生产环境部署到 Linux 服务器（VPS、云服务器等）
+- 详见 [Windows 安装指南](../README_zh.md#windows-安装指南-wsl2)
+
 ## 目录
 
 - [前置要求](#前置要求)

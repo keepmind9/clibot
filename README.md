@@ -21,6 +21,31 @@ clibot is a lightweight middleware that connects various IM platforms (Feishu, D
 
 ### Prerequisites
 
+### Operating System
+
+**Supported Platforms**:
+- ✅ **Linux** - Fully supported (Ubuntu, Debian, Fedora, CentOS, Arch, etc.)
+- ✅ **macOS** - Fully supported
+- ⚠️ **Windows** - Only via WSL2 (Windows Subsystem for Linux)
+
+**Why not Windows native?**
+clibot depends on `tmux` for session management, which is not available natively on Windows.
+
+**Windows users**: Use WSL2 for the best experience:
+```bash
+# Install WSL2 on Windows 10/11
+wsl --install
+
+# After installation, setup WSL2 with Ubuntu
+wsl --set-default-version 2
+
+# Then follow Linux instructions in WSL terminal
+```
+
+See [Windows Setup Guide](#windows-setup) below for detailed instructions.
+
+### Required Software
+
 - **Go**: 1.24 or higher
 - **tmux**: Required for session management (clibot creates and manages tmux sessions)
 - **Git**: For cloning the repository (if installing from source)
@@ -39,6 +64,95 @@ sudo dnf install tmux
 # Arch Linux
 sudo pacman -S tmux
 ```
+
+### Windows Setup (WSL2)
+
+clibot can run on Windows using WSL2 (Windows Subsystem for Linux).
+
+**Step 1: Install WSL2**
+
+Open PowerShell or Command Prompt as Administrator:
+
+```powershell
+# Enable WSL
+wsl --install
+
+# Restart your computer when prompted
+```
+
+**Step 2: Set WSL2 as default**
+
+```powershell
+wsl --set-default-version 2
+```
+
+**Step 3: Install Ubuntu (or other Linux distribution)**
+
+```powershell
+# View available distributions
+wsl --list --online
+
+# Install Ubuntu (recommended)
+wsl --install -d Ubuntu
+```
+
+**Step 4: Complete Ubuntu setup**
+
+1. Launch Ubuntu from Start menu
+2. Create a username and password
+3. Update packages:
+
+```bash
+# Inside WSL Ubuntu terminal
+sudo apt update && sudo apt upgrade -y
+```
+
+**Step 5: Install required tools in WSL**
+
+```bash
+# Install Go
+sudo apt install golang-go -y
+
+# Or install latest Go from website
+wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+
+# Install tmux
+sudo apt install tmux -y
+
+# Install Git
+sudo apt install git -y
+```
+
+**Step 6: Install and run clibot**
+
+```bash
+# Inside WSL Ubuntu terminal
+go install github.com/keepmind9/clibot@latest
+
+# Configure
+mkdir -p ~/.config/clibot
+cp /mnt/c/path/to/clibot/configs/config.yaml ~/.config/clibot/config.yaml
+nano ~/.config/clibot/config.yaml
+
+# Run clibot
+clibot serve --config ~/.config/clibot/config.yaml
+```
+
+**Windows + WSL2 Tips**:
+
+- Access Windows files from WSL: `/mnt/c/Users/YourName/...`
+- Access WSL files from Windows: `\\wsl$\Ubuntu\home\yourname\...`
+- Run clibot as background service: Use systemd inside WSL
+- No firewall configuration needed (bots use long-connections, no inbound ports)
+- All communication is outbound to IM platforms (WebSocket/Long Polling)
+
+**Limitations**:
+- Clipboard integration may not work seamlessly
+- File path conversions needed (WSL ↔ Windows)
+- Performance slightly lower than native Linux
 
 ### Installation
 

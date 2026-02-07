@@ -21,6 +21,31 @@ clibot 是一个轻量级的中间层，将各种 IM 平台（飞书、Discord�
 
 ### 前置要求
 
+### 操作系统
+
+**支持的平台**：
+- ✅ **Linux** - 完全支持（Ubuntu、Debian、Fedora、CentOS、Arch 等）
+- ✅ **macOS** - 完全支持
+- ⚠️ **Windows** - 仅通过 WSL2（Windows Subsystem for Linux）支持
+
+**为什么不支持 Windows 原生？**
+clibot 依赖 `tmux` 进行会话管理，而 Windows 原生不支持 tmux。
+
+**Windows 用户**：建议使用 WSL2 以获得最佳体验：
+```bash
+# 在 Windows 10/11 上安装 WSL2
+wsl --install
+
+# 安装后，将 WSL2 设置为默认版本
+wsl --set-default-version 2
+
+# 然后在 WSL 终端中按照 Linux 说明操作
+```
+
+详见下方的 [Windows 安装指南](#windows-安装指南)。
+
+### 必需软件
+
 - **Go**：1.24 或更高版本
 - **tmux**：会话管理所需（clibot 创建和管理 tmux 会话）
 - **Git**：克隆仓库所需（如果从源码安装）
@@ -39,6 +64,95 @@ sudo dnf install tmux
 # Arch Linux
 sudo pacman -S tmux
 ```
+
+### Windows 安装指南 (WSL2)
+
+clibot 可以在 Windows 上使用 WSL2（Windows Subsystem for Linux）运行。
+
+**步骤 1：安装 WSL2**
+
+以管理员身份打开 PowerShell 或命令提示符：
+
+```powershell
+# 启用 WSL
+wsl --install
+
+# 出现提示时重启计算机
+```
+
+**步骤 2：将 WSL2 设置为默认版本**
+
+```powershell
+wsl --set-default-version 2
+```
+
+**步骤 3：安装 Ubuntu（或其他 Linux 发行版）**
+
+```powershell
+# 查看可用的发行版
+wsl --list --online
+
+# 安装 Ubuntu（推荐）
+wsl --install -d Ubuntu
+```
+
+**步骤 4：完成 Ubuntu 设置**
+
+1. 从开始菜单启动 Ubuntu
+2. 创建用户名和密码
+3. 更新软件包：
+
+```bash
+# 在 WSL Ubuntu 终端中
+sudo apt update && sudo apt upgrade -y
+```
+
+**步骤 5：在 WSL 中安装必需工具**
+
+```bash
+# 安装 Go
+sudo apt install golang-go -y
+
+# 或从网站安装最新版 Go
+wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+
+# 安装 tmux
+sudo apt install tmux -y
+
+# 安装 Git
+sudo apt install git -y
+```
+
+**步骤 6：安装并运行 clibot**
+
+```bash
+# 在 WSL Ubuntu 终端中
+go install github.com/keepmind9/clibot@latest
+
+# 配置
+mkdir -p ~/.config/clibot
+cp /mnt/c/path/to/clibot/configs/config.yaml ~/.config/clibot/config.yaml
+nano ~/.config/clibot/config.yaml
+
+# 运行 clibot
+clibot serve --config ~/.config/clibot/config.yaml
+```
+
+**Windows + WSL2 使用技巧**：
+
+- 从 WSL 访问 Windows 文件：`/mnt/c/Users/你的用户名/...`
+- 从 Windows 访问 WSL 文件：`\\wsl$\Ubuntu\home\你的用户名\...`
+- 将 clibot 作为后台服务运行：在 WSL 内使用 systemd
+- 无需配置防火墙（Bot 使用长连接，无需开放入站端口）
+- 所有通信都是出站到 IM 平台（WebSocket/长轮询）
+
+**限制**：
+- 剪贴板集成可能不够流畅
+- 需要文件路径转换（WSL ↔ Windows）
+- 性能略低于原生 Linux
 
 ### 安装
 

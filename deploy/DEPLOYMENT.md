@@ -2,6 +2,18 @@
 
 This guide covers deploying clibot in production using systemd or supervisor.
 
+## Platform Support
+
+**Supported Platforms**:
+- ✅ **Linux** - Fully supported and recommended for production
+- ✅ **macOS** - Fully supported
+- ⚠️ **Windows** - Only via WSL2 (not recommended for production)
+
+**Windows users**:
+- Use WSL2 for development/testing
+- For production, deploy to a Linux server (VPS, cloud, etc.)
+- See [Windows setup guide](../README.md#windows-setup-wsl2) for details
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
