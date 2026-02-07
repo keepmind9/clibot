@@ -375,6 +375,52 @@ ctrlt/ctrl-t    # Send Ctrl+T
 - `ctrl-c` → Interrupt current process
 - `ctrl-t` → Trigger Ctrl+T action
 
+## Deployment
+
+For production deployment, clibot can be run as a system service using systemd or supervisor.
+
+**Quick setup (systemd)**:
+```bash
+# Create dedicated user
+sudo useradd -r -s /bin/false clibot
+
+# Install service file
+sudo cp deploy/clibot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable clibot
+sudo systemctl start clibot
+```
+
+**Quick setup (supervisor)**:
+```bash
+# Install supervisor
+sudo apt-get install supervisor  # Ubuntu/Debian
+
+# Install config file
+sudo cp deploy/clibot.conf /etc/supervisor/conf.d/
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start clibot
+```
+
+**Quick setup (management script)**:
+```bash
+# For development and testing
+chmod +x deploy/clibot.sh
+./deploy/clibot.sh start
+./deploy/clibot.sh status
+./deploy/clibot.sh logs
+```
+
+For detailed deployment instructions, including:
+- Creating dedicated user
+- Configuration management
+- Log rotation
+- Troubleshooting
+- Security best practices
+
+See [Deployment Guide](./deploy/DEPLOYMENT.md)
+
 ## Security
 
 clibot is essentially a remote code execution tool. **User whitelist must be enabled**. By default, `whitelist_enabled: true`, meaning only whitelisted users can use the system.

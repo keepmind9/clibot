@@ -1,0 +1,63 @@
+# clibot systemd service file
+# Install to: /etc/systemd/system/clibot.service
+# Then run: sudo systemctl daemon-reload && sudo systemctl enable clibot && sudo systemctl start clibot
+#
+# === CUSTOMIZABLE PATHS ===
+# You can change these paths according to your setup:
+#   - User/Group:               User to run clibot (default: clibot)
+#   - WorkingDirectory:         Working directory (default: /opt/clibot)
+#   - ExecStart:                Binary path and config file location
+#   - StandardOutput/Error:     Logging configuration (using journal by default)
+#
+# Common config locations:
+#   - User-specific:  ~/.config/clibot/config.yaml
+#   - System-wide:     /etc/clibot/config.yaml
+#   - Project dir:     ./config.yaml
+#   - Custom path:     /any/path/config.yaml
+#
+# Example: Use custom config location
+#   ExecStart=/usr/local/bin/clibot serve --config /custom/path/config.yaml
+
+[Unit]
+Description=Clibot - IM to AI CLI bridge
+Documentation=https://github.com/keepmind9/clibot
+After=network.target
+Wants=network-online.target
+
+[Service]
+# User and group to run clibot (YOU CAN CUSTOMIZE)
+User=clibot
+Group=clibot
+
+# Working directory (YOU CAN CUSTOMIZE)
+WorkingDirectory=/opt/clibot
+
+# ExecStart - Binary path and config file (YOU CAN CUSTOMIZE BOTH)
+ExecStart=/usr/local/bin/clibot serve --config /etc/clibot/config.yaml
+
+# Auto-restart configuration
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=clibot
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

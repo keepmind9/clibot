@@ -347,6 +347,52 @@ ctrlt/ctrl-t    # 发送 Ctrl+T
 - `ctrl-c` → 中断当前进程
 - `ctrl-t` → 触发 Ctrl+T 操作
 
+## 部署
+
+在生产环境中，clibot 可以使用 systemd 或 supervisor 作为系统服务运行。
+
+**快速设置（systemd）**：
+```bash
+# 创建专用用户
+sudo useradd -r -s /bin/false clibot
+
+# 安装服务文件
+sudo cp deploy/clibot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable clibot
+sudo systemctl start clibot
+```
+
+**快速设置（supervisor）**：
+```bash
+# 安装 supervisor
+sudo apt-get install supervisor  # Ubuntu/Debian
+
+# 安装配置文件
+sudo cp deploy/clibot.conf /etc/supervisor/conf.d/
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start clibot
+```
+
+**快速设置（管理脚本）**：
+```bash
+# 用于开发和测试
+chmod +x deploy/clibot.sh
+./deploy/clibot.sh start
+./deploy/clibot.sh status
+./deploy/clibot.sh logs
+```
+
+详细的部署说明，包括：
+- 创建专用用户
+- 配置管理
+- 日志轮转
+- 故障排查
+- 安全最佳实践
+
+参见 [部署指南](./deploy/DEPLOYMENT_zh.md)
+
 ## 安全
 
 clibot 本质上是一个远程代码执行工具。**必须启用用户白名单**。默认情况下 `whitelist_enabled: true`，即只有白名单中的用户可以使用系统。
