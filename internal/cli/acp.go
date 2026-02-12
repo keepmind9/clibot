@@ -78,7 +78,7 @@ type acpClient struct {
 func NewACPAdapter(config ACPAdapterConfig) (*ACPAdapter, error) {
 	// Set default timeout if not specified
 	if config.RequestTimeout == 0 {
-		config.RequestTimeout = 5 * time.Minute
+		config.RequestTimeout = defaultACPRequestTimeout
 	}
 
 	return &ACPAdapter{
@@ -101,7 +101,7 @@ func (a *ACPAdapter) UseHook() bool {
 
 // GetPollInterval returns polling interval (ACP uses request/response)
 func (a *ACPAdapter) GetPollInterval() time.Duration {
-	return 1 * time.Second
+	return acpPollInterval
 }
 
 // GetStableCount returns stable count (not used in ACP mode)
@@ -201,7 +201,7 @@ func (a *ACPAdapter) SendInput(sessionName, input string) error {
 	select {
 	case <-sess.connReady:
 		// Connection is ready
-	case <-time.After(30 * time.Second):
+	case <-time.After(acpConnectionReadyTimeout):
 		return fmt.Errorf("timeout waiting for ACP connection to be ready")
 	case <-sess.ctx.Done():
 		return fmt.Errorf("session cancelled while waiting for connection")
@@ -387,15 +387,15 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clie
 			a.conn.SetLogger(slog.Default())
 
 			// Try to call NewSession to get sessionId with retries
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(acpConnectionStabilizeDelay)
 
 			var newSessionResp acp.NewSessionResponse
 			var err error
-			maxRetries := 3
-			retryDelay := 2 * time.Second
+			maxRetries := acpNewSessionMaxRetries
+			retryDelay := acpNewSessionRetryDelay
 
 			for attempt := 1; attempt <= maxRetries; attempt++ {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), acpNewSessionTimeout)
 
 				logger.WithField("attempt", attempt).Info("acp-calling-new-session")
 				newSessionResp, err = a.conn.NewSession(ctx, acp.NewSessionRequest{
@@ -476,7 +476,7 @@ func (a *ACPAdapter) connectRemoteServer(sessionName string, workDir string, tra
 	}
 
 	// Connect to remote server with timeout
-	conn, err := net.DialTimeout(network, address, 10*time.Second)
+	conn, err := net.DialTimeout(network, address, acpDialTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s server at %s: %w", transportType, address, err)
 	}
@@ -493,15 +493,15 @@ func (a *ACPAdapter) connectRemoteServer(sessionName string, workDir string, tra
 			a.conn.SetLogger(slog.Default())
 
 			// Try to call NewSession to get sessionId with retries
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(acpConnectionStabilizeDelay)
 
 			var newSessionResp acp.NewSessionResponse
 			var err error
-			maxRetries := 3
-			retryDelay := 2 * time.Second
+			maxRetries := acpNewSessionMaxRetries
+			retryDelay := acpNewSessionRetryDelay
 
 			for attempt := 1; attempt <= maxRetries; attempt++ {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), acpNewSessionTimeout)
 
 				logger.WithField("attempt", attempt).Info("acp-calling-new-session")
 				newSessionResp, err = a.conn.NewSession(ctx, acp.NewSessionRequest{
