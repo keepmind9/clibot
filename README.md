@@ -16,6 +16,7 @@ clibot is a lightweight middleware that connects various IM platforms (Feishu, D
 - **Flexible Extension**: Abstract interface design - add new CLI or Bot by simply implementing interfaces
 - **Transparent Proxy**: Most inputs are directly passed through to CLI, maintaining native user experience
 - **Zero Configuration**: Optional polling mode requires no CLI configuration (see modes below)
+- **ACP Support**: Agent Client Protocol mode enables streaming responses, full-duplex communication, and works without tmux for compatible AI CLIs
 
 ## Quick Start
 
