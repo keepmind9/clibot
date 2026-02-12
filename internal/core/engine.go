@@ -223,7 +223,7 @@ func (e *Engine) initializeSessions() error {
 			log.Printf("Session %s is already running", session.Name)
 		} else if sessionConfig.AutoStart {
 			log.Printf("Auto-starting session %s", session.Name)
-			if err := adapter.CreateSession(session.Name, session.WorkDir, session.StartCmd); err != nil {
+			if err := adapter.CreateSession(session.Name, session.WorkDir, session.StartCmd, sessionConfig.Transport); err != nil {
 				log.Printf("Failed to create session %s: %v", session.Name, err)
 				continue
 			}
@@ -842,7 +842,8 @@ func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
 	}
 
 	// 9. Create tmux session and start CLI
-	if err := adapter.CreateSession(name, expandedDir, startCmd); err != nil {
+	// For dynamic sessions, transport is typically empty (non-ACP adapters)
+	if err := adapter.CreateSession(name, expandedDir, startCmd, ""); err != nil {
 		logger.WithField("error", err).Error("failed-to-create-dynamic-session")
 		e.SendToBot(msg.Platform, msg.Channel,
 			fmt.Sprintf("❌ Failed to create session: %v", err))
@@ -1208,6 +1209,37 @@ func (e *Engine) SendToBot(platform, channel, message string) {
 			}).Info("message-sent-to-bot")
 		}
 	}
+}
+
+// SendResponseToSession sends a message to the bot channel associated with a session
+// This is used by CLI adapters to send responses back to users
+func (e *Engine) SendResponseToSession(sessionName, message string) {
+	e.sessionMu.RLock()
+	botChannel, exists := e.sessionChannels[sessionName]
+	e.sessionMu.RUnlock()
+
+	if !exists {
+		logger.WithField("session", sessionName).Warn("no-bot-channel-found-for-session")
+		return
+	}
+
+	// Skip empty messages
+	if strings.TrimSpace(message) == "" {
+		logger.WithFields(logrus.Fields{
+			"session": sessionName,
+			"event":   "skip_empty_response",
+		}).Info("skipping-empty-response-delivery")
+		return
+	}
+
+	logger.WithFields(logrus.Fields{
+		"session":         sessionName,
+		"platform":        botChannel.Platform,
+		"channel":         botChannel.Channel,
+		"response_length": len(message),
+	}).Info("sending-response-to-user")
+
+	e.SendToBot(botChannel.Platform, botChannel.Channel, message)
 }
 
 // SendToAllBots sends a message to all active bots

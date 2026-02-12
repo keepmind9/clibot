@@ -133,24 +133,21 @@ sessions:
   #   work_dir: "/path/to/workdir"
   #   auto_start: true
 
+  - name: "claude-remote-tcp"
+    cli_type: "acp"
+    work_dir: "/home/user/projects/demo"
+    transport: "tcp://127.0.0.1:9000"  # TCP to localhost
+
+  # Example session 6: ACP remote via Unix socket
+  - name: "claude-unix"
+    cli_type: "acp"
+    work_dir: "/home/user/projects/demo"
+    transport: "unix:///tmp/acp.sock"  # Unix socket
+
 # ==============================================================================
 # Bot Configuration
 # ==============================================================================
-# Configure your IM bot credentials here
-
 bots:
-  # Feishu (Lark) Bot
-  feishu:
-    enabled: false  # Set to true to enable
-    # Get credentials from: https://open.feishu.cn/app
-    #
-    # TIP: Use environment variables for better security
-    # See docs above on how to use ENV variables in config
-    app_id: "cli_1234567890abcd"           # Replace with your app_id
-    app_secret: "abc123def456..."          # Replace with your app_secret
-    # encrypt_key: "your_encrypt_key"      # Optional: Event encryption
-    # verification_token: "your_token"     # Optional: Verification token
-
   # Discord Bot
   discord:
     enabled: false  # Set to true to enable
@@ -160,6 +157,11 @@ bots:
     # See docs above on how to use ENV variables in config
     token: "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.GhIjKl..."  # Replace with your bot token
     channel_id: "123456789012345678"              # Replace with your channel ID
+
+  feishu:
+    enabled: false
+    app_id: "cli_a...."
+    app_secret: "HTCoxSDE3...."
 
   # Telegram Bot
   telegram:
@@ -210,14 +212,20 @@ cli_adapters:
     # stable_count: 3
     # poll_timeout: "1h"
 
+  # ACP Adapter (Agent Client Protocol)
+  acp:
+    # Request timeout for ACP communication
+    # Default is 5 minutes if not specified
+    request_timeout: "5m"
+
 # ==============================================================================
 # Logging Configuration
 # ==============================================================================
 logging:
-  level: "info"               # Options: debug, info, warn, error
-  file: "/var/log/clibot/clibot.log"
-  max_size: 100               # Max log file size in MB
-  max_backups: 5              # Number of backup files to keep
-  max_age: 30                 # Days to keep logs
-  compress: true              # Compress old log files (gzip)
-  enable_stdout: true         # Also output to console
+  level: info  # debug, info, warn, error
+  # file: /var/log/clibot/clibot.log  # Log file path
+  max_size: 100  # Single file max size in MB (default: 100)
+  max_backups: 5  # Number of backups to keep (default: 5)
+  max_age: 30  # Maximum days to retain (default: 30)
+  compress: true  # Whether to compress old logs (default: true)
+  enable_stdout: true  # Also output to console (default: true)

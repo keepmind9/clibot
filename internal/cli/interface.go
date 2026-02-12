@@ -16,8 +16,8 @@
 //
 // # Architecture
 //
-// The CLI adapter pattern separates the transport layer (HTTP, file I/O, tmux)
-// from the protocol logic. Each adapter:
+// The CLI adapter pattern separates transport layer (HTTP, file I/O, tmux)
+// from protocol logic. Each adapter:
 //
 //  1. Creates/manages tmux sessions for the CLI
 //  2. Sends user input via tmux send-keys
@@ -62,7 +62,9 @@ type CLIAdapter interface {
 
 	// CreateSession creates a new session and starts the CLI with the specified command
 	// The startCmd parameter allows sessions to use different commands than the adapter default
-	CreateSession(sessionName, workDir, startCmd string) error
+	// The transportURL parameter is for ACP adapter (e.g., "stdio://", "tcp://host:port", "unix:///path")
+	// Other adapters should ignore this parameter
+	CreateSession(sessionName, workDir, startCmd, transportURL string) error
 
 	// UseHook returns whether this adapter uses hook mode (true) or polling mode (false)
 	// Hook mode: Real-time notifications via CLI hooks (requires CLI configuration)

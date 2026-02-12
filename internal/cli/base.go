@@ -63,7 +63,8 @@ func (b *BaseAdapter) IsSessionAlive(sessionName string) bool {
 
 // CreateSession creates a new tmux session and starts the CLI
 // This method is idempotent: if the session already exists, it returns successfully
-func (b *BaseAdapter) CreateSession(sessionName, workDir, startCmd string) error {
+// The transportURL parameter is ignored by base adapters (only used by ACP)
+func (b *BaseAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string) error {
 	// Idempotency check: if session already exists, return success
 	if b.IsSessionAlive(sessionName) {
 		logger.WithField("session", sessionName).Info("session already exists, skipping creation")

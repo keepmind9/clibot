@@ -122,6 +122,28 @@ func init() {
 
 // registerCLIAdapters registers all configured CLI adapters using factory pattern
 func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
+	// Register ACP adapter (uses session-level config)
+	// Check if any session uses ACP transport
+	for _, session := range config.Sessions {
+		if session.CLIType == "acp" && session.Transport != "" {
+			// ACP config is session-level (transport URL is in session config)
+			// Use default timeout since no global ACP config exists
+			acpAdapter, err := cli.NewACPAdapter(cli.ACPAdapterConfig{
+				RequestTimeout: 0, // Will use default 5 minutes
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create ACP adapter: %w", err)
+			}
+			// Set engine reference for sending responses
+			acpAdapter.SetEngine(engine)
+			engine.RegisterCLIAdapter("acp", acpAdapter)
+
+			// Only register once for all ACP sessions
+			break
+		}
+	}
+
+	// Register hook/polling adapters
 	for cliType, cliConfig := range config.CLIAdapters {
 		var adapter cli.CLIAdapter
 		var err error

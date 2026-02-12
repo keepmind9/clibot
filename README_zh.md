@@ -304,7 +304,7 @@ clibot hook --cli-type <type> [flags]
 ```
 
 **参数:**
-- `--cli-type <type>`: CLI 类型（claude/gemini/opencode）**[必填]**
+- `--cli-type <type>`: CLI 类型（claude/gemini/opencode/acp）**[必填]**
 - `-p, --port <number>`: Hook 服务器端口（默认: 8080）
 
 **用法:**
@@ -380,6 +380,48 @@ cli_adapters:
 **配置建议:**
 - `poll_interval`: 1-2 秒通常是最佳选择
 - `stable_count`: 2-3 可以在速度和可靠性之间取得平衡
+
+### ACP 模式 (Agent Client Protocol)
+
+**工作原理:**
+1. clibot 作为 ACP 客户端，通过 JSON-RPC 2.0 协议与 CLI 工具通信
+2. 启动 ACP 服务器进程（如 claude-code-acp、gemini --experimental-acp）
+3. 使用 ACP 协议发送提示（Prompt）并接收流式响应
+
+**优点:**
+- ✅ 标准化协议（基于 JSON-RPC 2.0）
+- ✅ 统一适配器（一个 ACP 适配多个 AI CLI 工具）
+- ✅ 支持远程部署（TCP/Unix socket）
+- ✅ 无需 tmux 依赖
+- ✅ 实时请求/响应（无轮询延迟）
+
+**缺点:**
+- ⚠️ 需要 CLI 工具支持 ACP 协议
+- ⚠️ 配置相对复杂
+
+**支持的 CLI 工具:**
+- Claude Code: `claude-code-acp`
+- Gemini CLI: `gemini --experimental-acp`
+- OpenCode: `opencode acp`
+
+**配置示例:**
+```yaml
+cli_adapters:
+  acp:
+    transport: stdio              # 传输方式: stdio (默认), tcp, unix
+    address: /tmp/acp.sock      # 地址: TCP地址或 Unix socket 路径
+    request_timeout: "5m"         # 请求超时
+
+sessions:
+  - name: "claude-acp"
+    cli_type: "acp"
+    work_dir: "/path/to/project"
+    start_cmd: "claude-code-acp"
+```
+
+**协议规范:**
+- 官方文档: https://agentclientprotocol.com/
+- Go SDK: https://github.com/coder/acp-go-sdk
 
 ## 项目结构
 

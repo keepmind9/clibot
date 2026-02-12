@@ -188,7 +188,7 @@ func TestClaudeAdapter_CreateSession(t *testing.T) {
 	// Test CreateSession with a unique name to avoid conflicts
 	sessionName := "test-clibot-session-12345"
 
-	err = adapter.CreateSession(sessionName, "/tmp", "claude")
+	err = adapter.CreateSession(sessionName, "/tmp", "claude", "")
 	// This might fail if tmux is not installed or not configured
 	// We're just testing that it doesn't panic
 	if err != nil {
@@ -218,13 +218,13 @@ func TestClaudeAdapter_CreateSession_Idempotent(t *testing.T) {
 	exec.Command("tmux", "kill-session", "-t", sessionName).Run()
 
 	// First call
-	err = adapter.CreateSession(sessionName, "/tmp", "echo 'test'")
+	err = adapter.CreateSession(sessionName, "/tmp", "echo 'test'", "")
 	if err != nil {
 		t.Fatalf("First CreateSession failed: %v", err)
 	}
 
 	// Second call should succeed due to idempotency (session already exists)
-	err = adapter.CreateSession(sessionName, "/tmp", "echo 'test'")
+	err = adapter.CreateSession(sessionName, "/tmp", "echo 'test'", "")
 	if err != nil {
 		t.Fatalf("Second CreateSession should succeed (idempotent), but failed: %v", err)
 	}

@@ -305,7 +305,7 @@ clibot hook --cli-type <type> [flags]
 ```
 
 **Flags:**
-- `--cli-type <type>`: CLI type (claude/gemini/opencode) **[required]**
+- `--cli-type <type>`: CLI type (claude/gemini/opencode/acp) **[required]**
 - `-p, --port <number>`: Hook server port (default: 8080)
 
 **Usage:**
