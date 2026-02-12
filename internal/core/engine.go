@@ -424,8 +424,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	// Step 3.5: Capture before snapshot for incremental extraction (polling mode only)
 	adapter := e.cliAdapters[session.CLIType]
 	var beforeCapture string
-	if e.inputTracker != nil && !adapter.UseHook() {
-		var err error
+	if e.inputTracker != nil && !adapter.UseHook() && session.NeedsWatchdog() {		var err error
 		beforeCapture, err = watchdog.CapturePane(session.Name, capturePaneLine)
 		if err != nil {
 			logger.WithFields(logrus.Fields{
