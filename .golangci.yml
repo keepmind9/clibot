@@ -1,6 +1,8 @@
 run:
   # Timeout for analysis
   timeout: 5m
+  # Target Go version
+  go: "1.24"
   # Include test files
   tests: true
 
