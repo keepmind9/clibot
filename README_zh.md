@@ -412,6 +412,35 @@ sessions:
 - ⚠️ 需要支持 ACP 的 CLI（如 gemini --experimental-acp）
 - ⚠️ 连接建立可能需要时间（重试最多 30 秒）
 
+#### Claude Code 用户重要提示
+
+**ACP 模式无法提供完整的 Claude Code CLI 功能。**
+
+目前，Claude Code CLI 原生不支持 ACP 服务器模式。第三方工具如 `claude-code-acp`（由 Zed Industries 开发）实现了 ACP 协议，但存在重大限制：
+
+| 功能 | Claude Code CLI | claude-code-acp |
+|------|----------------|-------------------|
+| 本地 Skills | ✅ 完全支持 | ❌ 不支持 |
+| 本地 MCP 服务器 | ✅ 配置文件管理 | ❌ 需要代码中指定 |
+| 本地文件操作 | ✅ 原生实现 | ❌ 功能受限 |
+| 终端操作 | ✅ 完整支持 | ❌ 不支持 |
+| Edit Review | ✅ 原生功能 | ⚠️ 简化实现 |
+| TODO Lists | ✅ 完整支持 | ⚠️ 简化实现 |
+| 本地配置 | ✅ `~/.config/claude-code/` | ❌ 无本地配置 |
+
+**Claude Code 用户建议：**
+使用 **Hook 模式**或**轮询模式**配合官方 `claude` CLI，以获得完整功能包括本地 skills、MCP 服务器和所有原生功能：
+
+```yaml
+# Claude Code 推荐配置
+sessions:
+  - name: "claude"
+    cli_type: "claude"
+    work_dir: "/path/to/workspace"
+    start_cmd: "claude"
+    # use_hook: true  # 推荐启用 hook 模式以获得更好的体验
+```
+
 ## 项目结构
 
 ```

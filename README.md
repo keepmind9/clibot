@@ -441,6 +441,35 @@ sessions:
 - ⚠️ Requires ACP-compatible CLI (e.g., gemini --experimental-acp)
 - ⚠️ Connection establishment may take time (up to 30s with retries)
 
+#### Important Note for Claude Code Users
+
+**ACP mode does NOT provide full Claude Code CLI functionality.**
+
+Currently, Claude Code CLI does not natively support ACP server mode. Third-party tools like `claude-code-acp` (by Zed Industries) implement ACP protocol but have significant limitations:
+
+| Feature | Claude Code CLI | claude-code-acp |
+|---------|----------------|-------------------|
+| Local Skills | ✅ Full support | ❌ Not available |
+| Local MCP servers | ✅ Config file management | ❌ Must be hardcoded |
+| Local file operations | ✅ Native implementation | ❌ Limited functionality |
+| Terminal operations | ✅ Full support | ❌ Not supported |
+| Edit Review | ✅ Native feature | ⚠️ Simplified |
+| TODO Lists | ✅ Full support | ⚠️ Simplified |
+| Local configuration | ✅ `~/.config/claude-code/` | ❌ No local config |
+
+**Recommendation for Claude Code users:**
+Use **Hook Mode** or **Polling Mode** with the official `claude` CLI to access full functionality including local skills, MCP servers, and all native features:
+
+```yaml
+# Recommended configuration for Claude Code
+sessions:
+  - name: "claude"
+    cli_type: "claude"
+    work_dir: "/path/to/workspace"
+    start_cmd: "claude"
+    # use_hook: true  # Enable hook mode for better experience
+```
+
 ## Project Structure
 
 ```
