@@ -212,6 +212,26 @@ cli_adapters:
     # stable_count: 3
     # poll_timeout: "1h"
 
+  # PTY Adapter (Pseudo Terminal)
+  pty:
+    # PTY type - which PTY backend to use
+    # - "auto" (default): Automatically choose based on environment
+    #   * On Windows: Prefer WSL if available, otherwise use ConPTY
+    #   * On Linux/macOS: Use native PTY
+    # - "conpty": Force Windows ConPTY (Windows 10 1809+)
+    # - "wsl": Force WSL 2 (requires WSL installation)
+    pty_type: "auto"
+
+    # WSL distro (only used when pty_type is "wsl" or "auto" on Windows)
+    # Examples: "Ubuntu", "Ubuntu-22.04", "Debian", "docker-desktop-data"
+    # If empty, uses WSL's default distribution
+    # distro: "Ubuntu"
+
+    # Environment variables to set for the PTY session
+    # env:
+    #   LANG: "en_US.UTF-8"     # Recommended for Windows ConPTY
+    #   PYTHONIOENCODING: "utf-8"
+
   # ACP Adapter (Agent Client Protocol)
   acp:
     # Timeout - max time without any activity before cancelling request

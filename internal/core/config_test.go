@@ -219,8 +219,8 @@ func TestGetCLIAdapterConfig_ValidAdapter_ReturnsConfig(t *testing.T) {
 	config := &Config{
 		CLIAdapters: map[string]CLIAdapterConfig{
 			"claude": {
-				Timeout:  "5m",
-				UseHook:  true,
+				Timeout: "5m",
+				UseHook: true,
 			},
 		},
 	}
