@@ -22,6 +22,7 @@ This includes: variable/function names, error messages, comments, documentation,
 
 - **MUST**: Code must compile successfully before considering work complete
 - **MUST**: All tests must pass (`go test ./...`) before marking task as complete
+- **MUST**: Run `make fmt` to format Golang code before committing (automatically enforced via pre-commit hook)
 - **MUST**: No failing tests or compilation errors in final deliverables
 
 ## Git Workflow
