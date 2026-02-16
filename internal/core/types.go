@@ -118,6 +118,9 @@ type CLIAdapterConfig struct {
 	PollInterval string `yaml:"poll_interval"` // Polling interval (e.g., "1s"). Default: "1s"
 	StableCount  int    `yaml:"stable_count"`  // Consecutive stable checks required. Default: 3
 
+	// Environment variables to set for the CLI process
+	Env map[string]string `yaml:"env"`
+
 	// PTY-specific configuration
 	PTY PTYConfig `yaml:"pty,omitempty"`
 }

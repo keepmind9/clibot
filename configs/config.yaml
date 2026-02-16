@@ -240,6 +240,14 @@ cli_adapters:
     # Default: 5 minutes. Set to "0" to use default.
     timeout: "5m"
 
+    # Environment variables to set for the ACP server process
+    # These will be passed to the ACP agent (e.g., claude, gemini)
+    # env:
+    #   ANTHROPIC_API_KEY: "sk-ant-..."    # For Claude Code
+    #   GEMINI_API_KEY: "your-key"        # For Gemini CLI
+    #   LANG: "en_US.UTF-8"                # Set locale
+    #   PYTHONIOENCODING: "utf-8"          # Python encoding
+
     # Note: For ACP mode, timeout acts as idle timeout
     # The system monitors activity from the agent and cancels requests only when
     # there's no activity for the specified duration. This allows long-running

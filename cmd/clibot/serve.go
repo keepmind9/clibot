@@ -131,6 +131,12 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 			var idleTimeout time.Duration
 			var err error
 
+			// Get environment variables (nil if not configured)
+			var env map[string]string
+			if ok {
+				env = acpConfig.Env
+			}
+
 			if ok && acpConfig.Timeout != "" {
 				// Parse timeout if specified
 				idleTimeout, err = time.ParseDuration(acpConfig.Timeout)
@@ -144,6 +150,7 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 			acpAdapter, err := cli.NewACPAdapter(cli.ACPAdapterConfig{
 				IdleTimeout:     idleTimeout, // 0 = use default (5 min)
 				MaxTotalTimeout: 0,           // 0 = use default (1 hour)
+				Env:             env,         // Environment variables
 			})
 			if err != nil {
 				return fmt.Errorf("failed to create ACP adapter: %w", err)

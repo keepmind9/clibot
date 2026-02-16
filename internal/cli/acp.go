@@ -93,6 +93,8 @@ func NewACPAdapter(config ACPAdapterConfig) (*ACPAdapter, error) {
 	logger.WithFields(logrus.Fields{
 		"idle_timeout":      config.IdleTimeout,
 		"max_total_timeout": config.MaxTotalTimeout,
+		"env_count":         len(config.Env),
+		"env_vars":          config.Env,
 	}).Info("acp-adapter-configured")
 
 	return &ACPAdapter{
@@ -523,12 +525,20 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clie
 		cmd.Dir = expandedDir
 	}
 
-	// Set environment
+	// Set environment variables
 	env := os.Environ()
+	envVarCount := 0
 	for k, v := range a.config.Env {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
+		envVarCount++
 	}
 	cmd.Env = env
+
+	logger.WithFields(logrus.Fields{
+		"session":       sessionName,
+		"env_var_count": envVarCount,
+		"env_vars":      a.config.Env,
+	}).Debug("acp-environment-variables-set")
 
 	// Setup stdio pipes
 	stdin, err := cmd.StdinPipe()
