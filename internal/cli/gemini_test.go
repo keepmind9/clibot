@@ -187,16 +187,18 @@ func TestGeminiAdapter_LastSessionFile(t *testing.T) {
 		adapter, err := NewGeminiAdapter(config)
 		require.NoError(t, err)
 
-		// Create a temporary directory
 		tmpDir := t.TempDir()
-		homeDir, _ := os.UserHomeDir()
 		projectHash := computeProjectHash(tmpDir)
+		
+		homeDir, _ := os.UserHomeDir()
 		chatsDir := filepath.Join(homeDir, ".gemini", "tmp", projectHash, "chats")
 
 		// Create directory structure
 		err = os.MkdirAll(chatsDir, 0755)
 		require.NoError(t, err)
-		defer os.RemoveAll(filepath.Join(homeDir, ".gemini"))
+		
+		// ONLY remove the specific project directory we created, NOT the entire .gemini
+		defer os.RemoveAll(filepath.Join(homeDir, ".gemini", "tmp", projectHash))
 
 		file, err := adapter.lastSessionFile(tmpDir)
 
