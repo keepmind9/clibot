@@ -28,13 +28,12 @@ type Session struct {
 }
 
 // NeedsWatchdog returns true if session requires watchdog monitoring
-// ACP and PTY sessions handle responses asynchronously via callbacks/goroutines,
+// ACP sessions handle responses asynchronously via callbacks,
 // so they don't need watchdog (tmux polling or hook waiting)
 func (s *Session) NeedsWatchdog() bool {
 	// ACP adapter sends responses directly via SendResponseToSession
-	// PTY adapter sends responses via readPTYOutput goroutine
 	// No need for tmux polling or hook watchdog
-	return s.CLIType != "acp" && s.CLIType != "pty"
+	return s.CLIType != "acp"
 }
 
 // ResponseEvent represents a CLI response event
@@ -120,14 +119,6 @@ type CLIAdapterConfig struct {
 	StableCount  int    `yaml:"stable_count"`  // Consecutive stable checks required. Default: 3
 
 	// Environment variables to set for the CLI process
-	Env map[string]string `yaml:"env"`
-
-	// PTY-specific configuration
-	PTY PTYConfig `yaml:"pty,omitempty"`
-}
-
-// PTYConfig holds configuration specific to the PTY adapter.
-type PTYConfig struct {
 	Env map[string]string `yaml:"env"`
 }
 

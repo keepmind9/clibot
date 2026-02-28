@@ -207,15 +207,6 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 				StableCount:  cliConfig.StableCount,
 				PollTimeout:  timeout,
 			})
-		case "pty":
-			var ptyAdapter *cli.PTYAdapter
-			ptyAdapter, err = cli.NewPTYAdapter(cli.PTYAdapterConfig{
-				Env: cliConfig.PTY.Env,
-			})
-			if err == nil {
-				ptyAdapter.SetEngine(engine)
-				adapter = ptyAdapter
-			}
 		default:
 			log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
 			continue
