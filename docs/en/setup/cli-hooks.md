@@ -2,9 +2,27 @@
 
 This document provides detailed instructions on how to configure hooks for various AI CLI tools to enable real-time notifications in clibot (Hook Mode).
 
+## Configuration Location
+
+To maintain project independence and avoid invading user directories, **project-level configuration is recommended**:
+
+| Configuration Location | Scope | Recommended For |
+|------------------------|-------|-----------------|
+| Project root `.claude/settings.json` | Current project | ✅ **Recommended** - Team collaboration, version control |
+| User directory `~/.claude/settings.json` | Global | Personal development, multi-project sharing |
+
 ## Claude Code
 
-To enable real-time responses with Claude Code, add the following to your `~/.claude/settings.json`:
+Claude Code supports two types of project-level configuration files. Choose based on your scenario:
+
+### Method 1: Personal Configuration (Recommended)
+
+Create `.claude/settings.local.json` in your project root:
+
+**Use cases**:
+- ✅ Personal development environment, non-shared hook configuration
+- ✅ Each developer has different clibot service addresses
+- ✅ `.gitignore` already ignores `settings.local.json` (Claude Code default)
 
 ```json
 {
@@ -33,9 +51,29 @@ To enable real-time responses with Claude Code, add the following to your `~/.cl
 }
 ```
 
+### Method 2: Team-shared Configuration (Optional)
+
+If all team members use the same clibot configuration, create `.claude/settings.json` in your project root:
+
+**Caution**:
+- ⚠️ This file will be committed to Git
+- ⚠️ Ensure all team members' clibot configurations are compatible
+
+### Configuration File Priority
+
+Claude Code loads configurations in the following order (later loaded overrides earlier):
+
+1. `~/.claude/settings.json` (global configuration)
+2. Project root `.claude/settings.json` (team configuration)
+3. Project root `.claude/settings.local.json` (personal configuration)
+
+**Recommendation**: Put hook configuration in `settings.local.json` to avoid affecting team members.
+
 ## Gemini CLI
 
-To enable real-time responses with Gemini CLI, add the following to your `~/.gemini/settings.json`:
+### Project-level Configuration (Recommended)
+
+Gemini CLI supports project-level configuration. Create `.gemini/settings.json` in your project root:
 
 ```json
 {
@@ -71,9 +109,13 @@ To enable real-time responses with Gemini CLI, add the following to your `~/.gem
 }
 ```
 
+### Global Configuration (Optional)
+
+To enable across all projects, add the same configuration to `~/.gemini/settings.json`.
+
 ## OpenCode
 
-OpenCode supports real-time notifications via its plugin system. Create a file named `clibot.ts` in your project's `.opencode/plugin/` directory (or globally in `~/.config/opencode/plugin/`):
+OpenCode natively supports project-level plugins. Create a file named `clibot.ts` in your project's `.opencode/plugin/` directory:
 
 ```typescript
 import { Plugin } from "@opencode-ai/plugin";

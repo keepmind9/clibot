@@ -2,9 +2,72 @@
 
 本文档提供了如何为各种 AI CLI 工具配置 Hook 的详细说明，以实现 clibot 的实时响应（Hook 模式）。
 
+## 配置位置说明
+
+为了保持项目独立性和避免侵入用户目录，建议优先使用**项目级配置**：
+
+| 配置位置 | 范围 | 推荐场景 |
+|---------|------|---------|
+| 项目根目录 `.claude/settings.json` | 当前项目 | ✅ **推荐** - 团队协作，版本控制 |
+| 用户目录 `~/.claude/settings.json` | 全局 | 个人开发，多项目共享 |
+
 ## Claude Code
 
-要实现 Claude Code 的实时响应，请在 `~/.claude/settings.json` 中添加以下配置：
+Claude Code 支持两种项目级配置文件，建议根据场景选择：
+
+### 方式一：个人配置（推荐）
+
+在项目根目录创建 `.claude/settings.local.json`：
+
+**适用场景**：
+- ✅ 个人开发环境，hook 配置不共享
+- ✅ 每个开发者 clibot 服务地址不同
+- ✅ `.gitignore` 已忽略 `settings.local.json`（Claude Code 默认配置）
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clibot hook --cli-type claude"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clibot hook --cli-type claude"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 方式二：团队共享配置（可选）
+
+如果团队所有成员都使用相同的 clibot 配置，在项目根目录创建 `.claude/settings.json`：
+
+**注意**：
+- ⚠️ 此文件会被提交到 Git
+- ⚠️ 确保所有团队成员的 clibot 配置兼容
+
+### 配置文件优先级
+
+Claude Code 按以下顺序加载配置（后加载的覆盖先加载的）：
+
+1. `~/.claude/settings.json`（全局配置）
+2. 项目根目录 `.claude/settings.json`（团队配置）
+3. 项目根目录 `.claude/settings.local.json`（个人配置）
+
+**建议**：将 hook 配置放在 `settings.local.json` 中，避免影响团队成员。
 
 ```json
 {
@@ -35,7 +98,9 @@
 
 ## Gemini CLI
 
-要实现 Gemini CLI 的实时响应，请在 `~/.gemini/settings.json` 中添加以下配置：
+### 项目级配置（推荐）
+
+Gemini CLI 支持项目级配置，在项目根目录创建 `.gemini/settings.json`：
 
 ```json
 {
@@ -71,9 +136,13 @@
 }
 ```
 
+### 全局配置（可选）
+
+如需在所有项目中启用，在 `~/.gemini/settings.json` 中添加相同配置。
+
 ## OpenCode
 
-OpenCode 通过其插件系统支持实时通知。在项目的 `.opencode/plugin/` 目录（或全局目录 `~/.config/opencode/plugin/`）中创建一个名为 `clibot.ts` 的文件：
+OpenCode 原生支持项目级插件系统，在项目的 `.opencode/plugin/` 目录中创建 `clibot.ts`：
 
 ```typescript
 import { Plugin } from "@opencode-ai/plugin";
