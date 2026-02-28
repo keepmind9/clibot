@@ -955,7 +955,7 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 
 	// 4. Success response
 	response := fmt.Sprintf("✅ Your current session is now: **%s**\n\n", sessionName)
-	response += fmt.Sprintf("📊 Session Info:\n")
+	response += "📊 Session Info:\n"
 	response += fmt.Sprintf("  • CLI: %s\n", session.CLIType)
 	response += fmt.Sprintf("  • State: %s\n", session.State)
 	response += fmt.Sprintf("  • WorkDir: %s\n", session.WorkDir)
@@ -1269,35 +1269,6 @@ func (e *Engine) SendToAllBots(message string) {
 	}
 }
 
-// startWatchdog starts monitoring for CLI interactive prompts
-//
-// Note: This is a placeholder for future watchdog monitoring functionality.
-// The current implementation uses hook-based retry mechanism in handleHookRequest.
-// Full watchdog implementation is tracked at: https://github.com/keepmind9/clibot/issues/123
-// startWatchdog starts monitoring the CLI session for completion
-// It uses either hook mode (real-time notifications) or polling mode (periodic checks)
-func (e *Engine) startWatchdog(session *Session, userPrompt string, beforeCapture string) error {
-	adapter := e.cliAdapters[session.CLIType]
-
-	// Check if session needs watchdog monitoring
-	// ACP adapter handles responses asynchronously via SessionUpdate callbacks
-	if !session.NeedsWatchdog() {
-		logger.WithFields(logrus.Fields{
-			"session": session.Name,
-		}).Debug("skipping-watchdog-for-async-adapter")
-		return nil
-	}
-
-	// Check which mode to use
-	if adapter.UseHook() {
-		logger.WithField("session", session.Name).Debug("using-hook-mode")
-		return e.runWatchdogWithHook(session)
-	} else {
-		logger.WithField("session", session.Name).Debug("using-polling-mode")
-		return e.runWatchdogPolling(session, userPrompt, beforeCapture)
-	}
-}
-
 // startWatchdogWithContext starts monitoring with a cancellable context
 // This prevents goroutine leaks when multiple messages are sent rapidly
 func (e *Engine) startWatchdogWithContext(ctx context.Context, session *Session, userPrompt string, beforeCapture string) error {
@@ -1334,11 +1305,6 @@ func (e *Engine) runWatchdogWithHook(session *Session) error {
 	// In hook mode, we just wait for the hook to trigger
 	// The actual processing happens when the hook is received
 	return nil
-}
-
-// runWatchdogPolling implements polling-based monitoring (no CLI configuration required)
-func (e *Engine) runWatchdogPolling(session *Session, userPrompt string, beforeCapture string) error {
-	return e.runWatchdogPollingWithContext(e.ctx, session, userPrompt, beforeCapture)
 }
 
 // runWatchdogPollingWithContext implements polling-based monitoring with cancellable context

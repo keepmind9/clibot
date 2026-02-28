@@ -84,7 +84,6 @@ type SessionGlobalConfig struct {
 }
 
 // SessionConfig represents a session configuration
-// SessionConfig represents a session configuration
 type SessionConfig struct {
 	Name      string `yaml:"name"`
 	CLIType   string `yaml:"cli_type"`

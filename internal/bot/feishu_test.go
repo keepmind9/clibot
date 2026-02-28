@@ -170,12 +170,3 @@ func TestFeishuBot_HandleMessageReceive_NilEvent(t *testing.T) {
 	err = bot.handleMessageReceive(context.Background(), &larkim.P2MessageReceiveV1{})
 	assert.NoError(t, err)
 }
-
-// Helper functions for creating pointers
-func stringPtr(s string) *string {
-	return &s
-}
-
-func int64Ptr(i int64) *int64 {
-	return &i
-}
