@@ -334,6 +334,19 @@ clibot 支持两种模式来连接 AI CLI 工具：
 
 ### ACP 模式 (Agent Client Protocol) - **推荐**
 
+**前置要求:**
+
+ACP 模式需要 CLI 工具支持 Agent Client Protocol。
+
+- **Claude Code CLI**: 需要安装第三方 ACP 适配器
+  ```bash
+  npm install -g @zed-industries/claude-agent-acp
+  ```
+
+- **Gemini CLI**: 使用 `--experimental-acp` 参数启用 ACP 模式
+- **OpenCode CLI**: 使用 `--acp` 参数启用 ACP 模式
+- **其他 CLI**: 请查看各 CLI 工具的官方文档确认 ACP 相关参数
+
 **配置:**
 ```yaml
 sessions:

@@ -335,6 +335,19 @@ clibot supports two modes for connecting AI CLI tools:
 
 ### ACP Mode (Agent Client Protocol) - **Recommended**
 
+**Prerequisites:**
+
+ACP mode requires CLI tools that support the Agent Client Protocol.
+
+- **Claude Code CLI**: Requires third-party ACP adapter
+  ```bash
+  npm install -g @zed-industries/claude-agent-acp
+  ```
+
+- **Gemini CLI**: Use `--experimental-acp` flag to enable ACP mode
+- **OpenCode CLI**: Use `--acp` flag to enable ACP mode
+- **Other CLI**: Check official documentation for ACP-related parameters
+
 **Configuration:**
 ```yaml
 sessions:
