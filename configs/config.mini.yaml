@@ -1,0 +1,43 @@
+# ==============================================================================
+# clibot Quick Start Configuration
+# ==============================================================================
+# This is a minimal configuration for new users to get started quickly.
+#
+# Setup Steps:
+#   1. Copy this file: cp configs/config.mini.yaml ~/.config/clibot/config.yaml
+#   2. Replace YOUR_TELEGRAM_USER_ID with your actual Telegram user ID
+#      (Get it by sending any message to your bot and using 'echo' command)
+#   3. Replace YOUR_BOT_TOKEN with your Telegram bot token
+#      (Get it from BotFather: https://t.me/BotFather)
+#   4. Update work_dir to your actual project directory
+#   5. Run: clibot serve --config ~/.config/clibot/config.yaml
+#
+# For more options, see config.full.yaml
+# ==============================================================================
+
+# Security: whitelist must be enabled
+security:
+  whitelist_enabled: true
+  allowed_users:
+    telegram:
+      - "YOUR_TELEGRAM_USER_ID"    # Replace with your Telegram user ID (number)
+
+# Telegram Bot Configuration
+bots:
+  telegram:
+    enabled: true
+    token: "YOUR_BOT_TOKEN"         # Replace with your Telegram bot token
+
+# Session: ACP Mode (Recommended)
+sessions:
+  - name: "my-project"
+    cli_type: "acp"                 # ACP mode - streaming, no tmux needed
+    work_dir: "/home/user/projects" # Change to your project directory
+    start_cmd: "claude-agent-acp"   # ACP server command
+    transport: "stdio://"           # Use stdio transport
+    auto_start: true
+
+# CLI Adapter Configuration
+cli_adapters:
+  acp:
+    timeout: "5m"                   # Request timeout (idle time)

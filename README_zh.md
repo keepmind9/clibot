@@ -170,20 +170,39 @@ export PATH=$PATH:~/go/bin
 ### 配置
 
 1. 复制配置模板：
+
 ```bash
-cp configs/config.yaml ~/.config/clibot/config.yaml
+# 精简版：只包含必需项（推荐新手）
+cp configs/config.mini.yaml ~/.config/clibot/config.yaml
+
+# 完整版：所有选项和详细说明
+cp configs/config.full.yaml ~/.config/clibot/config.yaml
 ```
 
 2. 编辑配置文件，填写您的 Bot 凭据和白名单用户。
 
 3. 选择运行模式（见下文）：
 
-**方案 A: Hook 模式（默认，推荐）**
+**方案 A: ACP 模式（推荐）**
+- 无需 tmux，流式响应
+- 完整功能支持
+- 需要 ACP 兼容的 CLI（如 claude-agent-acp）
+
+```yaml
+sessions:
+  - name: "claude"
+    cli_type: "acp"
+    work_dir: "/path/to/workspace"
+    start_cmd: "claude-agent-acp"
+    transport: "stdio://"
+```
+
+**方案 B: Hook 模式**
 - 需要配置 CLI 的 Hook
 - 实时通知
 - 详见 [CLI Hook 配置指南](./docs/zh-CN/setup/cli-hooks.md)。
 
-**方案 B: 轮询模式（零配置）**
+**方案 C: 轮询模式（零配置）**
 - 无需对 CLI 进行任何配置
 - 自动轮询 tmux 输出
 - 适合快速上手
@@ -324,9 +343,39 @@ cat hook-data.json | clibot hook --cli-type claude --port 9000
 
 ## 运行模式
 
-clibot 支持两种模式来检测 CLI 何时完成响应：
+clibot 支持三种模式来连接 AI CLI 工具：
 
-### Hook 模式（默认）
+### ACP 模式 (Agent Client Protocol) - **推荐**
+
+**配置:**
+```yaml
+sessions:
+  - name: "claude"
+    cli_type: "acp"
+    work_dir: "/path/to/workspace"
+    start_cmd: "claude-agent-acp"  # 或其他 ACP 兼容的 CLI
+    transport: "stdio://"
+```
+
+**工作原理:**
+1. ACP 服务器作为子进程（stdio）或远程连接（TCP/Unix socket）启动
+2. 客户端通过 Agent Client Protocol 建立连接
+3. 服务器调用 NewSession 创建会话
+4. 客户端使用 sessionId 发送 Prompt 请求
+5. 服务器通过 SessionUpdate 回调流式传输响应
+6. 响应通过 SendResponseToSession 直接发送给用户
+
+**优点:**
+- ✅ 无需 tmux
+- ✅ 流式响应（实时）
+- ✅ 全双工通信
+- ✅ 完整功能支持
+
+**缺点:**
+- ⚠️ 需要支持 ACP 的 CLI（如 claude-agent-acp、gemini --experimental-acp）
+- ⚠️ 连接建立可能需要时间（重试最多 30 秒）
+
+### Hook 模式
 
 **配置:**
 ```yaml
@@ -382,63 +431,43 @@ cli_adapters:
 - `poll_interval`: 1-2 秒通常是最佳选择
 - `stable_count`: 2-3 可以在速度和可靠性之间取得平衡
 
-### ACP 模式 (Agent Client Protocol)
+### 模式选择建议
 
-**配置:**
+**优先级：ACP > Hook > 轮询**
+
+**推荐配置：**
+
 ```yaml
+# 方案 1：ACP 模式（最佳体验）
 sessions:
-  - name: "demo_acp"
+  - name: "claude"
     cli_type: "acp"
     work_dir: "/path/to/workspace"
-    start_cmd: "gemini --experimental-acp"
-    transport: "stdio://"  # 或 "tcp://host:port" 或 "unix:///path/to/socket"
-```
+    start_cmd: "claude-agent-acp"
+    transport: "stdio://"
 
-**工作原理:**
-1. ACP 服务器作为子进程（stdio）或远程连接（TCP/Unix socket）启动
-2. 客户端通过 Agent Client Protocol 建立连接
-3. 服务器调用 NewSession 创建会话
-4. 客户端使用 sessionId 发送 Prompt 请求
-5. 服务器通过 SessionUpdate 回调流式传输响应
-6. 响应通过 SendResponseToSession 直接发送给用户
-
-**优点:**
-- ✅ 无需 tmux
-- ✅ 流式响应（实时）
-- ✅ 全双工通信
-- ✅ 适用于任何支持 ACP 的 AI CLI
-
-**缺点:**
-- ⚠️ 需要支持 ACP 的 CLI（如 gemini --experimental-acp）
-- ⚠️ 连接建立可能需要时间（重试最多 30 秒）
-
-#### Claude Code 用户重要提示
-
-**ACP 模式无法提供完整的 Claude Code CLI 功能。**
-
-目前，Claude Code CLI 原生不支持 ACP 服务器模式。第三方工具如 `claude-code-acp`（由 Zed Industries 开发）实现了 ACP 协议，但存在重大限制：
-
-| 功能 | Claude Code CLI | claude-code-acp |
-|------|----------------|-------------------|
-| 本地 Skills | ✅ 完全支持 | ❌ 不支持 |
-| 本地 MCP 服务器 | ✅ 配置文件管理 | ❌ 需要代码中指定 |
-| 本地文件操作 | ✅ 原生实现 | ❌ 功能受限 |
-| 终端操作 | ✅ 完整支持 | ❌ 不支持 |
-| Edit Review | ✅ 原生功能 | ⚠️ 简化实现 |
-| TODO Lists | ✅ 完整支持 | ⚠️ 简化实现 |
-| 本地配置 | ✅ `~/.config/claude-code/` | ❌ 无本地配置 |
-
-**Claude Code 用户建议：**
-使用 **Hook 模式**或**轮询模式**配合官方 `claude` CLI，以获得完整功能包括本地 skills、MCP 服务器和所有原生功能：
-
-```yaml
-# Claude Code 推荐配置
+# 方案 2：Hook 模式（次选）
 sessions:
   - name: "claude"
     cli_type: "claude"
     work_dir: "/path/to/workspace"
     start_cmd: "claude"
-    # use_hook: true  # 推荐启用 hook 模式以获得更好的体验
+
+cli_adapters:
+  claude:
+    use_hook: true
+
+# 方案 3：轮询模式（零配置，适合快速测试）
+sessions:
+  - name: "claude"
+    cli_type: "claude"
+    work_dir: "/path/to/workspace"
+    start_cmd: "claude"
+
+cli_adapters:
+  claude:
+    use_hook: false
+    poll_interval: "1s"
 ```
 
 ## 项目结构

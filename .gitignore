@@ -23,7 +23,7 @@ vendor/
 
 config.yaml
 *.yaml
-!configs/config.yaml
+!configs/*.yaml
 
 *.log
 

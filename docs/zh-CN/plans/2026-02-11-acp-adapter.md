@@ -36,7 +36,7 @@ Implement a new `ACPAdapter` as a fourth `cli_type` option alongside existing `c
                           │
 ┌─────────────────────────────────────────────────────────────┐
 │  ACP Server (CLI Tools)                                     │
-│  - claude-code-acp                                          │
+│  - claude-agent-acp                                         │
 │  - gemini --experimental-acp                                │
 │  - opencode acp                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -92,7 +92,7 @@ sessions:
   - name: "claude-acp-session"
     cli_type: "acp"
     work_dir: "~/projects/demo"
-    start_cmd: "claude-code-acp"
+    start_cmd: "claude-agent-acp"
 
   # ACP adapter with gemini
   - name: "gemini-acp-session"
@@ -497,5 +497,5 @@ internal/cli/
 
 - [ACP Specification](https://github.com/agentclientprotocol/agent-client-protocol)
 - [coder/acp-go-sdk](https://github.com/coder/acp-go-sdk)
-- [Claude Code ACP Adapter](https://github.com/zed-industries/claude-code-acp)
+- [Claude Code ACP Adapter](https://github.com/zed-industries/claude-agent-acp)
 - [JetBrains ACP Documentation](https://www.jetbrains.com/help/ai-assistant/acp.html)

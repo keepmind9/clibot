@@ -170,20 +170,39 @@ export PATH=$PATH:~/go/bin
 ### Configuration
 
 1. Copy the configuration template:
+
 ```bash
-cp configs/config.yaml ~/.config/clibot/config.yaml
+# Minimal: Essential config only (recommended for beginners)
+cp configs/config.mini.yaml ~/.config/clibot/config.yaml
+
+# Full: All options with detailed comments
+cp configs/config.full.yaml ~/.config/clibot/config.yaml
 ```
 
 2. Edit the configuration file and fill in your bot credentials and whitelist users
 
 3. Choose your mode (see below):
 
-**Option A: Hook Mode (Default, Recommended)**
+**Option A: ACP Mode (Recommended)**
+- No tmux required, streaming responses
+- Full feature support
+- Requires ACP-compatible CLI (e.g., claude-agent-acp)
+
+```yaml
+sessions:
+  - name: "claude"
+    cli_type: "acp"
+    work_dir: "/path/to/workspace"
+    start_cmd: "claude-agent-acp"
+    transport: "stdio://"
+```
+
+**Option B: Hook Mode**
 - Requires CLI hook configuration
 - Real-time notifications
 - See [CLI Hook Configuration Guide](./docs/en/setup/cli-hooks.md) for detailed setup.
 
-**Option B: Polling Mode (Zero Config)**
+**Option C: Polling Mode (Zero Config)**
 - No CLI configuration required
 - Automatic tmux polling
 - Perfect for quick start
@@ -325,7 +344,37 @@ See [CLI Hook Configuration Guide](./docs/en/setup/cli-hooks.md) for detailed se
 
 ## Operation Modes
 
-clibot supports two modes for detecting when the CLI has finished responding:
+clibot supports three modes for connecting AI CLI tools:
+
+### ACP Mode (Agent Client Protocol) - **Recommended**
+
+**Configuration:**
+```yaml
+sessions:
+  - name: "claude"
+    cli_type: "acp"
+    work_dir: "/path/to/workspace"
+    start_cmd: "claude-agent-acp"  # or other ACP-compatible CLI
+    transport: "stdio://"
+```
+
+**How it works:**
+1. ACP server starts as subprocess (stdio) or remote connection (TCP/Unix socket)
+2. Client-side connection established with Agent Client Protocol
+3. Server calls NewSession to create session
+4. Client sends Prompt requests with sessionId
+5. Server streams responses via SessionUpdate callbacks
+6. Responses sent directly to user via SendResponseToSession
+
+**Pros:**
+- ✅ No tmux required
+- ✅ Streaming responses (real-time)
+- ✅ Full duplex communication
+- ✅ Full feature support
+
+**Cons:**
+- ⚠️ Requires ACP-compatible CLI (e.g., claude-agent-acp, gemini --experimental-acp)
+- ⚠️ Connection establishment may take time (up to 30s with retries)
 
 ### Hook Mode (Default)
 
@@ -382,92 +431,44 @@ cli_adapters:
 **Configuration Tips:**
 - `poll_interval`: 1-2 seconds is usually optimal
 - `stable_count`: 2-3 balances speed and reliability
-- Faster intervals = quicker response but more CPU
-- Higher `stable_count` = more reliable but slower
 
-**Example Comparison:**
+### Mode Selection Recommendation
+
+**Priority: ACP > Hook > Polling**
+
+**Recommended Configuration:**
+
 ```yaml
-# Hook mode - fast and accurate
-claude:
-  use_hook: true
-  # No polling config needed
-
-# Polling mode - zero config
-claude_simple:
-  use_hook: false
-  poll_interval: "1s"
-  stable_count: 3
-
-# Polling mode - optimized for speed
-claude_fast:
-  use_hook: false
-  poll_interval: "500ms"  # Check every 0.5s
-  stable_count: 2
-
-# Polling mode - optimized for efficiency
-claude_efficient:
-  use_hook: false
-  poll_interval: "2s"
-  stable_count: 4
-```
-
-### ACP Mode (Agent Client Protocol)
-
-**Configuration:**
-```yaml
+# Option 1: ACP Mode (Best Experience)
 sessions:
-  - name: "demo_acp"
+  - name: "claude"
     cli_type: "acp"
     work_dir: "/path/to/workspace"
-    start_cmd: "gemini --experimental-acp"
-    transport: "stdio://"  # or "tcp://host:port" or "unix:///path/to/socket"
-```
+    start_cmd: "claude-agent-acp"
+    transport: "stdio://"
 
-**How it works:**
-1. ACP server starts as subprocess (stdio) or remote connection (TCP/Unix socket)
-2. Client-side connection established with Agent Client Protocol
-3. Server calls NewSession to create session
-4. Client sends Prompt requests with sessionId
-5. Server streams responses via SessionUpdate callbacks
-6. Responses sent directly to user via SendResponseToSession
-
-**Pros:**
-- ✅ No tmux required
-- ✅ Streaming responses (real-time)
-- ✅ Full duplex communication
-- ✅ Works with any ACP-compatible AI CLI
-
-**Cons:**
-- ⚠️ Requires ACP-compatible CLI (e.g., gemini --experimental-acp)
-- ⚠️ Connection establishment may take time (up to 30s with retries)
-
-#### Important Note for Claude Code Users
-
-**ACP mode does NOT provide full Claude Code CLI functionality.**
-
-Currently, Claude Code CLI does not natively support ACP server mode. Third-party tools like `claude-code-acp` (by Zed Industries) implement ACP protocol but have significant limitations:
-
-| Feature | Claude Code CLI | claude-code-acp |
-|---------|----------------|-------------------|
-| Local Skills | ✅ Full support | ❌ Not available |
-| Local MCP servers | ✅ Config file management | ❌ Must be hardcoded |
-| Local file operations | ✅ Native implementation | ❌ Limited functionality |
-| Terminal operations | ✅ Full support | ❌ Not supported |
-| Edit Review | ✅ Native feature | ⚠️ Simplified |
-| TODO Lists | ✅ Full support | ⚠️ Simplified |
-| Local configuration | ✅ `~/.config/claude-code/` | ❌ No local config |
-
-**Recommendation for Claude Code users:**
-Use **Hook Mode** or **Polling Mode** with the official `claude` CLI to access full functionality including local skills, MCP servers, and all native features:
-
-```yaml
-# Recommended configuration for Claude Code
+# Option 2: Hook Mode (Second Choice)
 sessions:
   - name: "claude"
     cli_type: "claude"
     work_dir: "/path/to/workspace"
     start_cmd: "claude"
-    # use_hook: true  # Enable hook mode for better experience
+
+cli_adapters:
+  claude:
+    use_hook: true
+
+# Option 3: Polling Mode (Zero Config, Good for Quick Testing)
+sessions:
+  - name: "claude"
+    cli_type: "claude"
+    work_dir: "/path/to/workspace"
+    start_cmd: "claude"
+
+cli_adapters:
+  claude:
+    use_hook: false
+    poll_interval: "1s"
 ```
 
 ## Project Structure

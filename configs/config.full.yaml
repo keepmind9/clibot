@@ -23,7 +23,7 @@
 #   Linux/Mac:     export DISCORD_TOKEN="your_token_here"
 #   Windows (cmd):  set DISCORD_TOKEN=your_token_here
 #   Windows (PS):  env:DISCORD_TOKEN="your_token_here"
-#   Docker:        -e DISCORD_TOKEN=your_token_here
+#   Docker:        -e DISCORD_TOKEN="your_token_here"
 #
 # Benefits:
 #   - More secure: credentials not in config file
@@ -113,36 +113,71 @@ session:
 # Session Management
 # ==============================================================================
 # Configure which CLI sessions clibot should manage
+#
+# Mode Priority: ACP > Hook > Polling
+#   - ACP: Best experience, streaming, no tmux needed
+#   - Hook: Real-time, requires CLI hook configuration
+#   - Polling: Zero config, slight delay
+# ==============================================================================
 sessions:
-  # Example session 1: Claude Code
-  - name: "my-project"
-    cli_type: "claude"           # Options: claude, gemini, opencode
+  # ============================================================================
+  # ACP Mode Sessions (Recommended)
+  # ============================================================================
+
+  # Example 1: Claude Code with ACP (Best Experience)
+  # Requires: claude-agent-acp installed
+  - name: "claude-acp"
+    cli_type: "acp"
     work_dir: "/home/user/projects/my-project"   # ABSOLUTE path required
-    auto_start: true            # Auto-create tmux session if not exists
-    # start_cmd: "claude"        # Optional: Custom startup command
+    start_cmd: "claude-agent-acp"                # ACP server command
+    transport: "stdio://"                        # stdio transport
+    auto_start: true
 
-  # Example session 2: Gemini CLI
-  - name: "backend-tests"
-    cli_type: "gemini"
-    work_dir: "/home/user/backend-tests"
-    auto_start: false           # Don't auto-start, must create manually
+  # Example 2: Gemini CLI with ACP
+  # Requires: gemini with --experimental-acp flag
+  # - name: "gemini-acp"
+  #   cli_type: "acp"
+  #   work_dir: "/home/user/projects/my-project"
+  #   start_cmd: "gemini --experimental-acp"
+  #   transport: "stdio://"
+  #   auto_start: true
 
-  # Example session 3: OpenCode
+  # Example 3: ACP remote via TCP
+  # - name: "claude-remote-tcp"
+  #   cli_type: "acp"
+  #   work_dir: "/home/user/projects/demo"
+  #   transport: "tcp://127.0.0.1:9000"
+
+  # Example 4: ACP remote via Unix socket
+  # - name: "claude-unix"
+  #   cli_type: "acp"
+  #   work_dir: "/home/user/projects/demo"
+  #   transport: "unix:///tmp/acp.sock"
+
+  # ============================================================================
+  # Hook/Polling Mode Sessions
+  # ============================================================================
+
+  # Example 5: Claude Code with Hook/Polling mode
+  # Requires: claude CLI installed
+  # Configure mode in cli_adapters section below
+  # - name: "claude-project"
+  #   cli_type: "claude"
+  #   work_dir: "/home/user/projects/my-project"   # ABSOLUTE path required
+  #   auto_start: true
+  #   # start_cmd: "claude"                        # Optional: Custom startup command
+
+  # Example 6: Gemini CLI with Hook/Polling mode
+  # - name: "gemini-tests"
+  #   cli_type: "gemini"
+  #   work_dir: "/home/user/backend-tests"
+  #   auto_start: false                           # Don't auto-start
+
+  # Example 7: OpenCode with Hook/Polling mode
   # - name: "opencode-work"
   #   cli_type: "opencode"
   #   work_dir: "/path/to/workdir"
   #   auto_start: true
-
-  - name: "claude-remote-tcp"
-    cli_type: "acp"
-    work_dir: "/home/user/projects/demo"
-    transport: "tcp://127.0.0.1:9000"  # TCP to localhost
-
-  # Example session 6: ACP remote via Unix socket
-  - name: "claude-unix"
-    cli_type: "acp"
-    work_dir: "/home/user/projects/demo"
-    transport: "unix:///tmp/acp.sock"  # Unix socket
 
 # ==============================================================================
 # Bot Configuration
@@ -186,17 +221,23 @@ bots:
 # CLI Adapter Configuration
 # ==============================================================================
 # Configure how clibot interacts with AI CLI tools
+#
+# Mode Priority: ACP > Hook > Polling
+#   - ACP: Best experience, configure in sessions section
+#   - Hook: Real-time, requires CLI hook configuration
+#   - Polling: Zero config, slight delay (1-3s)
+# ==============================================================================
 cli_adapters:
   claude:
     # Response Mode:
-    #   - hook (Recommended): Real-time notification via HTTP hook
-    #   - polling: Checks tmux output periodically (no CLI config needed)
+    #   - true (hook): Real-time notification via HTTP hook
+    #   - false (polling): Checks tmux output periodically (no CLI config needed)
     use_hook: true  # Default: true
 
     # Polling mode configuration (only used when use_hook: false)
     # poll_interval: "1s"   # How often to check tmux output
     # stable_count: 3       # How many stable outputs before considering complete
-    # timeout: "1h"    # Maximum time to wait
+    # timeout: "1h"         # Maximum time to wait
 
   gemini:
     use_hook: true
@@ -212,7 +253,7 @@ cli_adapters:
     # stable_count: 3
     # poll_timeout: "1h"
 
-  # ACP Adapter (Agent Client Protocol)
+  # ACP Adapter (Agent Client Protocol) - Recommended
   acp:
     # Timeout - max time without any activity before cancelling request
     # If the agent is actively working (sending updates), the request continues
