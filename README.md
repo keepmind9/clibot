@@ -483,6 +483,8 @@ suse myproject    # Switch to session 'myproject'
 suse backend      # Switch to session 'backend'
 ```
 
+💡 **Auto-start**: If a session is not running, `suse` will automatically start it. Sessions with `auto_start: false` will also be started on first use.
+
 **Session types**:
 - **Static sessions**: Configured in config.yaml, persist across restarts
 - **Dynamic sessions**: Created via IM commands, stored in memory only, lost on restart

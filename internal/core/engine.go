@@ -177,7 +177,7 @@ func (e *Engine) initializeSessions() error {
 			log.Printf("Session %s is already running", session.Name)
 		} else if sessionConfig.AutoStart {
 			log.Printf("Auto-starting session %s", session.Name)
-			if err := adapter.CreateSession(session.Name, session.WorkDir, session.StartCmd, sessionConfig.Transport); err != nil {
+			if _, err := e.ensureSessionStarted(session, sessionConfig); err != nil {
 				log.Printf("Failed to create session %s: %v", session.Name, err)
 				continue
 			}
@@ -189,6 +189,35 @@ func (e *Engine) initializeSessions() error {
 	}
 
 	return nil
+}
+
+// ensureSessionStarted ensures a session is running, starting it if necessary
+// Returns true if the session was already running, false if it was started
+func (e *Engine) ensureSessionStarted(session *Session, sessionConfig SessionConfig) (bool, error) {
+	adapter, exists := e.cliAdapters[session.CLIType]
+	if !exists {
+		return false, fmt.Errorf("CLI adapter '%s' not found", session.CLIType)
+	}
+
+	// Check if already running
+	if adapter.IsSessionAlive(session.Name) {
+		return true, nil
+	}
+
+	// Determine start command
+	startCmd := sessionConfig.StartCmd
+	if startCmd == "" {
+		startCmd = session.CLIType
+	}
+
+	// Start the session
+	if err := adapter.CreateSession(session.Name, session.WorkDir, startCmd, sessionConfig.Transport); err != nil {
+		return false, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// Update session state
+	session.State = StateProcessing
+	return false, nil
 }
 
 // Run starts the engine and begins processing messages
@@ -853,7 +882,28 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 		return
 	}
 
-	// 3. Update user's current session
+	// 3. Ensure session is running (start if necessary)
+	// Get session config
+	var sessionConfig SessionConfig
+	for _, cfg := range e.config.Sessions {
+		if cfg.Name == sessionName {
+			sessionConfig = cfg
+			break
+		}
+	}
+
+	sessionWasRunning, err := e.ensureSessionStarted(session, sessionConfig)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": sessionName,
+			"error":   err,
+		}).Error("failed-to-ensure-session-started")
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Failed to start session '%s': %v", sessionName, err))
+		return
+	}
+
+	// 4. Update user's current session
 	wasSwitched := e.userSessions[userKey] != sessionName
 	e.userSessions[userKey] = sessionName
 
@@ -863,8 +913,13 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 		"cli":     session.CLIType,
 	}).Info("user-switched-session")
 
-	// 4. Success response
+	// 5. Success response
 	response := fmt.Sprintf("✅ Your current session is now: **%s**\n\n", sessionName)
+
+	if !sessionWasRunning {
+		response += "🚀 Session was not running, started automatically\n\n"
+	}
+
 	response += "📊 Session Info:\n"
 	response += fmt.Sprintf("  • CLI: %s\n", session.CLIType)
 	response += fmt.Sprintf("  • State: %s\n", session.State)

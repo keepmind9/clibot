@@ -481,6 +481,8 @@ suse myproject    # 切换到会话 'myproject'
 suse backend      # 切换到会话 'backend'
 ```
 
+💡 **自动启动**：如果会话未运行，`suse` 会自动启动它。`auto_start: false` 的会话也会在首次使用时自动启动。
+
 **会话类型**：
 - **静态会话**：在 config.yaml 中配置，重启后保留
 - **动态会话**：通过 IM 命令创建，仅存储在内存中，重启后丢失
