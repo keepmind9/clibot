@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 )
 
 // expandHome expands ~ to user's home directory
@@ -26,11 +27,21 @@ func expandHome(path string) (string, error) {
 // buildShellCommand creates a cross-platform shell command
 // For Linux/macOS (including WSL2): sh -c "command"
 // For Windows (native, though not officially supported): cmd /c "command"
+//
+// Important: Sets process group ID on Unix-like systems to allow
+// killing the entire process tree (shell + children) when needed.
 func buildShellCommand(command string) *exec.Cmd {
 	if runtime.GOOS == "windows" {
 		// Windows native: use cmd /c (not officially supported)
 		return exec.Command("cmd", "/c", command)
 	}
-	// Linux/macOS (including WSL2): use sh -c
-	return exec.Command("sh", "-c", command)
+	// Linux/macOS (including WSL2): use sh -c with process group
+	cmd := exec.Command("sh", "-c", command)
+	// Set process group ID to allow killing entire process tree
+	// This ensures that when we kill the shell process, all its
+	// child processes (like claude-agent-acp) are also killed.
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+	return cmd
 }
