@@ -61,15 +61,12 @@ func (d *DingTalkBot) Start(messageHandler func(BotMessage)) error {
 	if d.proxyMgr != nil {
 		if pm, ok := d.proxyMgr.(interface {
 			GetHTTPClient(string) (*http.Client, error)
+			GetProxyURL(string) string
 		}); ok {
-			_, clientErr := pm.GetHTTPClient("dingtalk")
-			if clientErr != nil {
-				logger.WithField("error", clientErr).Error("failed-to-create-proxy-client")
-				return fmt.Errorf("failed to create proxy client: %w", clientErr)
+			proxyURL := pm.GetProxyURL("dingtalk")
+			if proxyURL != "" && proxyURL != "env://HTTP_PROXY" {
+				logger.WithField("proxy", proxyURL).Info("dingtalk-proxy-configured-but-sdk-requires-env-vars")
 			}
-			// DingTalk SDK supports proxy via WithProxy option
-			// Get proxy URL from proxy manager
-			logger.WithField("proxy", "configured").Info("dingtalk-proxy-manager-set-but-sdk-requires-proxy-url")
 			d.streamClient = client.NewStreamClient(client.WithAppCredential(credential))
 		} else {
 			d.streamClient = client.NewStreamClient(client.WithAppCredential(credential))

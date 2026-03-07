@@ -71,16 +71,13 @@ func (f *FeishuBot) Start(messageHandler func(BotMessage)) error {
 	if f.proxyMgr != nil {
 		if pm, ok := f.proxyMgr.(interface {
 			GetHTTPClient(string) (*http.Client, error)
+			GetProxyURL(string) string
 		}); ok {
-			_, clientErr := pm.GetHTTPClient("feishu")
-			if clientErr != nil {
-				f.mu.Unlock()
-				logger.WithField("error", clientErr).Error("failed-to-create-proxy-client")
-				return fmt.Errorf("failed to create proxy client: %w", clientErr)
+			proxyURL := pm.GetProxyURL("feishu")
+			if proxyURL != "" && proxyURL != "env://HTTP_PROXY" {
+				// Proxy is configured but SDK doesn't support custom client
+				logger.WithField("proxy", proxyURL).Info("feishu-proxy-configured-but-sdk-requires-env-vars")
 			}
-			// Note: Lark SDK doesn't support custom HTTP client in NewClient
-			// Proxy support would need to be set at environment level or use SDK's built-in proxy
-			logger.WithField("proxy", "configured").Info("feishu-proxy-manager-set-but-sdk-lacks-custom-client-support")
 			f.larkClient = lark.NewClient(f.appID, f.appSecret)
 		} else {
 			f.larkClient = lark.NewClient(f.appID, f.appSecret)
@@ -102,9 +99,14 @@ func (f *FeishuBot) Start(messageHandler func(BotMessage)) error {
 	f.mu.Lock()
 	var opts []ws.ClientOption
 	if f.proxyMgr != nil {
-		// Note: Lark ws.Client doesn't support custom HTTP client
-		// Proxy support would need to be configured at environment level
-		logger.WithField("proxy", "configured").Info("feishu-websocket-proxy-manager-set-but-sdk-lacks-custom-client-support")
+		if pm, ok := f.proxyMgr.(interface {
+			GetProxyURL(string) string
+		}); ok {
+			proxyURL := pm.GetProxyURL("feishu")
+			if proxyURL != "" && proxyURL != "env://HTTP_PROXY" {
+				logger.WithField("proxy", proxyURL).Info("feishu-websocket-proxy-configured-but-sdk-requires-env-vars")
+			}
+		}
 		opts = []ws.ClientOption{
 			ws.WithEventHandler(dispatcher),
 			ws.WithLogLevel(larkcore.LogLevelInfo),
