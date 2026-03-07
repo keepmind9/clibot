@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ type TelegramBot struct {
 	messageHandler func(BotMessage)
 	ctx            context.Context
 	cancel         context.CancelFunc
+	proxyMgr       interface{}
 }
 
 // NewTelegramBot creates a new Telegram bot instance
@@ -28,6 +30,13 @@ func NewTelegramBot(token string) *TelegramBot {
 	return &TelegramBot{
 		token: token,
 	}
+}
+
+// SetProxyManager sets the proxy manager for the Telegram bot
+func (t *TelegramBot) SetProxyManager(proxyMgr interface{}) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.proxyMgr = proxyMgr
 }
 
 // Start establishes long polling connection to Telegram and begins listening for messages
@@ -39,8 +48,28 @@ func (t *TelegramBot) Start(messageHandler func(BotMessage)) error {
 		"token": maskSecret(t.token),
 	}).Info("starting-telegram-bot-with-long-polling")
 
-	// Initialize Telegram bot
-	bot, err := tgbotapi.NewBotAPI(t.token)
+	var err error
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Use proxy manager if available
+	if t.proxyMgr != nil {
+		if pm, ok := t.proxyMgr.(interface {
+			GetHTTPClient(string) (*http.Client, error)
+		}); ok {
+			client, clientErr := pm.GetHTTPClient("telegram")
+			if clientErr != nil {
+				logger.WithField("error", clientErr).Error("failed-to-create-proxy-client")
+				return fmt.Errorf("failed to create proxy client: %w", clientErr)
+			}
+			t.bot, err = tgbotapi.NewBotAPIWithClient(t.token, tgbotapi.APIEndpoint, client)
+		} else {
+			t.bot, err = tgbotapi.NewBotAPI(t.token)
+		}
+	} else {
+		t.bot, err = tgbotapi.NewBotAPI(t.token)
+	}
+
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"error": err,
@@ -48,9 +77,7 @@ func (t *TelegramBot) Start(messageHandler func(BotMessage)) error {
 		return fmt.Errorf("failed to initialize Telegram bot: %w", err)
 	}
 
-	t.mu.Lock()
-	t.bot = bot
-	t.mu.Unlock()
+	bot := t.bot
 
 	logger.WithFields(logrus.Fields{
 		"bot_username": bot.Self.UserName,

@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ type DiscordBot struct {
 	channelID      string
 	session        DiscordSessionInterface
 	messageHandler func(BotMessage)
+	proxyMgr       interface{}
 }
 
 // NewDiscordBot creates a new Discord bot instance
@@ -42,6 +44,13 @@ func NewDiscordBot(token, channelID string) *DiscordBot {
 		channelID: channelID,
 		session:   nil, // Will be created in Start()
 	}
+}
+
+// SetProxyManager sets the proxy manager for the Discord bot
+func (d *DiscordBot) SetProxyManager(proxyMgr interface{}) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.proxyMgr = proxyMgr
 }
 
 // Start establishes connection to Discord and begins listening for messages
@@ -54,13 +63,39 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 		"channel": d.channelID,
 	}).Info("starting-discord-bot")
 
-	// Create Discord session
-	session, err := discordgo.New("Bot " + d.token)
+	var err error
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Create Discord session with proxy
+	if d.proxyMgr != nil {
+		if pm, ok := d.proxyMgr.(interface {
+			GetHTTPClient(string) (*http.Client, error)
+		}); ok {
+			httpClient, clientErr := pm.GetHTTPClient("discord")
+			if clientErr != nil {
+				return fmt.Errorf("failed to create proxy client: %w", clientErr)
+			}
+			d.session, err = discordgo.New("Bot " + d.token)
+			if err == nil && d.session != nil {
+				// Discordgo doesn't support custom HTTP client in New()
+				// We need to set it after creation
+				if sess, ok := d.session.(*discordgo.Session); ok {
+					sess.Client = httpClient
+				}
+			}
+		} else {
+			d.session, err = discordgo.New("Bot " + d.token)
+		}
+	} else {
+		d.session, err = discordgo.New("Bot " + d.token)
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to create discord session: %w", err)
 	}
 
-	d.session = session
+	session := d.session
 
 	// Register message handler
 	session.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {

@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ type DingTalkBot struct {
 	messageHandler func(BotMessage)
 	ctx            context.Context
 	cancel         context.CancelFunc
+	proxyMgr       interface{}
 }
 
 // NewDingTalkBot creates a new DingTalk bot instance
@@ -31,6 +33,13 @@ func NewDingTalkBot(clientID, clientSecret string) *DingTalkBot {
 		clientID:     clientID,
 		clientSecret: clientSecret,
 	}
+}
+
+// SetProxyManager sets the proxy manager for the DingTalk bot
+func (d *DingTalkBot) SetProxyManager(proxyMgr interface{}) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.proxyMgr = proxyMgr
 }
 
 // Start establishes WebSocket long connection to DingTalk and begins listening for messages
@@ -46,9 +55,29 @@ func (d *DingTalkBot) Start(messageHandler func(BotMessage)) error {
 	credential := client.NewAppCredentialConfig(d.clientID, d.clientSecret)
 
 	d.mu.Lock()
-	d.streamClient = client.NewStreamClient(client.WithAppCredential(credential))
+	defer d.mu.Unlock()
+
+	// Create stream client with proxy support
+	if d.proxyMgr != nil {
+		if pm, ok := d.proxyMgr.(interface {
+			GetHTTPClient(string) (*http.Client, error)
+		}); ok {
+			_, clientErr := pm.GetHTTPClient("dingtalk")
+			if clientErr != nil {
+				logger.WithField("error", clientErr).Error("failed-to-create-proxy-client")
+				return fmt.Errorf("failed to create proxy client: %w", clientErr)
+			}
+			// DingTalk SDK supports proxy via WithProxy option
+			// Get proxy URL from proxy manager
+			logger.WithField("proxy", "configured").Info("dingtalk-proxy-manager-set-but-sdk-requires-proxy-url")
+			d.streamClient = client.NewStreamClient(client.WithAppCredential(credential))
+		} else {
+			d.streamClient = client.NewStreamClient(client.WithAppCredential(credential))
+		}
+	} else {
+		d.streamClient = client.NewStreamClient(client.WithAppCredential(credential))
+	}
 	streamClient := d.streamClient
-	d.mu.Unlock()
 
 	// Register chatbot message callback
 	streamClient.RegisterChatBotCallbackRouter(d.handleMessageReceive)

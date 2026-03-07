@@ -39,11 +39,11 @@ func TestTelegramBot_SendMessage_NoSession(t *testing.T) {
 // TestFeishuBot_SendMessage_NoSession tests SendMessage when session is not initialized
 func TestFeishuBot_SendMessage_NoSession(t *testing.T) {
 	bot := NewFeishuBot("test-app-id", "test-app-secret")
-	// Don't call Start, so session remains nil
+	// Don't call Start, so client remains nil
 
 	err := bot.SendMessage("", "test message")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "chat ID is required")
+	assert.Contains(t, err.Error(), "not initialized")
 }
 
 // TestDingTalkBot_SendMessage_NoSession tests SendMessage when session is not initialized

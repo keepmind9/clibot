@@ -83,6 +83,9 @@ type BotAdapter interface {
 	// RemoveTypingIndicator removes the typing indicator from a message
 	RemoveTypingIndicator(messageID string) error
 
+	// SetProxyManager sets the proxy manager for the bot
+	SetProxyManager(proxyMgr interface{})
+
 	// Stop stops the bot and cleans up resources
 	Stop() error
 }
