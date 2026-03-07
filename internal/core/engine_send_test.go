@@ -83,3 +83,8 @@ func (m *mockBotAdapter) SetMessageHandler(handler func(bot.BotMessage)) {
 func (m *mockBotAdapter) GetMessageHandler() func(bot.BotMessage) {
 	return func(msg bot.BotMessage) {}
 }
+
+func (m *mockBotAdapter) SetProxyManager(proxyMgr interface{}) {
+	// Mock implementation - do nothing
+	// Store proxyMgr if needed for testing, but for most tests it's not used
+}

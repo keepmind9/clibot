@@ -2,16 +2,16 @@ package proxy
 
 // mockConfigProvider is a test implementation of ConfigProvider
 type mockConfigProvider struct {
-	globalEnabled  bool
-	globalType     string
-	globalURL      string
-	globalUser     string
-	globalPass     string
-	botEnabled     bool
-	botType        string
-	botURL         string
-	botUser        string
-	botPass        string
+	globalEnabled bool
+	globalType    string
+	globalURL     string
+	globalUser    string
+	globalPass    string
+	botEnabled    bool
+	botType       string
+	botURL        string
+	botUser       string
+	botPass       string
 }
 
 func (m *mockConfigProvider) GetGlobalProxyEnabled() bool {
