@@ -38,6 +38,34 @@ The binary will be installed at `~/go/bin/clibot`. Make sure it's in your PATH:
 export PATH=$PATH:~/go/bin
 ```
 
+## 🌐 Network Proxy
+
+clibot supports network proxies for accessing IM platforms in restricted networks.
+
+### Quick Setup
+
+```bash
+# Using environment variables
+export HTTP_PROXY="http://127.0.0.1:7890"
+clibot serve
+
+# Or configure in config.yaml
+proxy:
+  enabled: true
+  type: "http"
+  url: "http://127.0.0.1:7890"
+```
+
+### Supported Protocols
+
+- HTTP/HTTPS proxy
+- SOCKS5 proxy
+- Optional username/password authentication
+
+### Documentation
+
+See [Proxy Configuration Guide](docs/en/setup/proxy.md) for details.
+
 ## 🔑 Get Your User ID
 
 Before configuring clibot, you need to get your user ID from the IM platform for whitelist and admin setup.
