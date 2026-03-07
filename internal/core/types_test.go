@@ -172,3 +172,35 @@ func TestLoggingConfig_Struct(t *testing.T) {
 	assert.True(t, config.Compress)
 	assert.True(t, config.EnableStdout)
 }
+
+// TestProxyConfig_FullConfig tests ProxyConfig with all fields set
+func TestProxyConfig_FullConfig(t *testing.T) {
+	config := ProxyConfig{
+		Enabled:  true,
+		Type:     "socks5",
+		URL:      "socks5://127.0.0.1:1080",
+		Username: "user",
+		Password: "pass",
+	}
+
+	assert.True(t, config.Enabled)
+	assert.Equal(t, "socks5", config.Type)
+	assert.Equal(t, "socks5://127.0.0.1:1080", config.URL)
+	assert.Equal(t, "user", config.Username)
+	assert.Equal(t, "pass", config.Password)
+}
+
+// TestProxyConfig_OptionalAuth tests ProxyConfig without authentication
+func TestProxyConfig_OptionalAuth(t *testing.T) {
+	config := ProxyConfig{
+		Enabled:  true,
+		Type:     "http",
+		URL:      "http://127.0.0.1:7890",
+		Username: "",
+		Password: "",
+	}
+
+	assert.True(t, config.Enabled)
+	assert.Empty(t, config.Username)
+	assert.Empty(t, config.Password)
+}

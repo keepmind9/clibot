@@ -53,6 +53,7 @@ type Config struct {
 	Bots        map[string]BotConfig        `yaml:"bots"`
 	CLIAdapters map[string]CLIAdapterConfig `yaml:"cli_adapters"`
 	Logging     LoggingConfig               `yaml:"logging"`
+	Proxy       ProxyConfig                 `yaml:"proxy"`
 }
 
 // HookServerConfig represents HTTP Hook server configuration
@@ -94,13 +95,14 @@ type SessionConfig struct {
 
 // BotConfig represents bot configuration
 type BotConfig struct {
-	Enabled           bool   `yaml:"enabled"`
-	AppID             string `yaml:"app_id"`
-	AppSecret         string `yaml:"app_secret"`
-	Token             string `yaml:"token"`
-	ChannelID         string `yaml:"channel_id"`         // For Discord: server channel ID
-	EncryptKey        string `yaml:"encrypt_key"`        // Feishu: event encryption key (optional)
-	VerificationToken string `yaml:"verification_token"` // Feishu: verification token (optional)
+	Enabled           bool         `yaml:"enabled"`
+	AppID             string       `yaml:"app_id"`
+	AppSecret         string       `yaml:"app_secret"`
+	Token             string       `yaml:"token"`
+	ChannelID         string       `yaml:"channel_id"`         // For Discord: server channel ID
+	EncryptKey        string       `yaml:"encrypt_key"`        // Feishu: event encryption key (optional)
+	VerificationToken string       `yaml:"verification_token"` // Feishu: verification token (optional)
+	Proxy             *ProxyConfig `yaml:"proxy"`              // Optional bot-level proxy override
 }
 
 // CLIAdapterConfig represents CLI adapter configuration
@@ -124,4 +126,13 @@ type LoggingConfig struct {
 	MaxAge       int    `yaml:"max_age"`       // Maximum days to retain (default: 30)
 	Compress     bool   `yaml:"compress"`      // Whether to compress old logs (default: true)
 	EnableStdout bool   `yaml:"enable_stdout"` // Also output to stdout (default: true)
+}
+
+// ProxyConfig represents network proxy configuration
+type ProxyConfig struct {
+	Enabled  bool   `yaml:"enabled"`  // Whether proxy is enabled
+	Type     string `yaml:"type"`     // Proxy type: http, https, socks5
+	URL      string `yaml:"url"`      // Proxy URL (e.g., http://127.0.0.1:7890, socks5://127.0.0.1:1080)
+	Username string `yaml:"username"` // Optional username for authentication
+	Password string `yaml:"password"` // Optional password for authentication
 }
