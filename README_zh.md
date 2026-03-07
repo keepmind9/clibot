@@ -38,6 +38,34 @@ go install github.com/keepmind9/clibot@latest
 export PATH=$PATH:~/go/bin
 ```
 
+## 🌐 网络代理
+
+clibot 支持网络代理，用于在受限网络中访问 IM 平台。
+
+### 快速配置
+
+```bash
+# 使用环境变量
+export HTTP_PROXY="http://127.0.0.1:7890"
+clibot serve
+
+# 或在 config.yaml 中配置
+proxy:
+  enabled: true
+  type: "http"
+  url: "http://127.0.0.1:7890"
+```
+
+### 支持的协议
+
+- HTTP/HTTPS 代理
+- SOCKS5 代理
+- 可选的用户名/密码认证
+
+### 文档
+
+详见[代理配置指南](docs/zh-CN/setup/proxy.md)。
+
 ## 🔑 获取你的用户 ID
 
 配置 clibot 之前，你需要从 IM 平台获取你的用户 ID，用于配置白名单和管理员。
