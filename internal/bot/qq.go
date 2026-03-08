@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/keepmind9/clibot/internal/proxy"
 )
 
@@ -39,6 +42,23 @@ const (
 
 	// QQ Bot constants
 	maxMsgSeqMapSize = 500 // Maximum number of message sequences to track
+
+	// Timeouts
+	qqWebSocketHandshakeTimeout = 10 * time.Second // WebSocket handshake timeout
+	qqAPIRequestTimeout        = 10 * time.Second // Timeout for token and gateway requests
+	qqMessageSendTimeout       = 15 * time.Second // Timeout for sending messages
+
+	// Token management
+	qqTokenExpirationBuffer = 60 // Buffer in seconds before token expiration
+
+	// Message limits
+	qqMaxMessageLength = 2000 // Maximum message length for QQ (characters)
+
+	// Message types
+	qqMessageTypeText = 0 // Text message type
+
+	// Message splitting
+	qqSplitMinNewlineIndex = 2 // Minimum index for newline split (maxLen / 2)
 )
 
 // WebSocket OP codes (https://bots.qq.com/docs/gateway/gateway-events)
@@ -60,8 +80,8 @@ const (
 
 // Shard configuration
 const (
-	qqShardID       = 0 // Shard ID (0 = first shard)
-	qqShardTotal    = 1 // Total number of shards (1 = no sharding)
+	qqShardID    = 0 // Shard ID (0 = first shard)
+	qqShardTotal = 1 // Total number of shards (1 = no sharding)
 )
 
 // GatewayPayload represents a WebSocket gateway message
@@ -92,6 +112,30 @@ type IdentifyData struct {
 	Token   string `json:"token"`
 	Intents int    `json:"intents"`
 	Shard   []int  `json:"shard"`
+}
+
+// QQTokenResponse represents the token response from QQ API
+type QQTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   string `json:"expires_in"` // API returns as string
+}
+
+// QQGatewayResponse represents the gateway URL response
+type QQGatewayResponse struct {
+	URL string `json:"url"`
+}
+
+// SendMessageRequest represents the request payload for sending messages
+type SendMessageRequest struct {
+	Content string `json:"content"`
+	MsgType int    `json:"msg_type"`
+	MsgID   string `json:"msg_id,omitempty"`
+	MsgSeq  int    `json:"msg_seq,omitempty"`
+}
+
+// SendMessageResponse represents the response from sending a message
+type SendMessageResponse struct {
+	ID string `json:"id"`
 }
 
 // NewQQBot creates a new QQ bot instance
@@ -180,7 +224,7 @@ func (q *QQBot) startHeartbeat(intervalMs int) {
 			case <-ticker.C:
 				heartbeat := GatewayPayload{OP: OPHeartbeat, D: q.lastSequence}
 				if err := q.sendGateway(heartbeat); err != nil {
-					log.Printf("[QQ bot] Heartbeat failed: %v", err)
+					logger.Debugf("Heartbeat failed: %v", err)
 				}
 			}
 		}
@@ -190,38 +234,54 @@ func (q *QQBot) startHeartbeat(intervalMs int) {
 // Start establishes connection to QQ gateway and begins listening for messages
 func (q *QQBot) Start(messageHandler func(BotMessage)) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	q.messageHandler = messageHandler
+	q.mu.Unlock()
+
+	logger.Infof("Starting QQ bot...")
 	q.ctx, q.cancel = context.WithCancel(context.Background())
 
+	logger.Debugf("[QQ] Fetching access token...")
 	token, err := q.getAccessToken()
 	if err != nil {
 		return fmt.Errorf("get access token: %w", err)
 	}
+	logger.Debugf("[QQ] Access token obtained")
 
+	logger.Debugf("[QQ] Fetching gateway URL...")
 	gatewayURL, err := q.getGatewayURL(token)
 	if err != nil {
 		return fmt.Errorf("get gateway: %w", err)
 	}
+
+	q.mu.Lock()
 	q.gatewayURL = gatewayURL
+	q.mu.Unlock()
+
+	logger.Debugf("[QQ] Gateway URL: %s", gatewayURL)
 
 	if err := q.connectGateway(token); err != nil {
 		return fmt.Errorf("connect gateway: %w", err)
 	}
 
-	log.Printf("[QQ bot] Started")
+	logger.Infof("[QQ] Started")
 	return nil
 }
 
 // connectGateway establishes WebSocket connection to QQ gateway
 func (q *QQBot) connectGateway(token string) error {
-	dialer := websocket.DefaultDialer
+	logger.Infof("[QQ] Connecting to gateway: %s", q.gatewayURL)
+
+	// Create dialer with timeout
+	dialer := &websocket.Dialer{
+		HandshakeTimeout: qqWebSocketHandshakeTimeout,
+	}
+
 	ws, _, err := dialer.Dial(q.gatewayURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial websocket: %w", err)
 	}
 
+	logger.Infof("[QQ] WebSocket connected")
 	q.wsConn = ws
 	go q.handleWebSocketMessages(token)
 	return nil
@@ -244,14 +304,14 @@ func (q *QQBot) handleWebSocketMessages(token string) {
 
 			_, message, err := ws.ReadMessage()
 			if err != nil {
-				log.Printf("[QQ bot] WebSocket read error: %v", err)
+				logger.Errorf("[QQ] WebSocket error: %v", err)
 				q.scheduleReconnect()
 				return
 			}
 
 			var payload GatewayPayload
 			if err := json.Unmarshal(message, &payload); err != nil {
-				log.Printf("[QQ bot] Failed to unmarshal payload: %v", err)
+				logger.Errorf("[QQ] Invalid payload: %v", err)
 				continue
 			}
 
@@ -281,7 +341,7 @@ func (q *QQBot) handleGatewayPayload(payload GatewayPayload, token string) {
 			},
 		}
 		if err := q.sendGateway(identify); err != nil {
-			log.Printf("[QQ bot] Failed to send identify: %v", err)
+			logger.Errorf("[QQ] Identify failed: %v", err)
 		}
 
 	case OPDispatch:
@@ -293,7 +353,7 @@ func (q *QQBot) handleGatewayPayload(payload GatewayPayload, token string) {
 		// Handle event types
 		switch payload.T {
 		case "READY":
-			log.Printf("[QQ bot] Gateway READY")
+			logger.Infof("[QQ] Gateway READY")
 		case "C2C_MESSAGE_CREATE":
 			q.handleC2CMessage(payload.D)
 		}
@@ -301,7 +361,7 @@ func (q *QQBot) handleGatewayPayload(payload GatewayPayload, token string) {
 	case OPHeartbeatAck:
 		// Heartbeat acknowledged, nothing to do
 	case OPReconnect:
-		log.Printf("[QQ bot] Server requested reconnection")
+		logger.Infof("[QQ] Server requested reconnection")
 		q.scheduleReconnect()
 	}
 }
@@ -310,13 +370,13 @@ func (q *QQBot) handleGatewayPayload(payload GatewayPayload, token string) {
 func (q *QQBot) handleC2CMessage(data interface{}) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		log.Printf("[QQ bot] Failed to marshal C2C message: %v", err)
+		logger.Errorf("[QQ] Marshal error: %v", err)
 		return
 	}
 
 	var msg C2CMessageData
 	if err := json.Unmarshal(jsonData, &msg); err != nil {
-		log.Printf("[QQ bot] Failed to unmarshal C2C message: %v", err)
+		logger.Errorf("[QQ] Parse error: %v", err)
 		return
 	}
 
@@ -339,7 +399,7 @@ func (q *QQBot) handleC2CMessage(data interface{}) {
 func (q *QQBot) scheduleReconnect() {
 	// TODO: Implement exponential backoff reconnection
 	// For now, just log and stop
-	log.Printf("[QQ bot] Connection lost, manual restart required")
+	logger.Warn("Connection lost, manual restart required")
 }
 
 // Stop stops the QQ bot and cleans up resources
@@ -356,6 +416,199 @@ func (q *QQBot) Stop() error {
 		q.wsConn = nil
 	}
 
-	log.Printf("[QQ bot] Stopped")
+	logger.Infof("[QQ] Stopped")
 	return nil
+}
+
+// getAccessToken retrieves and caches the access token
+func (q *QQBot) getAccessToken() (string, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	// Return cached token if still valid
+	if q.accessToken != "" && time.Now().Before(q.tokenExpiresAt) {
+		return q.accessToken, nil
+	}
+
+	logger.Debugf("[QQ] Requesting token from %s", QQTokenURL)
+
+	// Request new token
+	reqBody := fmt.Sprintf(`{"appId":"%s","clientSecret":"%s"}`, q.appID, q.appSecret)
+	req, err := http.NewRequest("POST", QQTokenURL, strings.NewReader(reqBody))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Create client with timeout
+	client := &http.Client{
+		Timeout: qqAPIRequestTimeout,
+	}
+
+	// Use proxy if available
+	if q.proxyMgr != nil {
+		logger.Debugf("[QQ] Using proxy")
+		if proxyClient, proxyErr := q.proxyMgr.GetHTTPClient("qq"); proxyErr == nil {
+			logger.Debugf("[QQ] Proxy client connected")
+			client = proxyClient
+		} else {
+			logger.Debugf("[QQ] Proxy error: %v, using direct", proxyErr)
+		}
+	} else {
+		logger.Debugf("[QQ] No proxy, using direct")
+	}
+
+	logger.Debugf("[QQ] Sending API request...")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	logger.Debugf("[QQ] Token status: %s", resp.Status)
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("token request failed: %s", resp.Status)
+	}
+
+	var tokenResp QQTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("decode token: %w", err)
+	}
+
+	// Parse expires_in as integer (API returns it as string)
+	expiresIn, err := strconv.Atoi(tokenResp.ExpiresIn)
+	if err != nil {
+		return "", fmt.Errorf("parse expires_in: %w", err)
+	}
+
+	logger.Debugf("[QQ] Token expires in %ds", expiresIn)
+
+	// Cache token with buffer before expiration
+	q.accessToken = tokenResp.AccessToken
+	q.tokenExpiresAt = time.Now().Add(time.Duration(expiresIn-qqTokenExpirationBuffer) * time.Second)
+
+	return q.accessToken, nil
+}
+
+// getGatewayURL retrieves the WebSocket gateway URL
+func (q *QQBot) getGatewayURL(token string) (string, error) {
+	req, err := http.NewRequest("GET", QQGatewayURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("QQBot %s", token))
+
+	client := &http.Client{Timeout: qqAPIRequestTimeout}
+	if q.proxyMgr != nil {
+		if proxyClient, proxyErr := q.proxyMgr.GetHTTPClient("qq"); proxyErr == nil {
+			client = proxyClient
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch gateway: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("gateway request failed: %s", resp.Status)
+	}
+
+	var gatewayResp QQGatewayResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gatewayResp); err != nil {
+		return "", fmt.Errorf("decode gateway: %w", err)
+	}
+
+	return gatewayResp.URL, nil
+}
+
+// SendMessage sends a message to QQ (C2C private message)
+func (q *QQBot) SendMessage(channel, message string) error {
+	q.mu.RLock()
+	token := q.accessToken
+	q.mu.RUnlock()
+
+	if token == "" {
+		return fmt.Errorf("not authenticated")
+	}
+
+	// Split long messages
+	if len(message) > qqMaxMessageLength {
+		parts := splitMessage(message, qqMaxMessageLength)
+		for _, part := range parts {
+			if err := q.sendSingleMessage(channel, part, token); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return q.sendSingleMessage(channel, message, token)
+}
+
+// sendSingleMessage sends a single message (without splitting)
+func (q *QQBot) sendSingleMessage(channel, message, token string) error {
+	url := fmt.Sprintf("%s/v2/users/%s/messages", QQAPIBase, channel)
+
+	reqBody := SendMessageRequest{
+		Content: message,
+		MsgType: qqMessageTypeText,
+		// Note: QQ requires msg_id and msg_seq for passive reply
+		// This is a simplified version - production should track these
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("QQBot %s", token))
+
+	client := &http.Client{Timeout: qqMessageSendTimeout}
+	if q.proxyMgr != nil {
+		if proxyClient, proxyErr := q.proxyMgr.GetHTTPClient("qq"); proxyErr == nil {
+			client = proxyClient
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send message: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("send message failed: %s", resp.Status)
+	}
+
+	return nil
+}
+
+// splitMessage splits a long message into smaller parts
+func splitMessage(msg string, maxLen int) []string {
+	if len(msg) <= maxLen {
+		return []string{msg}
+	}
+
+	var parts []string
+	for len(msg) > maxLen {
+		// Try to split at newline if possible
+		splitIdx := maxLen
+		if nlIdx := strings.LastIndex(msg[:maxLen], "\n"); nlIdx > maxLen/qqSplitMinNewlineIndex {
+			splitIdx = nlIdx + 1
+		}
+		parts = append(parts, msg[:splitIdx])
+		msg = msg[splitIdx:]
+	}
+	if len(msg) > 0 {
+		parts = append(parts, msg)
+	}
+	return parts
 }
