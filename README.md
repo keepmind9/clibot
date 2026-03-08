@@ -90,16 +90,17 @@ bots:
 clibot serve --config ~/temp_config.yaml
 ```
 
-**Step 3:** Send `whoami` command to your bot:
+**Step 3:** Send `echo` command to your bot:
 
 ```
-whoami
+echo
 ```
 
 **Step 4:** Bot replies with your user ID:
 
 ```
-Your Information:
+🔍 Your IM Information
+
 Platform: telegram
 User ID: 123456789
 ```

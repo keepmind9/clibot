@@ -90,16 +90,17 @@ bots:
 clibot serve --config ~/temp_config.yaml
 ```
 
-**步骤 3：** 向你的机器人发送 `whoami` 命令：
+**步骤 3：** 向你的机器人发送 `echo` 命令：
 
 ```
-whoami
+echo
 ```
 
 **步骤 4：** 机器人回复你的用户 ID：
 
 ```
-你的信息：
+🔍 你的 IM 信息
+
 平台: telegram
 用户 ID: 123456789
 ```
