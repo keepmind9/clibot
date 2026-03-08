@@ -3,6 +3,7 @@ package core
 import (
 	"testing"
 
+	_ "github.com/keepmind9/clibot/internal/proxy"
 	"github.com/stretchr/testify/assert"
 )
 

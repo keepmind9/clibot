@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/keepmind9/clibot/internal/bot"
+	"github.com/keepmind9/clibot/internal/proxy"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -84,7 +85,7 @@ func (m *mockBotAdapter) GetMessageHandler() func(bot.BotMessage) {
 	return func(msg bot.BotMessage) {}
 }
 
-func (m *mockBotAdapter) SetProxyManager(proxyMgr interface{}) {
+func (m *mockBotAdapter) SetProxyManager(mgr proxy.Manager) {
 	// Mock implementation - do nothing
-	// Store proxyMgr if needed for testing, but for most tests it's not used
+	// Store mgr if needed for testing, but for most tests it's not used
 }

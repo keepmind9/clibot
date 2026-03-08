@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/keepmind9/clibot/internal/bot"
+		_ "github.com/keepmind9/clibot/internal/proxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
