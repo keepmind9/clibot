@@ -188,11 +188,18 @@ func (q *QQBot) nextMsgSeq(inboundMsgID string) int {
 	return seq
 }
 
-// setMessageHandler sets the message handler (for internal use)
-func (q *QQBot) setMessageHandler(handler func(BotMessage)) {
+// SetMessageHandler sets the message handler in a thread-safe manner
+func (q *QQBot) SetMessageHandler(handler func(BotMessage)) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.messageHandler = handler
+}
+
+// GetMessageHandler gets the message handler in a thread-safe manner
+func (q *QQBot) GetMessageHandler() func(BotMessage) {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	return q.messageHandler
 }
 
 // sendGateway sends a payload to the WebSocket gateway
@@ -233,11 +240,9 @@ func (q *QQBot) startHeartbeat(intervalMs int) {
 
 // Start establishes connection to QQ gateway and begins listening for messages
 func (q *QQBot) Start(messageHandler func(BotMessage)) error {
-	q.mu.Lock()
-	q.messageHandler = messageHandler
-	q.mu.Unlock()
+	q.SetMessageHandler(messageHandler)
 
-	logger.Infof("Starting QQ bot...")
+	logger.Infof("[QQ] Starting...")
 	q.ctx, q.cancel = context.WithCancel(context.Background())
 
 	logger.Debugf("[QQ] Fetching access token...")
