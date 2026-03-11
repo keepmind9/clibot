@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -222,9 +223,16 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 		return nil // Already exists
 	}
 
+	// Ensure workDir is absolute
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		logger.WithField("error", err).Warn("failed-to-get-absolute-path-for-session")
+		absWorkDir = workDir
+	}
+
 	// Create Gemini chats directory if using gemini CLI
 	if strings.Contains(strings.ToLower(startCmd), "gemini") {
-		if err := ensureGeminiChatsDir(workDir); err != nil {
+		if err := ensureGeminiChatsDir(absWorkDir); err != nil {
 			logger.WithField("error", err).Warn("failed-to-create-gemini-chats-directory")
 		}
 	}
@@ -234,7 +242,7 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 
 	logger.WithFields(logrus.Fields{
 		"session":   sessionName,
-		"work_dir":  workDir,
+		"work_dir":  absWorkDir,
 		"command":   startCmd,
 		"transport": transportURL,
 		"type":      transportType,
@@ -245,7 +253,6 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 	connReady := make(chan struct{})
 
 	// Start connection based on transport type
-	var err error
 	var clientImpl *acpClient
 	switch transportType {
 	case ACPTransportStdio:
@@ -254,14 +261,14 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 			sessionName:  sessionName,
 			activityChan: make(chan time.Time, 10), // Buffered channel to avoid blocking
 		}
-		err = a.startStdioServer(sessionName, workDir, startCmd, clientImpl, connReady)
+		err = a.startStdioServer(sessionName, absWorkDir, startCmd, clientImpl, connReady)
 	case ACPTransportTCP, ACPTransportUnix:
 		clientImpl = &acpClient{
 			adapter:      a,
 			sessionName:  sessionName,
 			activityChan: make(chan time.Time, 10), // Buffered channel to avoid blocking
 		}
-		err = a.connectRemoteServer(sessionName, workDir, transportType, address, clientImpl, connReady)
+		err = a.connectRemoteServer(sessionName, absWorkDir, transportType, address, clientImpl, connReady)
 	default:
 		err = fmt.Errorf("unsupported transport type: %s", transportType)
 	}
@@ -280,6 +287,8 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 		cancel:    cancel,
 		active:    true,
 		connReady: connReady,
+		workDir:   absWorkDir,
+		startCmd:  startCmd,
 	}
 
 	logger.WithField("session", sessionName).Info("acp-session-created")
@@ -586,6 +595,50 @@ func (a *ACPAdapter) SwitchSession(sessionName, cliSessionID string) error {
 	return a.SendInput(sessionName, fmt.Sprintf("/session switch %s", cliSessionID))
 }
 
+// getSessionTitle attempts to extract a descriptive title for a session
+func (a *ACPAdapter) getSessionTitle(workDir, sessionID string) string {
+	if sessionID == "" {
+		return "new-session"
+	}
+
+	// Try to find the JSON file for this session
+	projectHash := computeProjectHash(workDir)
+	homeDir, _ := os.UserHomeDir()
+	sessionPath := filepath.Join(homeDir, ".gemini", "tmp", projectHash, "chats", fmt.Sprintf("session-%s.json", sessionID))
+
+	if _, err := os.Stat(sessionPath); err == nil {
+		// Read file and parse first user message
+		data, err := os.ReadFile(sessionPath)
+		if err == nil {
+			var sessionData struct {
+				Messages []struct {
+					Type    string `json:"type"`
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.Unmarshal(data, &sessionData); err == nil {
+				for _, msg := range sessionData.Messages {
+					if msg.Type == "user" {
+						// Extract first 20 chars of first user message as title
+						title := strings.TrimSpace(msg.Content)
+						title = strings.ReplaceAll(title, "\n", " ")
+						if len(title) > 20 {
+							return title[:17] + "..."
+						}
+						return title
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: use first 8 chars of ID
+	if len(sessionID) > 8 {
+		return sessionID[:8]
+	}
+	return sessionID
+}
+
 // GetSessionStats returns diagnostic stats for the session (e.g., context usage)
 func (a *ACPAdapter) GetSessionStats(sessionName string) (map[string]interface{}, error) {
 	a.mu.Lock()
@@ -600,6 +653,7 @@ func (a *ACPAdapter) GetSessionStats(sessionName string) (map[string]interface{}
 	stats["work_dir"] = sess.workDir
 	stats["session_id"] = sess.sessionId
 	stats["usage_perc"] = sess.lastUsagePerc
+	stats["session_title"] = a.getSessionTitle(sess.workDir, sess.sessionId)
 	
 	return stats, nil
 }

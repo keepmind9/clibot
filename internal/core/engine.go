@@ -2020,18 +2020,18 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 				if wd, ok := stats["work_dir"].(string); ok {
 					workDir = filepath.Base(wd)
 				}
-				sessionID := ""
-				if sid, ok := stats["session_id"].(string); ok {
-					sessionID = sid
-				}
 				usagePerc := 0.0
 				if up, ok := stats["usage_perc"].(float64); ok {
 					usagePerc = up
 				}
+				sessionTitle := ""
+				if st, ok := stats["session_title"].(string); ok {
+					sessionTitle = st
+				}
 
-				// Format: 📂 [dir] | 💬 [session] | 🧠 [usage]% used
-				statsBar := fmt.Sprintf("\n\n---\n📂 `%s` | 💬 `%s` | 🧠 `%.0f%%` used",
-					workDir, sessionID, usagePerc)
+				// HTML Format: 📂 <code>[dir]</code> | 💬 <code>[title]</code> | 🧠 <code>[usage]%</code> used
+				statsBar := fmt.Sprintf("\n\n---\n📂 <code>%s</code> | 💬 <code>%s</code> | 🧠 <code>%.0f%%</code> used",
+					workDir, sessionTitle, usagePerc)
 				finalMessage += statsBar
 			}
 		}
