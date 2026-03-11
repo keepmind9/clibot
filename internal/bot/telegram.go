@@ -216,6 +216,22 @@ func (t *TelegramBot) SendMessage(chatID, message string) error {
 	// Send message
 	_, err := bot.Send(msg)
 	if err != nil {
+		// FALLBACK: If Markdown fails (often due to unescaped special chars),
+		// retry sending as plain text to ensure user gets the information.
+		if parseMode != "" {
+			logger.WithFields(logrus.Fields{
+				"chat_id":    chatID,
+				"parse_mode": parseMode,
+				"error":      err,
+			}).Warn("failed-to-send-formatted-message-falling-back-to-plain-text")
+			
+			msg.ParseMode = "" // Clear parse mode
+			_, err = bot.Send(msg)
+			if err == nil {
+				return nil // Success with plain text
+			}
+		}
+
 		logger.WithFields(logrus.Fields{
 			"chat_id": chatID,
 			"error":   err,
