@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,22 +44,26 @@ func parseTransportURL(transportURL string) (transportType ACPTransportType, add
 
 // ACPAdapter implements CLIAdapter using Agent Client Protocol
 type ACPAdapter struct {
-	config        ACPAdapterConfig
-	conn          *acp.ClientSideConnection
-	cmd           *exec.Cmd
-	mu            sync.Mutex
-	sessions      map[string]*acpSession
-	isRemote      bool       // Tracks if connection is remote (tcp/unix) vs local (stdio)
-	currentEngine Engine     // Engine reference for sending responses
-	currentClient *acpClient // Reference to current client for response buffer access
+	config            ACPAdapterConfig
+	conn              *acp.ClientSideConnection
+	cmd               *exec.Cmd
+	mu                sync.Mutex
+	sessions          map[string]*acpSession
+	isRemote          bool       // Tracks if connection is remote (tcp/unix) vs local (stdio)
+	currentEngine     Engine     // Engine reference for sending responses
+	currentClient     *acpClient // Reference to current client for response buffer access
+	contextUsageLimit float64    // Threshold to trigger auto-reset (0.0 to 1.0, e.g., 0.5 for 50%)
 }
 
 type acpSession struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	active    bool
-	connReady chan struct{} // Closed when connection is ready for this session
-	sessionId string        // ACP session ID from server
+	ctx           context.Context
+	cancel        context.CancelFunc
+	active        bool
+	connReady     chan struct{} // Closed when connection is ready for this session
+	sessionId     string        // ACP session ID from server
+	workDir       string        // Saved workDir for recreation
+	startCmd      string        // Saved startCmd for recreation
+	lastUsagePerc float64       // Last recorded context usage percentage (0-100)
 }
 
 // acpClient implements acp.Client interface for ACP callbacks
@@ -96,8 +102,9 @@ func NewACPAdapter(config ACPAdapterConfig) (*ACPAdapter, error) {
 	}).Info("acp-adapter-configured")
 
 	return &ACPAdapter{
-		config:   config,
-		sessions: make(map[string]*acpSession),
+		config:            config,
+		sessions:          make(map[string]*acpSession),
+		contextUsageLimit: 0.5, // Default to 50%
 	}, nil
 }
 
@@ -147,40 +154,44 @@ func (a *ACPAdapter) ResetSession(sessionName string) error {
 	logger.WithField("session", sessionName).Info("resetting-acp-session")
 
 	a.mu.Lock()
-	if _, ok := a.sessions[sessionName]; !ok {
+	sess, ok := a.sessions[sessionName]
+	if !ok {
 		a.mu.Unlock()
 		return fmt.Errorf("session %s not found", sessionName)
 	}
 
-	// Capture session info before deleting
-	// We'll need to know how to recreate it
-	// Since ACPAdapter doesn't store workDir/startCmd per session (it uses a.cmd),
-	// this implementation is limited.
-	// For now, let's just delete and let the engine recreate it.
+	workDir := sess.workDir
+	startCmd := sess.startCmd
 	a.mu.Unlock()
 
 	if err := a.DeleteSession(sessionName); err != nil {
-		return err
+		logger.WithField("error", err).Warn("failed-to-delete-session-during-reset")
 	}
 
-	// The engine is expected to call CreateSession again if needed
-	return nil
+	return a.CreateSession(sessionName, workDir, startCmd, "stdio://")
 }
 
 // SwitchWorkDir changes the working directory for an ACP session
 func (a *ACPAdapter) SwitchWorkDir(sessionName, newWorkDir string) error {
 	logger.WithFields(logrus.Fields{
-		"session":     sessionName,
+		"session":      sessionName,
 		"new_work_dir": newWorkDir,
 	}).Info("switching-acp-work-dir")
 
-	// Delete existing session
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	if !ok {
+		a.mu.Unlock()
+		return fmt.Errorf("session %s not found", sessionName)
+	}
+	startCmd := sess.startCmd
+	a.mu.Unlock()
+
 	if err := a.DeleteSession(sessionName); err != nil {
 		logger.WithField("error", err).Warn("failed-to-delete-session-during-switch")
 	}
 
-	// Recreate will be handled by the engine after it updates its own state
-	return nil
+	return a.CreateSession(sessionName, newWorkDir, startCmd, "stdio://")
 }
 
 // ensureGeminiChatsDir ensures that the Gemini chats directory exists
@@ -536,16 +547,48 @@ func (a *ACPAdapter) DeleteSession(sessionName string) error {
 }
 
 // ListSessions returns a list of available CLI-native sessions/conversations
-// Note: ACP protocol support for listing sessions depends on the server implementation.
-// For now, we return an empty list as it's not universally supported via ACP SDK yet.
 func (a *ACPAdapter) ListSessions(sessionName string) ([]string, error) {
-	return []string{}, nil
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	a.mu.Unlock()
+
+	if !ok {
+		return nil, fmt.Errorf("session %s not found", sessionName)
+	}
+
+	// For Gemini, we can read the local chat history files
+	projectHash := computeProjectHash(sess.workDir)
+	homeDir, _ := os.UserHomeDir()
+	chatsDir := filepath.Join(homeDir, ".gemini", "tmp", projectHash, "chats")
+
+	if _, err := os.Stat(chatsDir); os.IsNotExist(err) {
+		return []string{}, nil
+	}
+
+	matches, err := filepath.Glob(filepath.Join(chatsDir, "session-*.json"))
+	if err != nil {
+		return nil, err
+	}
+
+	var sessionIDs []string
+	for _, m := range matches {
+		base := filepath.Base(m)
+		id := strings.TrimPrefix(base, "session-")
+		id = strings.TrimSuffix(id, ".json")
+		sessionIDs = append(sessionIDs, id)
+	}
+	return sessionIDs, nil
 }
 
 // SwitchSession switches to a specific CLI-native session/conversation
-// Note: ACP protocol support for switching sessions depends on the server implementation.
 func (a *ACPAdapter) SwitchSession(sessionName, cliSessionID string) error {
-	return fmt.Errorf("SwitchSession not implemented for ACP adapter")
+	logger.WithFields(logrus.Fields{
+		"session":   sessionName,
+		"target_id": cliSessionID,
+	}).Info("switching-acp-gemini-session")
+
+	// Send ACP Prompt with switch command
+	return a.SendInput(sessionName, fmt.Sprintf("/session switch %s", cliSessionID))
 }
 
 // Close cleans up ACP adapter resources
@@ -877,6 +920,37 @@ func (c *acpClient) SessionUpdate(ctx context.Context, params acp.SessionNotific
 		if params.Update.AgentMessageChunk.Content.Text != nil {
 			chunk := params.Update.AgentMessageChunk.Content.Text.Text
 			logger.WithField("chunk", chunk).Debug("acp-agent-chunk")
+
+			// CONTEXT MONITORING: Parse /stats model output
+			// Expected format: "... X% context used ..."
+			if strings.Contains(chunk, "context used") {
+				// Use a regex to find the percentage
+				re := regexp.MustCompile(`(\d+)%\s+context used`)
+				matches := re.FindStringSubmatch(chunk)
+				if len(matches) > 1 {
+					perc, _ := strconv.ParseFloat(matches[1], 64)
+					c.adapter.mu.Lock()
+					if sess, ok := c.adapter.sessions[c.sessionName]; ok {
+						sess.lastUsagePerc = perc
+						logger.WithFields(logrus.Fields{
+							"session": c.sessionName,
+							"usage":   perc,
+						}).Info("captured-context-usage-percentage")
+
+						// Auto-reset if usage > limit (threshold 0.5 = 50%)
+						if perc/100.0 >= c.adapter.contextUsageLimit {
+							logger.WithFields(logrus.Fields{
+								"usage": perc,
+								"limit": c.adapter.contextUsageLimit * 100,
+							}).Warn("context-usage-exceeded-threshold-triggering-reset")
+
+							// Trigger reset in goroutine to not block update
+							go c.adapter.ResetSession(c.sessionName)
+						}
+					}
+					c.adapter.mu.Unlock()
+				}
+			}
 
 			c.mu.Lock()
 			c.responseBuf.WriteString(chunk)

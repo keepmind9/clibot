@@ -250,33 +250,7 @@ func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string)
 		return "", "", fmt.Errorf("no messages in session file")
 	}
 
-	// MONITORING: Calculate total context length
-	totalChars := 0
-	for _, msg := range messages {
-		totalChars += len(msg.Content)
-	}
-
-	// Threshold: 200,000 characters (~50,000 tokens)
-	// If context is too large, trigger an automatic reset
-	if totalChars > 200000 {
-		logger.WithFields(logrus.Fields{
-			"total_chars": totalChars,
-			"threshold":   200000,
-			"session":     cwd,
-		}).Warn("context-window-exceeded-50-percent-auto-resetting")
-		
-		// Run reset in a background goroutine to not block the current response extraction
-		go func() {
-			// Find the clibot session name by searching sessions map in engine 
-			// would be complex, so we just use the CWD as a reference for now
-			// and attempt to send the reset command to the active tmux session.
-			// The engine will handle the next input in a fresh session.
-			g.ResetSession(computeProjectHash(cwd)) // Placeholder: actual session name needed
-		}()
-	}
-
-	// Find last user message index
-	lastUserIndex := -1
+	// Find last user message index	lastUserIndex := -1
 	for i, msg := range messages {
 		if msg.Type == "user" {
 			lastUserIndex = i
