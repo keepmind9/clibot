@@ -149,26 +149,21 @@ func (a *ACPAdapter) IsSessionAlive(sessionName string) bool {
 	return ok && sess.active
 }
 
-// ResetSession resets the ACP session by deleting and recreating it
+// ResetSession starts a new conversation without deleting history
 func (a *ACPAdapter) ResetSession(sessionName string) error {
-	logger.WithField("session", sessionName).Info("resetting-acp-session")
+	logger.WithField("session", sessionName).Info("starting-new-acp-conversation")
 
 	a.mu.Lock()
-	sess, ok := a.sessions[sessionName]
+	_, ok := a.sessions[sessionName]
+	a.mu.Unlock()
+
 	if !ok {
-		a.mu.Unlock()
 		return fmt.Errorf("session %s not found", sessionName)
 	}
 
-	workDir := sess.workDir
-	startCmd := sess.startCmd
-	a.mu.Unlock()
-
-	if err := a.DeleteSession(sessionName); err != nil {
-		logger.WithField("error", err).Warn("failed-to-delete-session-during-reset")
-	}
-
-	return a.CreateSession(sessionName, workDir, startCmd, "stdio://")
+	// Send /session new to Gemini CLI via ACP
+	// This will keep existing .json files and create a new one
+	return a.SendInput(sessionName, "/session new")
 }
 
 // SwitchWorkDir changes the working directory for an ACP session

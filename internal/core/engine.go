@@ -45,7 +45,7 @@ var specialCommands = map[string]struct{}{
 	"sdel":    {},
 	"suse":    {},
 	"sclose":  {},
-	"sreset":  {},
+	"ssnew":   {},
 	"scd":     {},
 	"ssls":    {},
 	"sssw":    {},
@@ -665,8 +665,8 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		e.handleCloseSession(args, msg)
 	case "sstatus":
 		e.handleSessionStatus(args, msg)
-	case "sreset":
-		e.handleResetSession(args, msg)
+	case "ssnew":
+		e.handleNewGeminiSession(args, msg)
 	case "scd":
 		e.handleSwitchWorkDir(args, msg)
 	case "ssls":
@@ -872,41 +872,32 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
 func (e *Engine) showHelpChinese(msg bot.BotMessage) {
 	help := `📖 **clibot 帮助手册**
 
-**特殊指令** (无需前缀):
+**1. 机器人分身管理 (clibot Sessions):**
+  slist       - 查看所有已配置的机器人分身
+  suse <名称>  - 切换到指定的机器人
+  sstatus [名] - 查看机器人详细状态 (PID, 内存, 运行时间)
+  status      - 查看所有机器人的简要状态
+  whoami      - 查看你当前正在和哪个机器人聊天
+  snew <名> <类型> <目录> [命令] - 临时创建一个新机器人 (仅限管理员)
+  sdel <名称>  - 彻底删除一个动态创建的机器人 (仅限管理员)
+  sclose [名]  - 暂时关闭机器人的后台进程以节省资源
+
+**2. AI 记忆与存档管理 (Gemini 专用):**
+  sreset      - 【重要】重置当前 AI 的记忆 (清空上下文，开启全新对话)
+  scd <路径>   - 更改当前 AI 关注的项目目录 (会触发记忆环境切换)
+  ssls        - 列出当前项目文件夹下的所有历史对话存档 (Session ID)
+  sssw <ID>   - 切换到特定的历史对话存档 (读档)
+
+**3. 其他指令:**
   帮助 / help  - 显示此帮助信息
-  slist       - 列出所有可用的会话 (Sessions)
-  suse <名称>  - 切换当前使用的会话
-  sclose [名]  - 关闭正在运行的会话 (默认: 当前会话)
-  sstatus [名] - 显示会话详细状态 (默认: 所有会话)
-  status      - 显示所有会话的简要状态
-  whoami      - 显示你当前的会话和用户信息
-  echo        - 回显你的账号信息 (用于配置白名单)
-  snew <名称> <类型> <目录> [命令] - 创建新会话 (仅限管理员)
-  sdel <名称>  - 删除动态会话 (仅限管理员)
-  sreset      - 重置当前会话 (开始全新对话)
-  scd <路径>   - 更改当前会话的工作目录
-  ssls        - 列出当前项目下的 Gemini 原生会话 ID
-  sssw <ID>   - 切换到指定的 Gemini 原生会话 ID
+  echo        - 回显你的 Telegram 账号 ID (用于配置白名单)
 
-**特殊关键词** (精确匹配，不区分大小写):
-  ⚠️ 仅在 Hook 模式下的 tmux 输入中有效
-  tab            - 发送 Tab 键
-  esc            - 发送 Escape 键
-  stab           - 发送 Shift+Tab
-  enter          - 发送回车键
-  ctrlc          - 发送 Ctrl+C (中断)
-
-**使用示例:**
-  帮助              → 显示此帮助
-  slist             → 查看会话列表
-  suse myproject    → 切换到名为 myproject 的会话
-  sreset            → 发现 AI 记忆太乱时重置对话
-  scd /home/work    → 将当前 AI 的关注点切换到新目录
+**特殊关键词 (直接发送即可):**
+  tab, enter, ctrlc, esc - 在部分模式下向终端发送特殊按键
 
 **提示:**
-  - 这里的“特殊指令”是精确匹配的。
-  - 任何其他非指令输入都将直接发送给底层的 AI 命令行工具。
-  - 使用 "sclose" 可以释放不使用的会话资源。`
+- 绝大多数情况下，你只需要用 "suse" 切换机器人，并在聊太久导致 AI 变傻时用 "sreset" 刷新它。
+- 任何非指令的消息都会被直接发送给底层的 AI 工具。`
 
 	e.SendToBot(msg.Platform, msg.Channel, help)
 }
@@ -1436,8 +1427,8 @@ func (e *Engine) handleSessionStatus(args []string, msg bot.BotMessage) {
 	e.sendSessionStatus(msg, status)
 }
 
-// handleResetSession resets the current session
-func (e *Engine) handleResetSession(args []string, msg bot.BotMessage) {
+// handleNewGeminiSession starts a new conversation session within the current clibot session
+func (e *Engine) handleNewGeminiSession(args []string, msg bot.BotMessage) {
 	userKey := getUserKey(msg.Platform, msg.UserID)
 	e.sessionMu.RLock()
 	sessionName, hasSession := e.userSessions[userKey]
@@ -1448,7 +1439,7 @@ func (e *Engine) handleResetSession(args []string, msg bot.BotMessage) {
 	e.sessionMu.RUnlock()
 
 	if session == nil {
-		e.SendToBot(msg.Platform, msg.Channel, "❌ No active session to reset. Select one with 'suse <name>'.")
+		e.SendToBot(msg.Platform, msg.Channel, "❌ No active session. Select one with 'suse <name>'.")
 		return
 	}
 
@@ -1459,11 +1450,11 @@ func (e *Engine) handleResetSession(args []string, msg bot.BotMessage) {
 	}
 
 	if err := adapter.ResetSession(session.Name); err != nil {
-		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to reset session: %v", err))
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to start new Gemini session: %v", err))
 		return
 	}
 
-	e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("✅ Session '%s' (%s) has been reset.", session.Name, session.CLIType))
+	e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("✅ Started a NEW Gemini session for: **%s**", session.Name))
 }
 
 // handleSwitchWorkDir switches the working directory of the current session
