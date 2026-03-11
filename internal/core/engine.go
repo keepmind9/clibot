@@ -35,6 +35,7 @@ const (
 // Performance: O(1) map lookup for exact match commands.
 var specialCommands = map[string]struct{}{
 	"help":    {},
+	"帮助":    {},
 	"status":  {},
 	"slist":   {},
 	"sstatus": {},
@@ -644,6 +645,8 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 	switch command {
 	case "help":
 		e.showHelp(msg)
+	case "帮助":
+		e.showHelpChinese(msg)
 	case "slist":
 		e.listSessions(msg)
 	case "suse":
@@ -861,6 +864,49 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   - Use "sclose" to free up resources when not using a session
   - Use "sstatus" to monitor session health and resource usage
   - Use "help" anytime to see this message`
+
+	e.SendToBot(msg.Platform, msg.Channel, help)
+}
+
+// showHelpChinese displays Chinese help information
+func (e *Engine) showHelpChinese(msg bot.BotMessage) {
+	help := `📖 **clibot 帮助手册**
+
+**特殊指令** (无需前缀):
+  帮助 / help  - 显示此帮助信息
+  slist       - 列出所有可用的会话 (Sessions)
+  suse <名称>  - 切换当前使用的会话
+  sclose [名]  - 关闭正在运行的会话 (默认: 当前会话)
+  sstatus [名] - 显示会话详细状态 (默认: 所有会话)
+  status      - 显示所有会话的简要状态
+  whoami      - 显示你当前的会话和用户信息
+  echo        - 回显你的账号信息 (用于配置白名单)
+  snew <名称> <类型> <目录> [命令] - 创建新会话 (仅限管理员)
+  sdel <名称>  - 删除动态会话 (仅限管理员)
+  sreset      - 重置当前会话 (开始全新对话)
+  scd <路径>   - 更改当前会话的工作目录
+  ssls        - 列出当前项目下的 Gemini 原生会话 ID
+  sssw <ID>   - 切换到指定的 Gemini 原生会话 ID
+
+**特殊关键词** (精确匹配，不区分大小写):
+  ⚠️ 仅在 Hook 模式下的 tmux 输入中有效
+  tab            - 发送 Tab 键
+  esc            - 发送 Escape 键
+  stab           - 发送 Shift+Tab
+  enter          - 发送回车键
+  ctrlc          - 发送 Ctrl+C (中断)
+
+**使用示例:**
+  帮助              → 显示此帮助
+  slist             → 查看会话列表
+  suse myproject    → 切换到名为 myproject 的会话
+  sreset            → 发现 AI 记忆太乱时重置对话
+  scd /home/work    → 将当前 AI 的关注点切换到新目录
+
+**提示:**
+  - 这里的“特殊指令”是精确匹配的。
+  - 任何其他非指令输入都将直接发送给底层的 AI 命令行工具。
+  - 使用 "sclose" 可以释放不使用的会话资源。`
 
 	e.SendToBot(msg.Platform, msg.Channel, help)
 }
