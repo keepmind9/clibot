@@ -1532,13 +1532,27 @@ func (e *Engine) handleListGeminiSessions(args []string, msg bot.BotMessage) {
 		return
 	}
 
-	// Natively pass the /resume command to the CLI. 
-	// The CLI will respond with its own formatted list of sessions and summaries natively!
-	err := adapter.SendInput(session.Name, "/resume")
+	// Use adapter's ListSessions to get a machine-readable list of sessions.
+	sessions, err := adapter.ListSessions(session.Name)
 	if err != nil {
-		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send /resume command: %v", err))
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to list sessions: %v", err))
 		return
 	}
+
+	if len(sessions) == 0 {
+		e.SendToBot(msg.Platform, msg.Channel, "ℹ️ No previous Gemini sessions found for this project.")
+		return
+	}
+
+	// Format sessions into a nice Telegram-friendly message
+	var sb strings.Builder
+	sb.WriteString("📂 *Available Gemini Sessions*\n\n")
+	for _, s := range sessions {
+		sb.WriteString(fmt.Sprintf("%s\n", s))
+	}
+	sb.WriteString("\n💡 Use `sssw <id>` to switch to a session.")
+
+	e.SendToBot(msg.Platform, msg.Channel, sb.String())
 }
 
 // handleSwitchGeminiSession switches the current Gemini process to a different session file natively
@@ -1569,13 +1583,14 @@ func (e *Engine) handleSwitchGeminiSession(args []string, msg bot.BotMessage) {
 		return
 	}
 
-	// Natively pass the /resume <id> command to the CLI.
-	err := adapter.SendInput(session.Name, fmt.Sprintf("/resume %s", id))
-	if err != nil {
-		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send command to switch session: %v", err))
+	// Use adapter's SwitchSession to switch natively.
+	// This will typically send a /resume <id> command to the CLI.
+	if err := adapter.SwitchSession(session.Name, id); err != nil {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to switch session: %v", err))
 		return
 	}
-	// The CLI will seamlessly process the context reload and report it natively.
+
+	e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("✅ Switched Gemini session to: #%s", id))
 }
 
 // showAllSessionsStatus shows status of all sessions

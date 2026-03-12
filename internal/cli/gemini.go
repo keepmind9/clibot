@@ -39,14 +39,98 @@ func (g *GeminiAdapter) ResetSession(sessionName string) error {
 	return watchdog.SendKeys(sessionName, "gemini --new\n", g.inputDelayMs)
 }
 
-// ListSessions is natively handled by engine routing commands directly to the CLI process.
+// ListSessions returns a list of available Gemini session files for the current project.
+// It scans the ~/.gemini/tmp/{project_hash}/chats directory.
 func (g *GeminiAdapter) ListSessions(sessionName string) ([]string, error) {
-	return []string{}, fmt.Errorf("ListSessions is handled natively via /resume pass-through")
+	// Get current working directory from tmux session
+	cwd, err := watchdog.GetCWD(sessionName)
+	if err != nil {
+		logger.WithField("error", err).Warn("failed-to-get-cwd-for-gemini-session-listing")
+		// Fallback depends on whether we have a way to know the initial workDir.
+		// For now, return error.
+		return nil, fmt.Errorf("could not determine current work dir: %w", err)
+	}
+
+	// Build path to chats directory
+	chatsDir, err := findGeminiChatsDir(cwd)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find all session-*.json files
+	pattern := filepath.Join(chatsDir, "session-*.json")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find session files: %w", err)
+	}
+
+	if len(matches) == 0 {
+		return []string{}, nil
+	}
+
+	// Sort by modification time
+	sort.Slice(matches, func(i, j int) bool {
+		infoI, _ := os.Stat(matches[i])
+		infoJ, _ := os.Stat(matches[j])
+		return infoI.ModTime().After(infoJ.ModTime())
+	})
+
+	var summaries []string
+	for _, file := range matches {
+		id := strings.TrimPrefix(filepath.Base(file), "session-")
+		id = strings.TrimSuffix(id, ".json")
+
+		summary, err := g.getSessionSummary(file)
+		if err != nil {
+			summary = "(No messages)"
+		}
+		summaries = append(summaries, fmt.Sprintf("#%s: %s", id, summary))
+	}
+
+	return summaries, nil
 }
 
-// SwitchSession is natively handled by engine routing commands directly to the CLI process.
+// SwitchSession switches to a specific Gemini session using the /resume command.
 func (g *GeminiAdapter) SwitchSession(sessionName, cliSessionID string) error {
-	return fmt.Errorf("SwitchSession is handled natively via /resume <id> pass-through")
+	logger.WithFields(logrus.Fields{
+		"session":    sessionName,
+		"cli_session": cliSessionID,
+	}).Info("switching-gemini-session-natively")
+
+	// Use /resume <id> command
+	cmd := fmt.Sprintf("/resume %s\n", cliSessionID)
+	return g.SendInput(sessionName, cmd)
+}
+
+// getSessionSummary extracts a short summary (first user prompt) from a Gemini session file.
+func (g *GeminiAdapter) getSessionSummary(sessionFile string) (string, error) {
+	data, err := os.ReadFile(sessionFile)
+	if err != nil {
+		return "", err
+	}
+
+	var sessionData struct {
+		Messages []struct {
+			Type    string `json:"type"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+
+	if err := json.Unmarshal(data, &sessionData); err != nil {
+		return "", err
+	}
+
+	for _, msg := range sessionData.Messages {
+		if msg.Type == "user" {
+			content := strings.TrimSpace(msg.Content)
+			if len(content) > 50 {
+				return content[:47] + "...", nil
+			}
+			return content, nil
+		}
+	}
+
+	return "(No user messages)", nil
 }
 
 // HandleHookData handles raw hook data from Gemini CLI
