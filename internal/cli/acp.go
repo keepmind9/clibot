@@ -190,6 +190,35 @@ func (a *ACPAdapter) SwitchWorkDir(sessionName, newWorkDir string) error {
 	return a.CreateSession(sessionName, newWorkDir, startCmd, "stdio://")
 }
 
+// ListSessions lists available Gemini history sessions for the project associated
+// with this ACP session. It reads session-*.json files from ~/.gemini/tmp/{hash}/chats,
+// the same directory Gemini CLI uses regardless of the transport mode.
+func (a *ACPAdapter) ListSessions(sessionName string) ([]string, error) {
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	var workDir string
+	if ok {
+		workDir = sess.workDir
+	}
+	a.mu.Unlock()
+
+	if workDir == "" {
+		return nil, fmt.Errorf("ACP session '%s' has no recorded work directory", sessionName)
+	}
+
+	return listGeminiSessionsByWorkDir(workDir)
+}
+
+// SwitchSession switches the Gemini CLI (running behind ACP) to a different
+// history session by sending a /resume <id> command through the ACP input channel.
+func (a *ACPAdapter) SwitchSession(sessionName, cliSessionID string) error {
+	logger.WithFields(logrus.Fields{
+		"session":     sessionName,
+		"cli_session": cliSessionID,
+	}).Info("switching-acp-gemini-session")
+	return a.SendInput(sessionName, fmt.Sprintf("/resume %s\n", cliSessionID))
+}
+
 // ensureGeminiChatsDir ensures that the Gemini chats directory exists
 // Gemini stores history in: ~/.gemini/tmp/{project_hash}/chats
 func ensureGeminiChatsDir(workDir string) error {
@@ -550,15 +579,6 @@ func (a *ACPAdapter) DeleteSession(sessionName string) error {
 	return nil
 }
 
-// ListSessions is natively handled by engine routing commands directly to the CLI process.
-func (a *ACPAdapter) ListSessions(sessionName string) ([]string, error) {
-	return nil, fmt.Errorf("ListSessions is handled natively via /resume pass-through")
-}
-
-// SwitchSession is natively handled by engine routing commands directly to the CLI process.
-func (a *ACPAdapter) SwitchSession(sessionName, cliSessionID string) error {
-	return fmt.Errorf("SwitchSession is handled natively via /resume <id> pass-through")
-}
 
 // getSessionTitle attempts to extract a descriptive title for a session
 func (a *ACPAdapter) getSessionTitle(workDir, sessionID string) string {
