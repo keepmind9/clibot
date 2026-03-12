@@ -216,6 +216,21 @@ func (a *ACPAdapter) SwitchSession(sessionName, cliSessionID string) error {
 		"session":     sessionName,
 		"cli_session": cliSessionID,
 	}).Info("switching-acp-gemini-session")
+
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	var workDir string
+	if ok {
+		workDir = sess.workDir
+	}
+	a.mu.Unlock()
+
+	if workDir != "" {
+		if fullID, err := resolveFullSessionID(workDir, cliSessionID); err == nil {
+			cliSessionID = fullID
+		}
+	}
+
 	return a.SendInput(sessionName, fmt.Sprintf("/resume %s\n", cliSessionID))
 }
 

@@ -58,6 +58,14 @@ func (g *GeminiAdapter) SwitchSession(sessionName, cliSessionID string) error {
 		"session":     sessionName,
 		"cli_session": cliSessionID,
 	}).Info("switching-gemini-session-natively")
+
+	cwd, err := watchdog.GetCWD(sessionName)
+	if err == nil {
+		if fullID, err2 := resolveFullSessionID(cwd, cliSessionID); err2 == nil {
+			cliSessionID = fullID
+		}
+	}
+
 	return g.SendInput(sessionName, fmt.Sprintf("/resume %s\n", cliSessionID))
 }
 
@@ -87,10 +95,42 @@ func listGeminiSessionsByWorkDir(workDir string) ([]string, error) {
 	var summaries []string
 	for _, file := range matches {
 		id := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(file), "session-"), ".json")
+		shortID := id
+		if len(id) > 12 {
+			shortID = id[:12]
+		}
 		summary := geminiSessionSummary(file)
-		summaries = append(summaries, fmt.Sprintf("#%s: %s", id, summary))
+		summaries = append(summaries, fmt.Sprintf("`#%s`: %s", shortID, summary))
 	}
 	return summaries, nil
+}
+
+// resolveFullSessionID attempts to find the full session UUID given a prefix.
+// If exactly one session file matches the prefix in the chats directory, it returns the full UUID.
+// Otherwise it returns the original prefix.
+func resolveFullSessionID(workDir string, prefix string) (string, error) {
+	if len(prefix) >= 36 { // Already a UUID size or close, just return
+		return prefix, nil
+	}
+
+	chatsDir, err := findGeminiChatsDir(workDir)
+	if err != nil {
+		return prefix, err
+	}
+
+	pattern := filepath.Join(chatsDir, fmt.Sprintf("session-%s*.json", prefix))
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return prefix, fmt.Errorf("no session found matching prefix: %s", prefix)
+	}
+
+	if len(matches) > 1 {
+		return prefix, fmt.Errorf("multiple sessions match prefix: %s", prefix)
+	}
+
+	// Extract the actual UUID from the exact match
+	fullID := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(matches[0]), "session-"), ".json")
+	return fullID, nil
 }
 
 // geminiSessionSummary extracts the first user prompt (≤50 chars) from a Gemini CLI
