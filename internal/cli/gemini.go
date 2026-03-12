@@ -92,24 +92,44 @@ func listGeminiSessionsByWorkDir(workDir string) ([]string, error) {
 	return summaries, nil
 }
 
-// geminiSessionSummary extracts the first user prompt (≤50 chars) from a session JSON file.
+// geminiSessionSummary extracts the first user prompt (≤50 chars) from a Gemini CLI
+// session JSON file. Gemini stores user messages with content as [{text: "..."}]
+// and assistant messages with content as a plain string. We handle both.
 func geminiSessionSummary(sessionFile string) string {
 	data, err := os.ReadFile(sessionFile)
 	if err != nil {
 		return "(unreadable)"
 	}
+
 	var sd struct {
 		Messages []struct {
-			Type    string `json:"type"`
-			Content string `json:"content"`
+			Type    string          `json:"type"`
+			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal(data, &sd); err != nil {
 		return "(parse error)"
 	}
+
 	for _, msg := range sd.Messages {
-		if msg.Type == "user" {
-			content := strings.TrimSpace(msg.Content)
+		if msg.Type != "user" {
+			continue
+		}
+		// Try array form: [{"text": "..."}, ...]
+		var parts []struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(msg.Content, &parts) == nil && len(parts) > 0 {
+			content := strings.TrimSpace(parts[0].Text)
+			if len(content) > 50 {
+				return content[:47] + "..."
+			}
+			return content
+		}
+		// Try plain string form: "..."
+		var plain string
+		if json.Unmarshal(msg.Content, &plain) == nil {
+			content := strings.TrimSpace(plain)
 			if len(content) > 50 {
 				return content[:47] + "..."
 			}
