@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -13,6 +14,21 @@ func maskSecret(s string) string {
 		return "***"
 	}
 	return s[:constants.SecretMaskPrefixLength] + "***" + s[len(s)-constants.SecretMaskSuffixLength:]
+}
+
+// sanitizeTokenFromError removes bot tokens from error messages to prevent
+// accidental exposure in logs. Go's net/http includes the full URL in HTTP
+// errors, which contains the bot token for Telegram API calls.
+func sanitizeTokenFromError(token string, err error) error {
+	if err == nil || token == "" {
+		return err
+	}
+	msg := err.Error()
+	sanitized := strings.ReplaceAll(msg, token, "<REDACTED>")
+	if sanitized != msg {
+		return fmt.Errorf("%s", sanitized)
+	}
+	return err
 }
 
 // WrapTablesInCodeBlocks detects markdown tables and wraps them in code blocks

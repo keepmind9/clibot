@@ -87,10 +87,11 @@ func TestACPAdapter_IsSessionAlive(t *testing.T) {
 	assert.False(t, adapter.IsSessionAlive("nonexistent"))
 
 	// Create a session (simulated - we won't actually start server)
+	// Without a running process or remote connection, it should be false
 	adapter.sessions["test"] = &acpSession{
 		active: true,
 	}
-	assert.True(t, adapter.IsSessionAlive("test"))
+	assert.False(t, adapter.IsSessionAlive("test"))
 
 	// Inactive session
 	adapter.sessions["test2"] = &acpSession{

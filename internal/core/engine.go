@@ -81,7 +81,8 @@ func isSpecialCommand(input string) (string, bool, []string) {
 	if len(fields) > 1 {
 		cmd := fields[0]
 		// Only check known commands that accept string arguments
-		if cmd == "suse" || cmd == "snew" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" {
+		if cmd == "suse" || cmd == "snew" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" ||
+			cmd == "sssw" || cmd == "scd" || cmd == "ssnew" || cmd == "ssls" {
 			if _, exists := specialCommands[cmd]; exists {
 				return cmd, true, fields[1:]
 			}
@@ -1585,12 +1586,17 @@ func (e *Engine) handleSwitchGeminiSession(args []string, msg bot.BotMessage) {
 
 	// Use adapter's SwitchSession to switch natively.
 	// This will typically send a /resume <id> command to the CLI.
-	if err := adapter.SwitchSession(session.Name, id); err != nil {
+	contextStr, err := adapter.SwitchSession(session.Name, id)
+	if err != nil {
 		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to switch session: %v", err))
 		return
 	}
 
-	e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("✅ Switched Gemini session to: #%s", id))
+	responseMsg := fmt.Sprintf("✅ Switched Gemini session to: %s", id)
+	if contextStr != "" {
+		responseMsg += fmt.Sprintf("\n\n%s", contextStr)
+	}
+	e.SendToBot(msg.Platform, msg.Channel, responseMsg)
 }
 
 // showAllSessionsStatus shows status of all sessions

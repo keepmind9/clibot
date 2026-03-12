@@ -74,20 +74,42 @@ func (g *GeminiAdapter) GetSessionStats(sessionName string) (map[string]interfac
 }
 
 // SwitchSession switches to a specific Gemini session using the /resume command.
-func (g *GeminiAdapter) SwitchSession(sessionName, cliSessionID string) error {
+func (g *GeminiAdapter) SwitchSession(sessionName, cliSessionID string) (string, error) {
 	logger.WithFields(logrus.Fields{
 		"session":     sessionName,
 		"cli_session": cliSessionID,
 	}).Info("switching-gemini-session-natively")
 
 	cwd, err := watchdog.GetCWD(sessionName)
-	if err == nil {
-		if fullID, err2 := resolveFullSessionID(cwd, cliSessionID); err2 == nil {
-			cliSessionID = fullID
-		}
+	if err != nil {
+		return "", fmt.Errorf("could not determine cwd to validate session: %w", err)
 	}
 
-	return g.SendInput(sessionName, fmt.Sprintf("/resume %s\n", cliSessionID))
+	fullID, err2 := resolveFullSessionID(cwd, cliSessionID)
+	if err2 != nil {
+		return "", err2
+	}
+	cliSessionID = fullID
+
+	if err := g.SendInput(sessionName, fmt.Sprintf("/resume %s\n", cliSessionID)); err != nil {
+		return "", err
+	}
+
+	return getGeminiSessionContext(cwd, cliSessionID), nil
+}
+
+// getGeminiSessionContext extracts the latest interaction to use as preview context
+func getGeminiSessionContext(cwd, cliSessionID string) string {
+	chatsDir, err := findGeminiChatsDir(cwd)
+	if err != nil {
+		return "(context unavailable)"
+	}
+	file := filepath.Join(chatsDir, fmt.Sprintf("session-%s.json", cliSessionID))
+	userPrompt, response, err := (&GeminiAdapter{}).extractGeminiResponse(file, cwd)
+	if err != nil {
+		return "(no previous chat text)"
+	}
+	return fmt.Sprintf("🗣 **You**: %s\n\n🤖 **Gemini**: %s\n\n*(...)*", truncateRuneSafe(userPrompt, 150), truncateRuneSafe(response, 300))
 }
 
 // listGeminiSessionsByWorkDir is a shared package-level helper that scans
@@ -124,15 +146,19 @@ func listGeminiSessionsByWorkDir(workDir string) ([]string, error) {
 
 // resolveFullSessionID attempts to find the full session UUID given a prefix or suffix.
 // If exactly one session file matches the prefix or includes the pattern in the chats directory,
-// it returns the full UUID. Otherwise it returns the original prefix.
+// it returns the full UUID. Otherwise it returns an error.
 func resolveFullSessionID(workDir string, prefix string) (string, error) {
-	if len(prefix) >= 36 { // Already a UUID size or close, just return
-		return prefix, nil
-	}
-
 	chatsDir, err := findGeminiChatsDir(workDir)
 	if err != nil {
 		return prefix, err
+	}
+
+	if len(prefix) >= 36 { // Already a UUID size or close, check if file exists
+		fullPath := filepath.Join(chatsDir, fmt.Sprintf("session-%s.json", prefix))
+		if _, err := os.Stat(fullPath); err == nil {
+			return prefix, nil
+		}
+		return prefix, fmt.Errorf("session ID %s does not exist", prefix)
 	}
 
 	// Try searching with wildcards to match prefixes (ssls) or suffixes (status bar)
@@ -366,7 +392,7 @@ func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string)
 	var sessionData struct {
 		Messages []struct {
 			Type     string                   `json:"type"`
-			Content  string                   `json:"content"`
+			Content  json.RawMessage          `json:"content"`
 			Thoughts []map[string]interface{} `json:"thoughts,omitempty"`
 		} `json:"messages"`
 	}
@@ -392,15 +418,30 @@ func (g *GeminiAdapter) extractGeminiResponse(transcriptPath string, cwd string)
 		return "", "", fmt.Errorf("no user message found in session")
 	}
 
-	userPrompt := strings.TrimSpace(messages[lastUserIndex].Content)
+	var userPrompt string
+	// Parse user content
+	var parts []struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(messages[lastUserIndex].Content, &parts) == nil && len(parts) > 0 {
+		userPrompt = strings.TrimSpace(parts[0].Text)
+	} else {
+		var plain string
+		if json.Unmarshal(messages[lastUserIndex].Content, &plain) == nil {
+			userPrompt = strings.TrimSpace(plain)
+		}
+	}
 
 	// Collect all Gemini messages after the last user message
 	var contentParts []string
 	for i := lastUserIndex + 1; i < len(messages); i++ {
 		if messages[i].Type == "gemini" {
-			content := strings.TrimSpace(messages[i].Content)
-			if content != "" {
-				contentParts = append(contentParts, content)
+			var plain string
+			if json.Unmarshal(messages[i].Content, &plain) == nil {
+				content := strings.TrimSpace(plain)
+				if content != "" {
+					contentParts = append(contentParts, content)
+				}
 			}
 		}
 	}

@@ -85,6 +85,7 @@ func (t *TelegramBot) Start(messageHandler func(BotMessage)) error {
 	}
 
 	if err != nil {
+		err = sanitizeTokenFromError(t.token, err)
 		logger.WithFields(logrus.Fields{
 			"error": err,
 		}).Error("failed-to-initialize-telegram-bot")
@@ -232,6 +233,7 @@ func (t *TelegramBot) SendMessage(chatID, message string) error {
 	// Send message
 	_, err := bot.Send(msg)
 	if err != nil {
+		err = sanitizeTokenFromError(t.token, err)
 		// FALLBACK: If Markdown fails (often due to unescaped special chars),
 		// retry sending as plain text to ensure user gets the information.
 		if parseMode != "" {

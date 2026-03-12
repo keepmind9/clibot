@@ -121,8 +121,8 @@ func (b *BaseAdapter) ListSessions(sessionName string) ([]string, error) {
 
 // SwitchSession switches to a specific CLI-native session/conversation
 // Base implementation for tmux-based adapters (not supported)
-func (b *BaseAdapter) SwitchSession(sessionName, cliSessionID string) error {
-	return fmt.Errorf("SwitchSession not implemented for %s", b.cliName)
+func (b *BaseAdapter) SwitchSession(sessionName, cliSessionID string) (string, error) {
+	return "", fmt.Errorf("SwitchSession not implemented for %s", b.cliName)
 }
 
 // GetSessionStats returns diagnostic stats for the session (default empty implementation)

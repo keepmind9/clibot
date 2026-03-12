@@ -248,8 +248,8 @@ func (a *ACPAdapter) ListSessions(sessionName string) ([]string, error) {
 }
 
 // SwitchSession switches the Gemini CLI (running behind ACP) to a different
-// history session by sending a /resume <id> command through the ACP input channel.
-func (a *ACPAdapter) SwitchSession(sessionName, cliSessionID string) error {
+// history session by updating the session ID used for future prompt requests.
+func (a *ACPAdapter) SwitchSession(sessionName, cliSessionID string) (string, error) {
 	logger.WithFields(logrus.Fields{
 		"session":     sessionName,
 		"cli_session": cliSessionID,
@@ -263,13 +263,23 @@ func (a *ACPAdapter) SwitchSession(sessionName, cliSessionID string) error {
 	}
 	a.mu.Unlock()
 
-	if workDir != "" {
-		if fullID, err := resolveFullSessionID(workDir, cliSessionID); err == nil {
-			cliSessionID = fullID
-		}
+	if !ok {
+		return "", fmt.Errorf("session %s not found", sessionName)
 	}
 
-	return a.SendInput(sessionName, fmt.Sprintf("/resume %s\n", cliSessionID))
+	if workDir != "" {
+		fullID, err := resolveFullSessionID(workDir, cliSessionID)
+		if err != nil {
+			return "", err
+		}
+		cliSessionID = fullID
+	}
+
+	a.mu.Lock()
+	sess.sessionId = cliSessionID
+	a.mu.Unlock()
+
+	return getGeminiSessionContext(workDir, cliSessionID), nil
 }
 
 // ensureGeminiChatsDir ensures that the Gemini chats directory exists
@@ -646,22 +656,27 @@ func (a *ACPAdapter) DeleteSession(sessionName string) error {
 
 
 // getSessionTitle attempts to extract a descriptive title for a session
-func (a *ACPAdapter) getSessionTitle(workDir, sessionID string) string {
+func (a *ACPAdapter) getSessionTitle(workDir, sessionID string) (string, string) {
 	if sessionID == "" {
-		return "new-session"
+		return "new-session", ""
 	}
 
 	// Try to find the JSON file for this session
 	chatsDir, err := findGeminiChatsDir(workDir)
 	if err != nil {
-		return sessionID
+		return sessionID, sessionID
+	}
+
+	searchID := sessionID
+	if len(searchID) >= 36 {
+		searchID = searchID[:8] // first 8 hex chars of UUID
 	}
 
 	// Try direct match first
 	sessionPath := filepath.Join(chatsDir, fmt.Sprintf("session-%s.json", sessionID))
 	if _, err := os.Stat(sessionPath); err != nil {
 		// Try middle-matching for Gemini's timestamped filenames
-		matches, _ := filepath.Glob(filepath.Join(chatsDir, fmt.Sprintf("session-*%s*.json", sessionID)))
+		matches, _ := filepath.Glob(filepath.Join(chatsDir, fmt.Sprintf("session-*%s*.json", searchID)))
 		if len(matches) > 0 {
 			sessionPath = matches[0]
 			// Update IDs to use the full timestamped version for display
@@ -677,37 +692,48 @@ func (a *ACPAdapter) getSessionTitle(workDir, sessionID string) string {
 				Title    string `json:"title"`
 				Name     string `json:"name"`
 				Messages []struct {
-					Type    string `json:"type"`
-					Content string `json:"content"`
+					Type    string      `json:"type"`
+					Content interface{} `json:"content"`
 				} `json:"messages"`
 			}
 			if err := json.Unmarshal(data, &sessionData); err == nil {
 				// 1. Check for explicit title or name
 				if sessionData.Title != "" {
-					return sessionData.Title
+					return sessionData.Title, sessionID
 				}
 				if sessionData.Name != "" {
-					return sessionData.Name
+					return sessionData.Name, sessionID
 				}
 
 				// 2. Extract from first user message
 				for _, msg := range sessionData.Messages {
 					msgType := strings.ToLower(msg.Type)
 					if msgType == "user" || msgType == "human" {
+						var contentStr string
+						if s, ok := msg.Content.(string); ok {
+							contentStr = s
+						} else if arr, ok := msg.Content.([]interface{}); ok && len(arr) > 0 {
+							if m, ok := arr[0].(map[string]interface{}); ok {
+								if text, ok := m["text"].(string); ok {
+									contentStr = text
+								}
+							}
+						}
+						
 						// Extract first 30 chars of first user message as title
-						title := strings.TrimSpace(msg.Content)
+						title := strings.TrimSpace(contentStr)
 						title = strings.ReplaceAll(title, "\n", " ")
 						if len(title) > 30 {
 							title = title[:27] + "..."
 						}
-						return fmt.Sprintf("%s: %s", sessionID, title)
+						return fmt.Sprintf("%s: %s", sessionID, title), sessionID
 					}
 				}
 			}
 		}
 	}
 
-	return sessionID
+	return sessionID, sessionID
 }
 
 // GetSessionStats returns diagnostic stats for the session (e.g., context usage)
@@ -722,9 +748,11 @@ func (a *ACPAdapter) GetSessionStats(sessionName string) (map[string]interface{}
 
 	stats := make(map[string]interface{})
 	stats["work_dir"] = sess.workDir
-	stats["session_id"] = sess.sessionId
 	stats["usage_perc"] = sess.lastUsagePerc
-	stats["session_title"] = a.getSessionTitle(sess.workDir, sess.sessionId)
+	
+	title, actualID := a.getSessionTitle(sess.workDir, sess.sessionId)
+	stats["session_title"] = title
+	stats["session_id"] = actualID
 	
 	return stats, nil
 }
