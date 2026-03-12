@@ -857,7 +857,19 @@ func (a *ACPAdapter) startStdioServer(sess *acpSession, workDir, command string,
 				}
 			}
 
-			// Signal that connection is ready (regardless of NewSession success)
+			// If NewSession failed after all retries, mark session as inactive
+			// so that SendInput won't attempt to use an empty sessionId.
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"session": sessionName,
+					"error":   err,
+				}).Error("acp-new-session-all-retries-failed-marking-inactive")
+				a.mu.Lock()
+				sess.active = false
+				a.mu.Unlock()
+			}
+
+			// Signal that connection setup is complete (success or failure)
 			close(connReady)
 		}
 	}()
@@ -961,7 +973,19 @@ func (a *ACPAdapter) connectRemoteServer(sess *acpSession, workDir string, trans
 				}
 			}
 
-			// Signal that connection is ready (regardless of NewSession success)
+			// If NewSession failed after all retries, mark session as inactive
+			// so that SendInput won't attempt to use an empty sessionId.
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"session": sessionName,
+					"error":   err,
+				}).Error("acp-new-session-all-retries-failed-marking-inactive")
+				a.mu.Lock()
+				sess.active = false
+				a.mu.Unlock()
+			}
+
+			// Signal that connection setup is complete (success or failure)
 			close(connReady)
 		}
 	}()
