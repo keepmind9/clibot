@@ -153,6 +153,7 @@ func (d *DingTalkBot) SendMessage(conversationID, message string) error {
 	// The webhook URL is received in each incoming message but needs to be stored
 	// and reused for replies. This implementation limitation is tracked at:
 	// https://github.com/keepmind9/clibot/issues/125
+	message = WrapTablesInCodeBlocks(message)
 	logger.WithFields(logrus.Fields{
 		"conversation_id": conversationID,
 		"message_length":  len(message),

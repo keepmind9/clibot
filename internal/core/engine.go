@@ -2024,7 +2024,7 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 			if err == nil && len(stats) > 0 {
 				workDir := ""
 				if wd, ok := stats["work_dir"].(string); ok {
-					workDir = filepath.Base(wd)
+					workDir = wd
 				}
 				usagePerc := 0.0
 				if up, ok := stats["usage_perc"].(float64); ok {

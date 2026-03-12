@@ -238,6 +238,7 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 
 	// Create message request body
 	// For text messages, content format: {"text":"actual content"}
+	message = WrapTablesInCodeBlocks(message)
 	contentJSON := fmt.Sprintf(`{"text":"%s"}`, escapeJSONString(message))
 
 	body := larkim.NewCreateMessageReqBodyBuilder().

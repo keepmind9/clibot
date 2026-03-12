@@ -52,6 +52,27 @@ func (g *GeminiAdapter) ListSessions(sessionName string) ([]string, error) {
 	return listGeminiSessionsByWorkDir(cwd)
 }
 
+// GetSessionStats returns diagnostic stats for the session (e.g., current session ID and title)
+func (g *GeminiAdapter) GetSessionStats(sessionName string) (map[string]interface{}, error) {
+	cwd, err := watchdog.GetCWD(sessionName)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := make(map[string]interface{})
+	stats["work_dir"] = cwd
+
+	// Find the most recent session file to extract ID and title
+	lastFile, err := g.lastSessionFile(cwd)
+	if err == nil && lastFile != "" {
+		id := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(lastFile), "session-"), ".json")
+		stats["session_id"] = id
+		stats["session_title"] = fmt.Sprintf("%s: %s", id, geminiSessionSummary(lastFile))
+	}
+
+	return stats, nil
+}
+
 // SwitchSession switches to a specific Gemini session using the /resume command.
 func (g *GeminiAdapter) SwitchSession(sessionName, cliSessionID string) error {
 	logger.WithFields(logrus.Fields{
@@ -95,19 +116,15 @@ func listGeminiSessionsByWorkDir(workDir string) ([]string, error) {
 	var summaries []string
 	for _, file := range matches {
 		id := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(file), "session-"), ".json")
-		shortID := id
-		if len(id) > 12 {
-			shortID = id[:12]
-		}
 		summary := geminiSessionSummary(file)
-		summaries = append(summaries, fmt.Sprintf("`#%s`: %s", shortID, summary))
+		summaries = append(summaries, fmt.Sprintf("`%s`: %s", id, summary))
 	}
 	return summaries, nil
 }
 
-// resolveFullSessionID attempts to find the full session UUID given a prefix.
-// If exactly one session file matches the prefix in the chats directory, it returns the full UUID.
-// Otherwise it returns the original prefix.
+// resolveFullSessionID attempts to find the full session UUID given a prefix or suffix.
+// If exactly one session file matches the prefix or includes the pattern in the chats directory,
+// it returns the full UUID. Otherwise it returns the original prefix.
 func resolveFullSessionID(workDir string, prefix string) (string, error) {
 	if len(prefix) >= 36 { // Already a UUID size or close, just return
 		return prefix, nil
@@ -118,17 +135,23 @@ func resolveFullSessionID(workDir string, prefix string) (string, error) {
 		return prefix, err
 	}
 
-	pattern := filepath.Join(chatsDir, fmt.Sprintf("session-%s*.json", prefix))
+	// Try searching with wildcards to match prefixes (ssls) or suffixes (status bar)
+	pattern := filepath.Join(chatsDir, fmt.Sprintf("session-*%s*.json", prefix))
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
-		return prefix, fmt.Errorf("no session found matching prefix: %s", prefix)
+		return prefix, fmt.Errorf("no session found matching: %s", prefix)
 	}
 
+	// If multiple matches, pick the most recent one
 	if len(matches) > 1 {
-		return prefix, fmt.Errorf("multiple sessions match prefix: %s", prefix)
+		sort.Slice(matches, func(i, j int) bool {
+			infoI, _ := os.Stat(matches[i])
+			infoJ, _ := os.Stat(matches[j])
+			return infoI.ModTime().After(infoJ.ModTime())
+		})
 	}
 
-	// Extract the actual UUID from the exact match
+	// Extract the actual full ID from the match
 	fullID := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(matches[0]), "session-"), ".json")
 	return fullID, nil
 }
@@ -143,6 +166,8 @@ func geminiSessionSummary(sessionFile string) string {
 	}
 
 	var sd struct {
+		Title    string `json:"title"`
+		Name     string `json:"name"`
 		Messages []struct {
 			Type    string          `json:"type"`
 			Content json.RawMessage `json:"content"`
@@ -150,6 +175,14 @@ func geminiSessionSummary(sessionFile string) string {
 	}
 	if err := json.Unmarshal(data, &sd); err != nil {
 		return "(parse error)"
+	}
+
+	// Prefer explicit title or name
+	if sd.Title != "" {
+		return truncateRuneSafe(sd.Title, 50)
+	}
+	if sd.Name != "" {
+		return truncateRuneSafe(sd.Name, 50)
 	}
 
 	for _, msg := range sd.Messages {

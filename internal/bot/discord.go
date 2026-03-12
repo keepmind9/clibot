@@ -162,6 +162,7 @@ func (d *DiscordBot) SendMessage(channel, message string) error {
 		message = "..." + message[len(message)-maxDiscordLength+3:]
 	}
 
+	message = WrapTablesInCodeBlocks(message)
 	_, err := session.ChannelMessageSend(targetChannel, message)
 	if err != nil {
 		logger.WithFields(logrus.Fields{

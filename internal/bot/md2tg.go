@@ -29,7 +29,10 @@ func ConvertMarkdownToTelegramHTML(mdText string) string {
 
 	src := []byte(mdText)
 	md := goldmark.New(
-		goldmark.WithExtensions(extension.Strikethrough),
+		goldmark.WithExtensions(
+			extension.Strikethrough,
+			extension.Table,
+		),
 	)
 	
 	doc := md.Parser().Parse(text.NewReader(src))
@@ -190,6 +193,27 @@ func (r *tgHTMLRenderer) Walk(n ast.Node, entering bool) (ast.WalkStatus, error)
 			r.buf.WriteString("<blockquote>")
 		} else {
 			r.buf.WriteString("</blockquote>\n\n")
+		}
+	case *extast.Table:
+		if entering {
+			r.buf.WriteString("<pre>")
+		} else {
+			r.buf.WriteString("</pre>\n\n")
+		}
+	case *extast.TableHeader:
+		// We handle rows directly
+	case *extast.TableRow:
+		if entering {
+			// Row content
+		} else {
+			r.buf.WriteString("\n")
+		}
+	case *extast.TableCell:
+		if entering {
+			// Add separator if it's not the first cell
+			if n.PreviousSibling() != nil {
+				r.buf.WriteString(" | ")
+			}
 		}
 	case *ast.ThematicBreak:
 		if !entering {
