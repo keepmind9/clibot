@@ -73,6 +73,7 @@ var latexSymbols = map[string]string{
 	"\\quad": "  ", "\\qquad": "    ",
 	"\\to": "→", "\\rightarrow": "→", "\\leftarrow": "←",
 	"\\lim": "lim", "\\log": "log", "\\sin": "sin", "\\cos": "cos", "\\tan": "tan",
+	"\\cdot": "·",
 }
 
 // latexBlockRe matches display math $$...$$  (may span multiple lines)
@@ -93,25 +94,119 @@ func preprocessLaTeX(md string) string {
 			return "√(" + content + ")"
 		})
 
-		// Handle \frac{num}{den} -> [num]/[den]
-		math = regexp.MustCompile(`\\frac\{([^}]+)\}\{([^}]+)\}`).ReplaceAllStringFunc(math, func(s string) string {
-			m := regexp.MustCompile(`\\frac\{([^}]+)\}\{([^}]+)\}`).FindStringSubmatch(s)
-			if len(m) == 3 {
-				num := m[1]
-				den := m[2]
+		// isFullyWrapped checks if the entire string is already wrapped in a matching pair of brackets
+		isFullyWrapped := func(s string, open, close byte) bool {
+			if len(s) < 2 || s[0] != open || s[len(s)-1] != close {
+				return false
+			}
+			count := 0
+			for i := 0; i < len(s); i++ {
+				if s[i] == open {
+					count++
+				} else if s[i] == close {
+					count--
+					if count == 0 && i < len(s)-1 {
+						// Closed too early, e.g. (a)+(b)
+						return false
+					}
+				}
+			}
+			return count == 0
+		}
 
-				// Format numerator
-				if len(num) > 1 {
-					num = "[" + num + "]"
+		// wrapBrackets applies the correct bracket style based on nesting depth
+		wrapBrackets := func(content string) string {
+			content = strings.TrimSpace(content)
+			if content == "" {
+				return ""
+			}
+
+			// Omit brackets for single-character or simple symbolic operands if possible
+			if len([]rune(content)) == 1 {
+				return content
+			}
+			if strings.HasPrefix(content, "\\") && !strings.Contains(content, " ") && !strings.ContainsAny(content, "+-*/=^_{}") {
+				return content
+			}
+
+			// If it's already fully wrapped in a matching pair, don't double-wrap
+			if isFullyWrapped(content, '(', ')') || isFullyWrapped(content, '[', ']') || isFullyWrapped(content, '{', '}') {
+				return content
+			}
+
+			// Determine which bracket to use based on content's existing brackets
+			// Use the standard hierarchical order: ( ) -> [ ] -> { }
+			if strings.ContainsAny(content, "[]{}") {
+				if strings.ContainsAny(content, "{}") {
+					return "(" + content + ")" // fallback or cycle
 				}
-				// Format denominator
-				if len(den) > 1 {
-					den = "(" + den + ")"
+				return "{" + content + "}"
+			} else if strings.Contains(content, "(") {
+				return "[" + content + "]"
+			}
+			return "(" + content + ")"
+		}
+
+		// findMatchingBrace finds the corresponding closing brace for a given '{'
+		findMatchingBrace := func(s string, start int) int {
+			count := 0
+			for i := start; i < len(s); i++ {
+				if s[i] == '{' {
+					count++
+				} else if s[i] == '}' {
+					count--
+					if count == 0 {
+						return i
+					}
 				}
-				return num + "/" + den
+			}
+			return -1
+		}
+
+		// Recursive function to handle nested fractions and brackets
+		var processFractions func(string) string
+		processFractions = func(s string) string {
+			for {
+				idx := strings.Index(s, "\\frac{")
+				if idx == -1 {
+					break
+				}
+
+				numStart := idx + 6 // after \frac{
+				numEnd := findMatchingBrace(s, idx+5)
+				if numEnd == -1 {
+					break
+				}
+
+				// The next part should be {den}
+				if numEnd+1 >= len(s) || s[numEnd+1] != '{' {
+					break
+				}
+
+				denStart := numEnd + 2
+				denEnd := findMatchingBrace(s, numEnd+1)
+				if denEnd == -1 {
+					break
+				}
+
+				num := s[numStart:numEnd]
+				den := s[denStart:denEnd]
+
+				// Recursively process internal fractions
+				processedNum := processFractions(num)
+				processedDen := processFractions(den)
+
+				// Wrap with hierarchical brackets
+				wrappedNum := wrapBrackets(processedNum)
+				wrappedDen := wrapBrackets(processedDen)
+
+				replacement := wrappedNum + "/" + wrappedDen
+				s = s[:idx] + replacement + s[denEnd+1:]
 			}
 			return s
-		})
+		}
+
+		math = processFractions(math)
 
 		// Replace common symbols
 		for cmd, unicode := range latexSymbols {
@@ -153,6 +248,9 @@ func preprocessLaTeX(md string) string {
 			}
 			return res.String()
 		})
+
+		// Strip \mathbf{...}, \mathrm{...}, \text{...} but keep content
+		math = regexp.MustCompile(`\\(mathbf|mathrm|text)\{([^}]+)\}`).ReplaceAllString(math, "$2")
 
 		// Single char scripts
 		math = regexp.MustCompile(`\^([^{])`).ReplaceAllStringFunc(math, func(s string) string {

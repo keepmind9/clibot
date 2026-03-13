@@ -163,7 +163,28 @@ func TestConvertMarkdownToTelegramHTML_DisplayLaTeX(t *testing.T) {
 	// Summation test
 	md4 := "$$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$"
 	result4 := ConvertMarkdownToTelegramHTML(md4)
-	assert.Contains(t, result4, "∑ᵢ₌₁ⁿ i = [n(n+1)]/(2)")
+	assert.Contains(t, result4, "∑ᵢ₌₁ⁿ i = [n(n+1)]/2")
+
+	// Complex nested fraction test
+	md5 := "$$\\frac{\\frac{a}{b}}{\\frac{c}{d}}$$"
+	result5 := ConvertMarkdownToTelegramHTML(md5)
+	// \frac{a}{b} -> a/b
+	// \frac{a/b}{c/d} -> (a/b)/[c/d]
+	assert.Contains(t, result5, "(a/b)/[c/d]")
+
+	// User requested example: \frac{\frac{2+0}{(3+1) \cdot (4+5)}}{X}
+	md6 := "$$\\frac{2+0}{(3+1) \\cdot (4+5)}$$"
+	result6 := ConvertMarkdownToTelegramHTML(md6)
+	// (2+0)/[(3+1) · (4+5)]
+	assert.Contains(t, result6, "(2+0)/[(3+1) \u00b7 (4+5)]")
+
+	// Even deeper nesting
+	md7 := "$$\\frac{X}{\\frac{A}{\\frac{B}{C}}}$$"
+	result7 := ConvertMarkdownToTelegramHTML(md7)
+	// \frac{B}{C} -> B/C
+	// \frac{A}{B/C} -> A/(B/C)
+	// \frac{X}{A/(B/C)} -> X/[A/(B/C)]
+	assert.Contains(t, result7, "X/[A/(B/C)]")
 }
 
 func TestConvertMarkdownToTelegramHTML_TableAlignmentExamples(t *testing.T) {
