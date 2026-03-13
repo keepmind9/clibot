@@ -36,7 +36,7 @@ const (
 // Performance: O(1) map lookup for exact match commands.
 var specialCommands = map[string]struct{}{
 	"help":    {},
-	"帮助":    {},
+	"帮助":      {},
 	"status":  {},
 	"slist":   {},
 	"sstatus": {},
@@ -850,12 +850,11 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 }
 
 // showHelp displays help information about available commands and keywords
+// showHelp displays help information about available commands and keywords
 func (e *Engine) showHelp(msg bot.BotMessage) {
 	help := `📖 **clibot Help**
 
 **Special Commands** (clickable):
-` + "```" + `bash
-` + "```" + `bash
 # (Tap a command to copy/pre-fill)
 ` + e.fmtCmd(msg, "help") + `          - Show this help message
 ` + e.fmtCmd(msg, "slist") + `         - List all available sessions
@@ -872,7 +871,6 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
 ` + e.fmtCmd(msg, "scd <path>") + `    - Change working directory
 ` + e.fmtCmd(msg, "ssls") + `          - List native Gemini session IDs
 ` + e.fmtCmd(msg, "sssw <id>") + `     - Switch to a specific Gemini ID
-` + "```" + `
 
 **Special Keywords** (exact match, case-insensitive):
   ⚠️ These keywords only work in Hook mode with tmux input
@@ -907,7 +905,7 @@ func (e *Engine) showHelpChinese(msg bot.BotMessage) {
 	help := `📖 **clibot 帮助手册**
 
 **1. 机器人分身管理 (点击指令可复制):**
-` + "```" + `bash
+
 ` + e.fmtCmd(msg, "slist") + `        - 查看所有已配置的机器人
 ` + e.fmtCmd(msg, "suse <名>") + `    - 切换到指定的机器人
 ` + e.fmtCmd(msg, "sstatus [名]") + ` - 查看 PID, 内存, 运行时间
@@ -917,15 +915,15 @@ func (e *Engine) showHelpChinese(msg bot.BotMessage) {
 ` + e.fmtCmd(msg, "snewg <名> <目录>") + ` - 快速创建 Gemini ACP (管理员)
 ` + e.fmtCmd(msg, "sdel <名>") + `    - 彻底删除会话 (管理员)
 ` + e.fmtCmd(msg, "sclose [名]") + `  - 暂时关闭后台进程以节省资源
-` + "```" + `
+
 
 **2. AI 记忆与存档管理 (Gemini 专用):**
-` + "```" + `bash
+
 ` + e.fmtCmd(msg, "ssnew") + `        - 【重要】开启全新对话 (保留旧存档)
 ` + e.fmtCmd(msg, "scd <路径>") + `    - 更改 AI 关注的目录 (记忆环境切换)
 ` + e.fmtCmd(msg, "ssls") + `         - 列出当前项目的历史存档 ID
 ` + e.fmtCmd(msg, "sssw <ID>") + `    - 读档 (切换到特定的历史对话)
-` + "```" + `
+
 
 **3. 其他指令:**
 - ` + "`帮助`" + ` / ` + "`help`" + ` - 显示此信息
@@ -944,8 +942,8 @@ tab, enter, ctrlc, esc
 	e.SendToBot(msg.Platform, msg.Channel, help)
 }
 
-// handleEcho returns the user's IM information to help with whitelist configuration
 func (e *Engine) handleEcho(msg bot.BotMessage) {
+
 	response := fmt.Sprintf("🔍 **Your IM Information**\n\n"+
 		"**Platform:** %s\n"+
 		"**User ID:** `%s` (Use this for whitelist)\n"+
@@ -2433,6 +2431,7 @@ func (e *Engine) Stop() error {
 func normalizePath(path string) string {
 	return strings.TrimSuffix(path, "/")
 }
+
 // fmtCmd formats a command for the specific platform to allow pre-filling/linking
 func (e *Engine) fmtCmd(msg bot.BotMessage, cmd string) string {
 	// For Telegram, use tg://msg?text= link for direct pre-fill (no /)
