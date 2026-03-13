@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -707,6 +708,20 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 		}
 	}
 
+	// Get bot username for link formatting
+	botUsername := ""
+	if botAdapter, exists := e.activeBots[msg.Platform]; exists {
+		botUsername = botAdapter.GetBotUsername()
+	}
+
+	formatSessionName := func(name string) string {
+		escaped := url.QueryEscape(name)
+		if botUsername != "" {
+			return fmt.Sprintf("[**%s**](tg://resolve?domain=%s&text=suse%%20%s)", name, botUsername, escaped)
+		}
+		return fmt.Sprintf("[**%s**](tg://msg?text=suse%%20%s)", name, escaped)
+	}
+
 	// Display static sessions
 	if len(staticSessions) > 0 {
 		response += "Static Sessions (configured):\n"
@@ -716,7 +731,7 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 				marker = " ⬅️ **CURRENT**"
 			}
 			response += fmt.Sprintf("  • %s (%s) - %s [static]%s\n",
-				session.Name, session.CLIType, session.State, marker)
+				formatSessionName(session.Name), session.CLIType, session.State, marker)
 		}
 		response += "\n"
 	}
@@ -730,7 +745,7 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 				marker = " ⬅️ **CURRENT**"
 			}
 			response += fmt.Sprintf("  • %s (%s) - %s [dynamic, created by %s]%s\n",
-				session.Name, session.CLIType, session.State, session.CreatedBy, marker)
+				formatSessionName(session.Name), session.CLIType, session.State, session.CreatedBy, marker)
 		}
 	}
 
@@ -745,6 +760,20 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 func (e *Engine) showStatus(msg bot.BotMessage) {
 	e.sessionMu.RLock()
 	defer e.sessionMu.RUnlock()
+
+	// Get bot username for link formatting
+	botUsername := ""
+	if botAdapter, exists := e.activeBots[msg.Platform]; exists {
+		botUsername = botAdapter.GetBotUsername()
+	}
+
+	formatSessionName := func(name string) string {
+		escaped := url.QueryEscape(name)
+		if botUsername != "" {
+			return fmt.Sprintf("[**%s**](tg://resolve?domain=%s&text=suse%%20%s)", name, botUsername, escaped)
+		}
+		return fmt.Sprintf("[**%s**](tg://msg?text=suse%%20%s)", name, escaped)
+	}
 
 	response := "📊 clibot Status:\n\n"
 	response += "Sessions:\n"
@@ -764,7 +793,7 @@ func (e *Engine) showStatus(msg bot.BotMessage) {
 			origin = fmt.Sprintf("[dynamic, created by %s]", session.CreatedBy)
 		}
 
-		response += fmt.Sprintf("  %s %s (%s) - %s %s\n", status, session.Name, session.CLIType, session.State, origin)
+		response += fmt.Sprintf("  %s %s (%s) - %s %s\n", status, formatSessionName(session.Name), session.CLIType, session.State, origin)
 	}
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
