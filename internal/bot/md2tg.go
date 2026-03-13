@@ -531,9 +531,43 @@ func (r *tgHTMLRenderer) renderAlignedTable() {
 	r.buf.WriteString("</pre>\n\n")
 }
 
-// runeWidth returns the display width of a string in runes, CJK aware
+// runeWidth returns the display width of a string in runes, CJK aware.
+// It uses EastAsianWidth=false because most fixed-width fonts used in
+// Telegram and Discord treat Ambiguous characters (like Greek letters) as width 1.
 func runeWidth(s string) int {
-	return runewidth.StringWidth(s)
+	if s == "" {
+		return 0
+	}
+
+	// Disable EastAsianWidth for Ambiguous characters (they should be 1, not 2)
+	cond := runewidth.NewCondition()
+	cond.EastAsianWidth = false
+
+	width := 0
+	for _, ch := range s {
+		// Explicit emoji width handling to ensure they are counted as 2
+		if isEmoji(ch) {
+			width += 2
+			continue
+		}
+		width += cond.RuneWidth(ch)
+	}
+	return width
+}
+
+// isEmoji checks if a rune is an emoji that should be treated as width 2.
+// Ranges inspired by QuickLineNavigator and common emoji blocks.
+func isEmoji(ch rune) bool {
+	return ('\U0001F300' <= ch && ch <= '\U0001F9FF') || // Miscellaneous Symbols and Pictographs, etc.
+		('\U0001F000' <= ch && ch <= '\U0001F0FF') || // Mahjong Tiles
+		('\U0001F100' <= ch && ch <= '\U0001F1FF') || // Enclosed Alphanumeric Supplement
+		('\U0001F200' <= ch && ch <= '\U0001F2FF') || // Enclosed Ideographic Supplement
+		('\U0001F600' <= ch && ch <= '\U0001F64F') || // Emoticons
+		('\U0001F680' <= ch && ch <= '\U0001F6FF') || // Transport and Map Symbols
+		('\U0001F700' <= ch && ch <= '\U0001F77F') || // Alchemical Symbols
+		('\U00002600' <= ch && ch <= '\U000027BF') || // Misc Symbols, Dingbats
+		('\U0001FA00' <= ch && ch <= '\U0001FA6F') || // Chess Symbols, etc.
+		('\U0001FA70' <= ch && ch <= '\U0001FAFF')    // Symbols and Pictographs Extended-A
 }
 
 // stripHTMLTags removes HTML tags from a string for width calculation
