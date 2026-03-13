@@ -138,4 +138,19 @@ func TestConvertMarkdownToTelegramHTML_DisplayLaTeX(t *testing.T) {
 	result := ConvertMarkdownToTelegramHTML(md)
 	assert.Contains(t, result, "<pre>")
 	assert.Contains(t, result, "∑ᵢ₌₀ⁿ xᵢ")
+
+	// Limit test
+	md2 := "$$\\lim_{x \\to \\infty} \\frac{1}{x} = 0$$"
+	result2 := ConvertMarkdownToTelegramHTML(md2)
+	assert.Contains(t, result2, "limₓ → ∞ 1/x = 0")
+
+	// Quadratic formula test
+	md3 := "$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$"
+	result3 := ConvertMarkdownToTelegramHTML(md3)
+	assert.Contains(t, result3, "x = [-b ± √(b² - 4ac)]/(2a)")
+
+	// Summation test
+	md4 := "$$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$"
+	result4 := ConvertMarkdownToTelegramHTML(md4)
+	assert.Contains(t, result4, "∑ᵢ₌₁ⁿ i = [n(n+1)]/2")
 }

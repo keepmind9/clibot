@@ -37,6 +37,7 @@ var latexSubscripts = map[string]string{
 	"k": "ₖ", "l": "ₗ", "m": "ₘ", "n": "ₙ", "p": "ₚ",
 	"s": "ₛ", "t": "ₜ", "i": "ᵢ", "j": "ⱼ", "r": "ᵣ",
 	"u": "ᵤ", "v": "ᵥ",
+	"→": "→", "∞": "∞", // Preserve these in subscripts as best as possible
 }
 
 // latexSuperscripts maps LaTeX superscript sequences to Unicode
@@ -69,6 +70,8 @@ var latexSymbols = map[string]string{
 	"\\cup": "∪", "\\sub": "⊂", "\\sup": "⊃", "\\in": "∈",
 	"\\notin": "∉", "\\forall": "∀", "\\exists": "∃",
 	"\\quad": "  ", "\\qquad": "    ",
+	"\\to": "→", "\\rightarrow": "→", "\\leftarrow": "←",
+	"\\lim": "lim", "\\log": "log", "\\sin": "sin", "\\cos": "cos", "\\tan": "tan",
 }
 
 // latexBlockRe matches display math $$...$$  (may span multiple lines)
@@ -81,35 +84,46 @@ var latexInlineRe = regexp.MustCompile(`\$([^\n$]+?)\$`)
 // to improve readability in Telegram.
 func preprocessLaTeX(md string) string {
 	convertMath := func(math string) string {
+		// Handle \sqrt{...} -> √( ... )
+		// We do this first so \frac can capture it without brace confusion
+		math = regexp.MustCompile(`\\sqrt\{([^}]+)\}`).ReplaceAllStringFunc(math, func(s string) string {
+			content := s[6 : len(s)-1]
+			// We handle symbols inside sqrt here too if needed, but convertMath is recursive-like
+			return "√(" + content + ")"
+		})
+
+		// Handle \frac{num}{den} -> [num]/[den]
+		math = regexp.MustCompile(`\\frac\{([^}]+)\}\{([^}]+)\}`).ReplaceAllStringFunc(math, func(s string) string {
+			m := regexp.MustCompile(`\\frac\{([^}]+)\}\{([^}]+)\}`).FindStringSubmatch(s)
+			if len(m) == 3 {
+				num := m[1]
+				den := m[2]
+
+				// Format numerator
+				if len(num) > 1 {
+					num = "[" + num + "]"
+				}
+				// Format denominator
+				if len(den) > 1 {
+					den = "(" + den + ")"
+				}
+				return num + "/" + den
+			}
+			return s
+		})
+
 		// Replace common symbols
 		for cmd, unicode := range latexSymbols {
 			math = strings.ReplaceAll(math, cmd, unicode)
 		}
 
-		// Handle superscripts: x^2 or x^{2}
-		math = regexp.MustCompile(`\^{([^}]+)}`).ReplaceAllStringFunc(math, func(s string) string {
-			content := s[2 : len(s)-1]
-			var res strings.Builder
-			for _, r := range content {
-				if v, ok := latexSuperscripts[string(r)]; ok {
-					res.WriteString(v)
-				} else {
-					res.WriteRune(r)
-				}
-			}
-			return res.String()
-		})
-		math = regexp.MustCompile(`\^([^{])`).ReplaceAllStringFunc(math, func(s string) string {
-			char := s[1:]
-			if v, ok := latexSuperscripts[char]; ok {
-				return v
-			}
-			return char
-		})
-
-		// Handle subscripts: x_2 or x_{2}
+		// Handle subscripts: x_2 or x_{2} or \lim_{...}
 		math = regexp.MustCompile(`_{([^}]+)}`).ReplaceAllStringFunc(math, func(s string) string {
 			content := s[2 : len(s)-1]
+			// Recursively handle symbols inside the script first
+			for cmd, unicode := range latexSymbols {
+				content = strings.ReplaceAll(content, cmd, unicode)
+			}
 			var res strings.Builder
 			for _, r := range content {
 				if v, ok := latexSubscripts[string(r)]; ok {
@@ -120,8 +134,38 @@ func preprocessLaTeX(md string) string {
 			}
 			return res.String()
 		})
+
+		// Handle superscripts: x^2 or x^{2}
+		math = regexp.MustCompile(`\^{([^}]+)}`).ReplaceAllStringFunc(math, func(s string) string {
+			content := s[2 : len(s)-1]
+			// Recursively handle symbols inside the script first
+			for cmd, unicode := range latexSymbols {
+				content = strings.ReplaceAll(content, cmd, unicode)
+			}
+			var res strings.Builder
+			for _, r := range content {
+				if v, ok := latexSuperscripts[string(r)]; ok {
+					res.WriteString(v)
+				} else {
+					res.WriteRune(r)
+				}
+			}
+			return res.String()
+		})
+
+		// Single char scripts
+		math = regexp.MustCompile(`\^([^{])`).ReplaceAllStringFunc(math, func(s string) string {
+			char := s[1:]
+			if v, ok := latexSuperscripts[char]; ok {
+				return v
+			}
+			return char
+		})
 		math = regexp.MustCompile(`_([^{])`).ReplaceAllStringFunc(math, func(s string) string {
 			char := s[1:]
+			for cmd, unicode := range latexSymbols {
+				char = strings.ReplaceAll(char, cmd, unicode)
+			}
 			if v, ok := latexSubscripts[char]; ok {
 				return v
 			}
