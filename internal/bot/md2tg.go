@@ -566,7 +566,7 @@ func (r *tgHTMLRenderer) Walk(n ast.Node, entering bool) (ast.WalkStatus, error)
 					super.WriteRune(r)
 				}
 			}
-			r.buf.WriteString(fmt.Sprintf("([%s])", super.String()))
+			r.buf.WriteString(fmt.Sprintf("[%s]", super.String()))
 		}
 	case *extast.Footnote:
 		// Footnotes are typical list-like blocks at the bottom

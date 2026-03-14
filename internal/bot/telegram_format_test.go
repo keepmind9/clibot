@@ -108,7 +108,7 @@ func TestConvertMarkdownToTelegramHTML_Footnotes(t *testing.T) {
 	result := ConvertMarkdownToTelegramHTML(md)
 
 	// Check correctly formatted superscript
-	assert.Contains(t, result, "([¹])")
+	assert.Contains(t, result, "[¹]")
 	// Check correctly formatted footnote definition at bottom
 	// Goldmark often places it in a separate section or wraps in paragraph
 	assert.Contains(t, result, "[1] This is the footnote content.")
