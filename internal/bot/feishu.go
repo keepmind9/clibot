@@ -238,6 +238,7 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 
 	// Create message request body
 	// For text messages, content format: {"text":"actual content"}
+	message = WrapTablesInCodeBlocks(message)
 	contentJSON := fmt.Sprintf(`{"text":"%s"}`, escapeJSONString(message))
 
 	body := larkim.NewCreateMessageReqBodyBuilder().
@@ -297,6 +298,11 @@ func (f *FeishuBot) SetMessageHandler(handler func(BotMessage)) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.messageHandler = handler
+}
+
+// GetBotUsername returns the Feishu bot's identifier (AppID)
+func (f *FeishuBot) GetBotUsername() string {
+	return f.appID
 }
 
 // GetMessageHandler gets the message handler in a thread-safe manner

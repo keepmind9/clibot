@@ -80,7 +80,8 @@ type WatchdogConfig struct {
 
 // SessionGlobalConfig represents global session configuration
 type SessionGlobalConfig struct {
-	MaxDynamicSessions int `yaml:"max_dynamic_sessions"` // Maximum number of dynamic sessions allowed (default: 50)
+	MaxDynamicSessions int  `yaml:"max_dynamic_sessions"` // Maximum number of dynamic sessions allowed (default: 50)
+	ShowSessionStats   bool `yaml:"show_session_stats"`   // Whether to append session stats to responses (default: true)
 }
 
 // SessionConfig represents a session configuration
@@ -100,6 +101,7 @@ type BotConfig struct {
 	AppSecret         string       `yaml:"app_secret"`
 	Token             string       `yaml:"token"`
 	ChannelID         string       `yaml:"channel_id"`         // For Discord: server channel ID
+	ParseMode         string       `yaml:"parse_mode"`         // Message formatting mode (e.g., Markdown, HTML)
 	EncryptKey        string       `yaml:"encrypt_key"`        // Feishu: event encryption key (optional)
 	VerificationToken string       `yaml:"verification_token"` // Feishu: verification token (optional)
 	Proxy             *ProxyConfig `yaml:"proxy"`              // Optional bot-level proxy override

@@ -70,4 +70,22 @@ type CLIAdapter interface {
 	// The transportURL parameter is for ACP adapter (e.g., "stdio://", "tcp://host:port", "unix:///path")
 	// Other adapters should ignore this parameter
 	CreateSession(sessionName, workDir, startCmd, transportURL string) error
+
+	// ResetSession resets the session (e.g., starts a new conversation)
+	ResetSession(sessionName string) error
+
+	// SwitchWorkDir changes the working directory for a session
+	// This may require restarting the CLI process in the new directory
+	SwitchWorkDir(sessionName, newWorkDir string) error
+
+	// ListSessions returns a list of available CLI-native sessions/conversations
+	// botUsername is passed to allow generating platform-specific links
+	ListSessions(sessionName string, botUsername string) ([]string, error)
+
+	// SwitchSession switches to a specific CLI-native session/conversation
+	// Returns a preview context string of the loaded session on success
+	SwitchSession(sessionName, cliSessionID string) (string, error)
+
+	// GetSessionStats returns diagnostic stats for the session (e.g., current session ID and title)
+	GetSessionStats(sessionName string, botUsername string) (map[string]interface{}, error)
 }

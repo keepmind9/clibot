@@ -61,6 +61,13 @@ func TestIsSpecialCommandWithSstatus(t *testing.T) {
 			expectedIsCmd: true,
 		},
 		{
+			name:          "sstatus with slash",
+			input:         "/sstatus backend",
+			expectedCmd:   "sstatus",
+			expectedArgs:  []string{"backend"},
+			expectedIsCmd: true,
+		},
+		{
 			name:          "non-special command",
 			input:         "hello world",
 			expectedCmd:   "",

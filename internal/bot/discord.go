@@ -162,6 +162,7 @@ func (d *DiscordBot) SendMessage(channel, message string) error {
 		message = "..." + message[len(message)-maxDiscordLength+3:]
 	}
 
+	message = WrapTablesInCodeBlocks(message)
 	_, err := session.ChannelMessageSend(targetChannel, message)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
@@ -198,6 +199,18 @@ func (d *DiscordBot) SetMessageHandler(handler func(BotMessage)) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.messageHandler = handler
+}
+
+// GetBotUsername returns the Discord bot's username
+func (d *DiscordBot) GetBotUsername() string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if d.session != nil {
+		if sess, ok := d.session.(*discordgo.Session); ok && sess.State != nil && sess.State.User != nil {
+			return sess.State.User.Username
+		}
+	}
+	return ""
 }
 
 // GetMessageHandler gets the message handler in a thread-safe manner

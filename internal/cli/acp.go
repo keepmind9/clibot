@@ -2,18 +2,24 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/coder/acp-go-sdk"
+	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/sirupsen/logrus"
 )
@@ -40,24 +46,29 @@ func parseTransportURL(transportURL string) (transportType ACPTransportType, add
 	return ACPTransportStdio, ""
 }
 
-// ACPAdapter implements CLIAdapter using Agent Client Protocol
 type ACPAdapter struct {
-	config        ACPAdapterConfig
-	conn          *acp.ClientSideConnection
-	cmd           *exec.Cmd
-	mu            sync.Mutex
-	sessions      map[string]*acpSession
-	isRemote      bool       // Tracks if connection is remote (tcp/unix) vs local (stdio)
-	currentEngine Engine     // Engine reference for sending responses
-	currentClient *acpClient // Reference to current client for response buffer access
+	config            ACPAdapterConfig
+	mu                sync.Mutex
+	sessions          map[string]*acpSession
+	currentEngine     Engine     // Engine reference for sending responses
+	contextUsageLimit float64    // Threshold to trigger auto-reset (0.0 to 1.0, e.g., 0.5 for 50%)
 }
 
 type acpSession struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	active    bool
-	connReady chan struct{} // Closed when connection is ready for this session
-	sessionId string        // ACP session ID from server
+	ctx           context.Context
+	cancel        context.CancelFunc
+	active        bool
+	connReady     chan struct{} // Closed when connection is ready for this session
+	sessionId     string        // ACP session ID from server
+	workDir       string        // Saved workDir for recreation
+	startCmd      string        // Saved startCmd for recreation
+	lastUsagePerc float64       // Last recorded context usage percentage (0-100)
+	
+	// Per-session resources
+	conn     *acp.ClientSideConnection
+	cmd      *exec.Cmd
+	client   *acpClient
+	isRemote bool
 }
 
 // acpClient implements acp.Client interface for ACP callbacks
@@ -96,8 +107,9 @@ func NewACPAdapter(config ACPAdapterConfig) (*ACPAdapter, error) {
 	}).Info("acp-adapter-configured")
 
 	return &ACPAdapter{
-		config:   config,
-		sessions: make(map[string]*acpSession),
+		config:            config,
+		sessions:          make(map[string]*acpSession),
+		contextUsageLimit: 0.6, // Default to 60%
 	}, nil
 }
 
@@ -136,22 +148,180 @@ func (a *ACPAdapter) HandleHookData(data []byte) (string, string, string, error)
 // IsSessionAlive checks if session is active
 func (a *ACPAdapter) IsSessionAlive(sessionName string) bool {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	sess, ok := a.sessions[sessionName]
-	return ok && sess.active
+	a.mu.Unlock()
+
+	if !ok {
+		return false
+	}
+
+	active := sess.active
+	if !active {
+		logger.WithField("session", sessionName).Debug("session-alive-check-failed-inactive")
+		return false
+	}
+
+	alive := a.isSessionActive(sess)
+	if !alive {
+		logger.WithField("session", sessionName).Debug("session-alive-check-failed-process-died")
+	}
+	return alive
+}
+
+// isSessionActive checks if the underlying process or connection for a session is still alive.
+func (a *ACPAdapter) isSessionActive(sess *acpSession) bool {
+	if sess.isRemote {
+		if sess.conn == nil {
+			return false
+		}
+		select {
+		case <-sess.conn.Done():
+			return false
+		default:
+			return true
+		}
+	} else {
+		if sess.cmd == nil || sess.cmd.Process == nil {
+			return false
+		}
+		return sess.cmd.Process.Signal(os.Signal(syscall.Signal(0))) == nil
+	}
+}
+
+// ResetSession clears the session ID in memory to start a new conversation.
+// This makes the reset instant and ensures the next user interaction
+// automatically starts a fresh session.
+func (a *ACPAdapter) ResetSession(sessionName string) error {
+	logger.WithField("session", sessionName).Info("starting-new-acp-conversation-by-clearing-id")
+
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	if !ok {
+		a.mu.Unlock()
+		return fmt.Errorf("session %s not found", sessionName)
+	}
+	sess.sessionId = ""
+	a.mu.Unlock()
+
+	return nil
+}
+
+// SwitchWorkDir changes the working directory for an ACP session
+func (a *ACPAdapter) SwitchWorkDir(sessionName, newWorkDir string) error {
+	logger.WithFields(logrus.Fields{
+		"session":      sessionName,
+		"new_work_dir": newWorkDir,
+	}).Info("switching-acp-work-dir")
+
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	if !ok {
+		a.mu.Unlock()
+		return fmt.Errorf("session %s not found", sessionName)
+	}
+	startCmd := sess.startCmd
+	// Use stdio as default, but we should probably detect if it was remote
+	// For now, Gemini CLI is mostly used via stdio in clibot
+	a.mu.Unlock()
+
+	if err := a.DeleteSession(sessionName); err != nil {
+		logger.WithField("error", err).Warn("failed-to-delete-session-during-switch")
+	}
+
+	return a.CreateSession(sessionName, newWorkDir, startCmd, "stdio://")
+}
+
+// ListSessions lists available Gemini history sessions for the project associated
+// with this ACP session. It reads session-*.json files from ~/.gemini/tmp/{hash}/chats,
+// the same directory Gemini CLI uses regardless of the transport mode.
+func (a *ACPAdapter) ListSessions(sessionName string, botUsername string) ([]string, error) {
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	var workDir string
+	if ok {
+		workDir = sess.workDir
+	}
+	a.mu.Unlock()
+
+	if workDir == "" {
+		return nil, fmt.Errorf("ACP session '%s' has no recorded work directory", sessionName)
+	}
+
+	sessions, err := listGeminiSessionsByWorkDir(workDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var formatted []string
+	for _, s := range sessions {
+		id := s.ID
+		summary := s.Summary
+
+		sessionID := url.QueryEscape(id)
+		summaryEscaped := url.QueryEscape(summary)
+		link := id
+		summaryLink := ""
+		if botUsername != "" {
+			link = fmt.Sprintf("[**%s**](tg://resolve?domain=%s&text=sssw%%20%s)", id, botUsername, sessionID)
+			summaryLink = fmt.Sprintf("tg://resolve?domain=%s&text=%s", botUsername, summaryEscaped)
+		} else {
+			link = fmt.Sprintf("[**%s**](tg://msg?text=sssw%%20%s)", id, sessionID)
+			summaryLink = fmt.Sprintf("tg://msg?text=%s", summaryEscaped)
+		}
+
+		if summary == "" {
+			summary = "No summary available"
+			formatted = append(formatted, fmt.Sprintf("%s: `%s`", link, summary))
+		} else {
+			formatted = append(formatted, fmt.Sprintf("%s: [%s](%s)", link, summary, summaryLink))
+		}
+	}
+
+	return formatted, nil
+}
+
+// SwitchSession switches the Gemini CLI (running behind ACP) to a different
+// history session by updating the session ID used for future prompt requests.
+func (a *ACPAdapter) SwitchSession(sessionName, cliSessionID string) (string, error) {
+	logger.WithFields(logrus.Fields{
+		"session":     sessionName,
+		"cli_session": cliSessionID,
+	}).Info("switching-acp-gemini-session")
+
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	var workDir string
+	if ok {
+		workDir = sess.workDir
+	}
+	a.mu.Unlock()
+
+	if !ok {
+		return "", fmt.Errorf("session %s not found", sessionName)
+	}
+
+	if workDir != "" {
+		fullID, err := resolveFullSessionID(workDir, cliSessionID)
+		if err != nil {
+			return "", err
+		}
+		cliSessionID = fullID
+	}
+
+	a.mu.Lock()
+	sess.sessionId = cliSessionID
+	a.mu.Unlock()
+
+	return getGeminiSessionContext(workDir, cliSessionID), nil
 }
 
 // ensureGeminiChatsDir ensures that the Gemini chats directory exists
 // Gemini stores history in: ~/.gemini/tmp/{project_hash}/chats
 func ensureGeminiChatsDir(workDir string) error {
-	homeDir, err := os.UserHomeDir()
+	chatsDir, err := findGeminiChatsDir(workDir)
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return err
 	}
-
-	projectHash := computeProjectHash(workDir)
-	chatsDir := filepath.Join(homeDir, ".gemini", "tmp", projectHash, "chats")
 
 	// Create directory with permissions 0755 (cross-platform)
 	if err := os.MkdirAll(chatsDir, 0755); err != nil {
@@ -161,7 +331,7 @@ func ensureGeminiChatsDir(workDir string) error {
 	logger.WithFields(logrus.Fields{
 		"work_dir":  workDir,
 		"chats_dir": chatsDir,
-	}).Info("gemini-chats-directory-created")
+	}).Info("gemini-chats-directory-ensured")
 
 	return nil
 }
@@ -171,13 +341,35 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if _, exists := a.sessions[sessionName]; exists {
-		return nil // Already exists
+	// Check if session exists
+	if sess, exists := a.sessions[sessionName]; exists {
+		// If already active, return nil
+		if sess.active {
+			// Also check if process is really alive
+			if a.isSessionActive(sess) {
+				return nil
+			}
+			// Not really active, mark it as inactive and fall through to recreation
+			logger.WithField("session", sessionName).Info("recreating-abandoned-session")
+			sess.active = false
+		}
+		
+		// Cleanup old inactive session resources if any
+		if sess.cancel != nil {
+			sess.cancel()
+		}
+	}
+
+	// Ensure workDir is absolute
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		logger.WithField("error", err).Warn("failed-to-get-absolute-path-for-session")
+		absWorkDir = workDir
 	}
 
 	// Create Gemini chats directory if using gemini CLI
 	if strings.Contains(strings.ToLower(startCmd), "gemini") {
-		if err := ensureGeminiChatsDir(workDir); err != nil {
+		if err := ensureGeminiChatsDir(absWorkDir); err != nil {
 			logger.WithField("error", err).Warn("failed-to-create-gemini-chats-directory")
 		}
 	}
@@ -187,7 +379,7 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 
 	logger.WithFields(logrus.Fields{
 		"session":   sessionName,
-		"work_dir":  workDir,
+		"work_dir":  absWorkDir,
 		"command":   startCmd,
 		"transport": transportURL,
 		"type":      transportType,
@@ -197,8 +389,21 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 	// Create connReady channel for this session
 	connReady := make(chan struct{})
 
+	// Create session context
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	// Initialize session object early so start methods can populate it
+	sess := &acpSession{
+		ctx:       ctx,
+		cancel:    cancel,
+		active:    true,
+		connReady: connReady,
+		workDir:   absWorkDir,
+		startCmd:  startCmd,
+	}
+	a.sessions[sessionName] = sess
+
 	// Start connection based on transport type
-	var err error
 	var clientImpl *acpClient
 	switch transportType {
 	case ACPTransportStdio:
@@ -207,32 +412,23 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 			sessionName:  sessionName,
 			activityChan: make(chan time.Time, 10), // Buffered channel to avoid blocking
 		}
-		err = a.startStdioServer(sessionName, workDir, startCmd, clientImpl, connReady)
+		sess.client = clientImpl
+		err = a.startStdioServer(sess, absWorkDir, startCmd, clientImpl, connReady)
 	case ACPTransportTCP, ACPTransportUnix:
 		clientImpl = &acpClient{
 			adapter:      a,
 			sessionName:  sessionName,
 			activityChan: make(chan time.Time, 10), // Buffered channel to avoid blocking
 		}
-		err = a.connectRemoteServer(sessionName, workDir, transportType, address, clientImpl, connReady)
+		sess.client = clientImpl
+		err = a.connectRemoteServer(sess, absWorkDir, transportType, address, clientImpl, connReady)
 	default:
 		err = fmt.Errorf("unsupported transport type: %s", transportType)
 	}
 
 	if err != nil {
+		sess.active = false
 		return err
-	}
-
-	// Save client reference for accessing response buffer
-	a.currentClient = clientImpl
-
-	// Create session context
-	ctx, cancel := context.WithCancel(context.Background())
-	a.sessions[sessionName] = &acpSession{
-		ctx:       ctx,
-		cancel:    cancel,
-		active:    true,
-		connReady: connReady,
 	}
 
 	logger.WithField("session", sessionName).Info("acp-session-created")
@@ -240,15 +436,22 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 	return nil
 }
 
+
+
+
 // SendInput sends input to the ACP server
 func (a *ACPAdapter) SendInput(sessionName, input string) error {
 	a.mu.Lock()
 	sess, ok := a.sessions[sessionName]
-	clientImpl := a.currentClient
+	if !ok {
+		a.mu.Unlock()
+		return fmt.Errorf("session %s not found", sessionName)
+	}
+	clientImpl := sess.client
 	a.mu.Unlock()
 
-	if !ok || !sess.active {
-		return fmt.Errorf("session %s not found or inactive", sessionName)
+	if !sess.active {
+		return fmt.Errorf("session %s is inactive", sessionName)
 	}
 
 	// Wait for connection to be ready with timeout
@@ -261,20 +464,13 @@ func (a *ACPAdapter) SendInput(sessionName, input string) error {
 		return fmt.Errorf("session cancelled while waiting for connection")
 	}
 
-	if a.conn == nil {
+	if sess.conn == nil {
 		// Connection not established, mark session as inactive
 		a.mu.Lock()
-		if sess, exists := a.sessions[sessionName]; exists {
-			sess.active = false
-		}
+		sess.active = false
 		a.mu.Unlock()
-		return fmt.Errorf("ACP connection not established")
+		return fmt.Errorf("ACP connection for session %s not established", sessionName)
 	}
-
-	// Reload session to get latest state (including sessionId if set)
-	a.mu.Lock()
-	sess, _ = a.sessions[sessionName]
-	a.mu.Unlock()
 
 	logger.WithFields(logrus.Fields{
 		"session":   sessionName,
@@ -307,7 +503,7 @@ func (a *ACPAdapter) SendInput(sessionName, input string) error {
 
 	// Send prompt using ACP Prompt method
 	// Use sessionId if set, otherwise empty string (server may auto-create session)
-	resp, err := a.conn.Prompt(ctx, acp.PromptRequest{
+	resp, err := sess.conn.Prompt(ctx, acp.PromptRequest{
 		SessionId: acp.SessionId(sess.sessionId),
 		Prompt: []acp.ContentBlock{
 			{Text: &acp.ContentBlockText{Text: input}},
@@ -322,9 +518,7 @@ func (a *ACPAdapter) SendInput(sessionName, input string) error {
 			}).Error("acp-connection-error-marking-session-inactive")
 
 			a.mu.Lock()
-			if sess, exists := a.sessions[sessionName]; exists {
-				sess.active = false
-			}
+			sess.active = false
 			a.mu.Unlock()
 		} else if errors.Is(err, context.Canceled) {
 			return fmt.Errorf("request cancelled due to inactivity (idle timeout: %v)", a.config.IdleTimeout)
@@ -348,9 +542,12 @@ func (a *ACPAdapter) SendInput(sessionName, input string) error {
 		logger.WithFields(logrus.Fields{
 			"session":         sessionName,
 			"response_length": len(response),
-		}).Info("acp-sending-complete-response")
+		}).Info("acp-prompt-response-completed")
 
-		// Send response to user via engine
+		// Send response to user via engine if not already fully streamed
+		// NOTE: In streaming mode, some chunks might have been sent already.
+		// However, for bots that don't support streaming (like current Telegram implementation),
+		// we still rely on this final response for the full message.
 		a.mu.Lock()
 		engine := a.currentEngine
 		a.mu.Unlock()
@@ -451,10 +648,9 @@ func (a *ACPAdapter) monitorActivity(sessionName string, baseCtx context.Context
 // DeleteSession terminates an ACP session
 func (a *ACPAdapter) DeleteSession(sessionName string) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	sess, exists := a.sessions[sessionName]
 	if !exists {
+		a.mu.Unlock()
 		return fmt.Errorf("session %s not found", sessionName)
 	}
 
@@ -464,29 +660,26 @@ func (a *ACPAdapter) DeleteSession(sessionName string) error {
 
 	// Remove from sessions map
 	delete(a.sessions, sessionName)
+	a.mu.Unlock()
 
 	// Debug logging
 	logger.WithFields(logrus.Fields{
 		"session":  sessionName,
-		"isRemote": a.isRemote,
-		"cmd":      a.cmd != nil,
-		"process":  a.cmd != nil && a.cmd.Process != nil,
+		"isRemote": sess.isRemote,
+		"cmd":      sess.cmd != nil,
+		"process":  sess.cmd != nil && sess.cmd.Process != nil,
 	}).Debug("acp-delete-session-check")
 
 	// For local stdio connections, terminate the ACP server process
-	// Note: ACPAdapter currently only supports one active process (a.cmd)
-	// When deleting a session in stdio mode, we need to kill the process
-	// and close the connection since there's only one process for all sessions
-	if !a.isRemote && a.cmd != nil && a.cmd.Process != nil {
-		if err := a.killProcess(sessionName); err != nil {
+	if !sess.isRemote && sess.cmd != nil && sess.cmd.Process != nil {
+		if err := a.killProcess(sess); err != nil {
 			return err
 		}
 	}
 
 	// Close ACP connection
-	if a.conn != nil {
-		<-a.conn.Done()
-		a.conn = nil
+	if sess.conn != nil {
+		<-sess.conn.Done()
 	}
 
 	logger.WithField("session", sessionName).Info("acp-session-deleted")
@@ -494,48 +687,176 @@ func (a *ACPAdapter) DeleteSession(sessionName string) error {
 	return nil
 }
 
-// Close cleans up ACP adapter resources
-func (a *ACPAdapter) Close() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
 
-	// Cancel all sessions
-	for name := range a.sessions {
-		sess := a.sessions[name]
-		sess.cancel()
-		sess.active = false
+// getSessionTitle attempts to extract a descriptive title for a session
+func (a *ACPAdapter) getSessionTitle(workDir, sessionID, botUsername string) (string, string) {
+	if sessionID == "" {
+		return "new-session", ""
 	}
 
-	// Wait for ACP connection to close
-	if a.conn != nil {
-		<-a.conn.Done()
+	// Try to find the JSON file for this session
+	chatsDir, err := findGeminiChatsDir(workDir)
+	if err != nil {
+		return sessionID, sessionID
 	}
 
-	// Terminate ACP server process or close network connection
-	if a.isRemote {
-		// For remote connections, just close connection
-		logger.Info("acp-remote-connection-closed")
-	} else {
-		// For local stdio, terminate process
-		if a.cmd != nil && a.cmd.Process != nil {
-			if err := a.cmd.Process.Kill(); err != nil {
-				logger.WithField("error", err).Warn("failed-to-kill-acp-process")
-			}
-			// Wait for process to exit
-			a.cmd.Wait()
+	searchID := sessionID
+	if len(searchID) >= 36 {
+		searchID = searchID[:8] // first 8 hex chars of UUID
+	}
+
+	// Try direct match first
+	sessionPath := filepath.Join(chatsDir, fmt.Sprintf("session-%s.json", sessionID))
+	if _, err := os.Stat(sessionPath); err != nil {
+		// Try middle-matching for Gemini's timestamped filenames
+		matches, _ := filepath.Glob(filepath.Join(chatsDir, fmt.Sprintf("session-*%s*.json", searchID)))
+		if len(matches) > 0 {
+			sessionPath = matches[0]
+			// Update IDs to use the full timestamped version for display
+			sessionID = strings.TrimSuffix(strings.TrimPrefix(filepath.Base(sessionPath), "session-"), ".json")
 		}
 	}
 
-	a.sessions = make(map[string]*acpSession)
-	a.conn = nil
-	a.cmd = nil
+	if _, err := os.Stat(sessionPath); err == nil {
+		// Read file and parse first user message
+		data, err := os.ReadFile(sessionPath)
+		if err == nil {
+			var sessionData struct {
+				Title    string `json:"title"`
+				Name     string `json:"name"`
+				Messages []struct {
+					Type    string      `json:"type"`
+					Content interface{} `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.Unmarshal(data, &sessionData); err == nil {
+				// 1. Check for explicit title or name
+				var title string
+				if sessionData.Title != "" {
+					title = sessionData.Title
+				} else if sessionData.Name != "" {
+					title = sessionData.Name
+				}
+
+				if title != "" {
+					title = strings.ReplaceAll(title, "\n", " ")
+					safeTitle := strings.ReplaceAll(strings.ReplaceAll(title, "[", "("), "]", ")")
+					safeTitle = bot.TruncateRuneSafe(safeTitle, 40)
+					
+					sessionIDEscaped := url.QueryEscape(sessionID)
+					titleEscaped := url.QueryEscape(title)
+					
+					var idLink, summaryLink string
+					if botUsername != "" {
+						idLink = fmt.Sprintf("tg://resolve?domain=%s&text=sssw%%20%s", botUsername, sessionIDEscaped)
+						summaryLink = fmt.Sprintf("tg://resolve?domain=%s&text=%s", botUsername, titleEscaped)
+					} else {
+						idLink = fmt.Sprintf("tg://msg?text=sssw%%20%s", sessionIDEscaped)
+						summaryLink = fmt.Sprintf("tg://msg?text=%s", titleEscaped)
+					}
+					
+					// Format: [**id**](link): [summary](link)
+					return fmt.Sprintf("[**%s**](%s): [%s](%s)",
+						sessionID, idLink, safeTitle, summaryLink), sessionID
+				}
+
+				// 2. Extract from first user message
+				for _, msg := range sessionData.Messages {
+					msgType := strings.ToLower(msg.Type)
+					if msgType == "user" || msgType == "human" {
+						var contentStr string
+						if s, ok := msg.Content.(string); ok {
+							contentStr = s
+						} else if arr, ok := msg.Content.([]interface{}); ok && len(arr) > 0 {
+							if m, ok := arr[0].(map[string]interface{}); ok {
+								if text, ok := m["text"].(string); ok {
+									contentStr = text
+								}
+							}
+						}
+						
+						// Extract first 30 chars of first user message as title
+						title := strings.TrimSpace(contentStr)
+						title = strings.ReplaceAll(title, "\n", " ")
+						if len(title) > 30 {
+							title = title[:27] + "..."
+						}
+						// Sanitize summary for markdown link
+						safeTitle := strings.ReplaceAll(strings.ReplaceAll(title, "[", "("), "]", ")")
+						safeTitle = bot.TruncateRuneSafe(safeTitle, 40)
+						
+						sessionIDEscaped := url.QueryEscape(sessionID)
+						titleEscaped := url.QueryEscape(title)
+						
+						var idLink, summaryLink string
+						if botUsername != "" {
+							idLink = fmt.Sprintf("tg://resolve?domain=%s&text=sssw%%20%s", botUsername, sessionIDEscaped)
+							summaryLink = fmt.Sprintf("tg://resolve?domain=%s&text=%s", botUsername, titleEscaped)
+						} else {
+							idLink = fmt.Sprintf("tg://msg?text=sssw%%20%s", sessionIDEscaped)
+							summaryLink = fmt.Sprintf("tg://msg?text=%s", titleEscaped)
+						}
+						
+						// Format: [**id**](link): [summary](link)
+						return fmt.Sprintf("[**%s**](%s): [%s](%s)",
+							sessionID, idLink, safeTitle, summaryLink), sessionID
+					}
+				}
+			}
+		}
+	}
+
+	return sessionID, sessionID
+}
+
+// GetSessionStats returns diagnostic stats for the session (e.g., context usage)
+func (a *ACPAdapter) GetSessionStats(sessionName string, botUsername string) (map[string]interface{}, error) {
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	a.mu.Unlock()
+
+	if !ok {
+		return nil, fmt.Errorf("session %s not found", sessionName)
+	}
+
+	stats := make(map[string]interface{})
+	stats["work_dir"] = sess.workDir
+	stats["usage_perc"] = sess.lastUsagePerc
+	
+	title, actualID := a.getSessionTitle(sess.workDir, sess.sessionId, botUsername)
+	stats["session_title"] = title
+	stats["session_id"] = actualID
+	
+	return stats, nil
+}
+
+// Close cleans up ACP adapter resources
+func (a *ACPAdapter) Close() error {
+	a.mu.Lock()
+	// Create a list of names to avoid concurrent map access issues
+	var sessionNames []string
+	for name := range a.sessions {
+		sessionNames = append(sessionNames, name)
+	}
+	a.mu.Unlock()
+
+	// Delete each session properly
+	for _, name := range sessionNames {
+		if err := a.DeleteSession(name); err != nil {
+			logger.WithFields(logrus.Fields{
+				"session": name,
+				"error":   err,
+			}).Warn("failed-to-delete-session-during-close")
+		}
+	}
 
 	logger.Info("acp-adapter-closed")
 	return nil
 }
 
 // startStdioServer starts ACP server as subprocess with stdio transport
-func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clientImpl *acpClient, connReady chan struct{}) error {
+func (a *ACPAdapter) startStdioServer(sess *acpSession, workDir, command string, clientImpl *acpClient, connReady chan struct{}) error {
+	sessionName := sess.client.sessionName
 	cmd := buildShellCommand(command)
 
 	// Set working directory
@@ -583,17 +904,18 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clie
 		return fmt.Errorf("failed to start ACP server: %w", err)
 	}
 
-	a.cmd = cmd
-	a.isRemote = false
+	sess.cmd = cmd
+	sess.isRemote = false
 
 	// Create ACP client-side connection in goroutine to avoid blocking
 	// IMPORTANT: NewClientSideConnection may block during handshake
 	go func() {
-		a.conn = acp.NewClientSideConnection(clientImpl, stdin, stdout)
+		conn := acp.NewClientSideConnection(clientImpl, stdin, stdout)
 		logger.Info("acp-client-connection-created")
-		// Set logger for connection in goroutine to avoid blocking
-		if a.conn != nil {
-			a.conn.SetLogger(slog.Default())
+		
+		if conn != nil {
+			sess.conn = conn
+			conn.SetLogger(slog.Default())
 
 			// Try to call NewSession to get sessionId with retries
 			time.Sleep(acpConnectionStabilizeDelay)
@@ -607,7 +929,7 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clie
 				ctx, cancel := context.WithTimeout(context.Background(), acpNewSessionTimeout)
 
 				logger.WithField("attempt", attempt).Info("acp-calling-new-session")
-				newSessionResp, err = a.conn.NewSession(ctx, acp.NewSessionRequest{
+				newSessionResp, err = conn.NewSession(ctx, acp.NewSessionRequest{
 					Cwd:        workDir,
 					McpServers: []acp.McpServer{}, // Pass empty array instead of nil
 				})
@@ -615,16 +937,12 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clie
 
 				if err == nil {
 					// Success - save sessionId and break
-					a.mu.Lock()
-					if sess, exists := a.sessions[sessionName]; exists {
-						sess.sessionId = string(newSessionResp.SessionId)
-						logger.WithFields(logrus.Fields{
-							"session":   sessionName,
-							"sessionId": sess.sessionId,
-							"attempt":   attempt,
-						}).Info("acp-session-id-saved")
-					}
-					a.mu.Unlock()
+					sess.sessionId = string(newSessionResp.SessionId)
+					logger.WithFields(logrus.Fields{
+						"session":   sessionName,
+						"sessionId": sess.sessionId,
+						"attempt":   attempt,
+					}).Info("acp-session-id-saved")
 					break
 				}
 
@@ -640,7 +958,19 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clie
 				}
 			}
 
-			// Signal that connection is ready (regardless of NewSession success)
+			// If NewSession failed after all retries, mark session as inactive
+			// so that SendInput won't attempt to use an empty sessionId.
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"session": sessionName,
+					"error":   err,
+				}).Error("acp-new-session-all-retries-failed-marking-inactive")
+				a.mu.Lock()
+				sess.active = false
+				a.mu.Unlock()
+			}
+
+			// Signal that connection setup is complete (success or failure)
 			close(connReady)
 		}
 	}()
@@ -668,7 +998,8 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clie
 }
 
 // connectRemoteServer connects to a remote ACP server via TCP or Unix socket
-func (a *ACPAdapter) connectRemoteServer(sessionName string, workDir string, transportType ACPTransportType, address string, clientImpl *acpClient, connReady chan struct{}) error {
+func (a *ACPAdapter) connectRemoteServer(sess *acpSession, workDir string, transportType ACPTransportType, address string, clientImpl *acpClient, connReady chan struct{}) error {
+	sessionName := sess.client.sessionName
 	if address == "" {
 		return fmt.Errorf("address is required for %s transport", transportType)
 	}
@@ -685,21 +1016,22 @@ func (a *ACPAdapter) connectRemoteServer(sessionName string, workDir string, tra
 	}
 
 	// Connect to remote server with timeout
-	conn, err := net.DialTimeout(network, address, acpDialTimeout)
+	connNet, err := net.DialTimeout(network, address, acpDialTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s server at %s: %w", transportType, address, err)
 	}
 
-	a.isRemote = true
+	sess.isRemote = true
 
 	// Create ACP client-side connection in goroutine to avoid blocking
 	// IMPORTANT: NewClientSideConnection may block during handshake
 	go func() {
-		a.conn = acp.NewClientSideConnection(clientImpl, conn, conn)
+		conn := acp.NewClientSideConnection(clientImpl, connNet, connNet)
 		logger.Info("acp-client-connection-created")
-		// Set logger for connection in goroutine to avoid blocking
-		if a.conn != nil {
-			a.conn.SetLogger(slog.Default())
+
+		if conn != nil {
+			sess.conn = conn
+			conn.SetLogger(slog.Default())
 
 			// Try to call NewSession to get sessionId with retries
 			time.Sleep(acpConnectionStabilizeDelay)
@@ -713,7 +1045,7 @@ func (a *ACPAdapter) connectRemoteServer(sessionName string, workDir string, tra
 				ctx, cancel := context.WithTimeout(context.Background(), acpNewSessionTimeout)
 
 				logger.WithField("attempt", attempt).Info("acp-calling-new-session")
-				newSessionResp, err = a.conn.NewSession(ctx, acp.NewSessionRequest{
+				newSessionResp, err = conn.NewSession(ctx, acp.NewSessionRequest{
 					Cwd:        workDir,
 					McpServers: []acp.McpServer{}, // Pass empty array instead of nil
 				})
@@ -721,16 +1053,12 @@ func (a *ACPAdapter) connectRemoteServer(sessionName string, workDir string, tra
 
 				if err == nil {
 					// Success - save sessionId and break
-					a.mu.Lock()
-					if sess, exists := a.sessions[sessionName]; exists {
-						sess.sessionId = string(newSessionResp.SessionId)
-						logger.WithFields(logrus.Fields{
-							"session":   sessionName,
-							"sessionId": sess.sessionId,
-							"attempt":   attempt,
-						}).Info("acp-session-id-saved")
-					}
-					a.mu.Unlock()
+					sess.sessionId = string(newSessionResp.SessionId)
+					logger.WithFields(logrus.Fields{
+						"session":   sessionName,
+						"sessionId": sess.sessionId,
+						"attempt":   attempt,
+					}).Info("acp-session-id-saved")
 					break
 				}
 
@@ -746,7 +1074,19 @@ func (a *ACPAdapter) connectRemoteServer(sessionName string, workDir string, tra
 				}
 			}
 
-			// Signal that connection is ready (regardless of NewSession success)
+			// If NewSession failed after all retries, mark session as inactive
+			// so that SendInput won't attempt to use an empty sessionId.
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"session": sessionName,
+					"error":   err,
+				}).Error("acp-new-session-all-retries-failed-marking-inactive")
+				a.mu.Lock()
+				sess.active = false
+				a.mu.Unlock()
+			}
+
+			// Signal that connection setup is complete (success or failure)
 			close(connReady)
 		}
 	}()
@@ -823,6 +1163,38 @@ func (c *acpClient) SessionUpdate(ctx context.Context, params acp.SessionNotific
 		if params.Update.AgentMessageChunk.Content.Text != nil {
 			chunk := params.Update.AgentMessageChunk.Content.Text.Text
 			logger.WithField("chunk", chunk).Debug("acp-agent-chunk")
+
+			// CONTEXT MONITORING: Parse /stats model output
+			// Expected format: "... X% context used ..."
+			if strings.Contains(chunk, "context used") {
+				// Use a regex to find the percentage
+				re := regexp.MustCompile(`(\d+)%\s+context used`)
+				matches := re.FindStringSubmatch(chunk)
+				if len(matches) > 1 {
+					perc, _ := strconv.ParseFloat(matches[1], 64)
+					c.adapter.mu.Lock()
+					if sess, ok := c.adapter.sessions[c.sessionName]; ok {
+						sess.lastUsagePerc = perc
+						logger.WithFields(logrus.Fields{
+							"session": c.sessionName,
+							"usage":   perc,
+						}).Info("captured-context-usage-percentage")
+
+						// Auto-reset if usage > limit (threshold 0.6 = 60%)
+						if perc/100.0 >= c.adapter.contextUsageLimit {
+							// Notify user before reset
+							if c.adapter.currentEngine != nil {
+								msg := fmt.Sprintf("⚠️ Context usage has reached %.0f%%. Automatically switching to a new session to maintain performance...", perc)
+								c.adapter.currentEngine.SendResponseToSession(c.sessionName, msg)
+							}
+
+							// Trigger reset in goroutine to not block update
+							go c.adapter.ResetSession(c.sessionName)
+						}
+					}
+					c.adapter.mu.Unlock()
+				}
+			}
 
 			c.mu.Lock()
 			c.responseBuf.WriteString(chunk)

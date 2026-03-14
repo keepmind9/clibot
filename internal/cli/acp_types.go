@@ -23,7 +23,7 @@ const (
 	acpConnectionReadyTimeout = 30 * time.Second
 
 	// NewSession configuration
-	acpNewSessionTimeout    = 10 * time.Second // per attempt
+	acpNewSessionTimeout    = 60 * time.Second // per attempt
 	acpNewSessionMaxRetries = 3                // maximum attempts
 	acpNewSessionRetryDelay = 2 * time.Second  // between attempts
 
@@ -31,7 +31,7 @@ const (
 	acpConnectionStabilizeDelay = 500 * time.Millisecond
 
 	// Remote dial timeout (10 seconds)
-	acpDialTimeout = 10 * time.Second
+	acpDialTimeout = 60 * time.Second
 
 	// Poll interval for polling mode (1 second)
 	acpPollInterval = 1 * time.Second

@@ -271,7 +271,7 @@ func TestFormatterSetting(t *testing.T) {
 
 	logger := GetLogger()
 	formatter := logger.Formatter
-	assert.IsType(t, &logrus.TextFormatter{}, formatter)
+	assert.IsType(t, &OpenClawFormatter{}, formatter)
 
 	// Test production mode uses JSON formatter
 	config = Config{
@@ -283,7 +283,7 @@ func TestFormatterSetting(t *testing.T) {
 
 	logger = GetLogger()
 	formatter = logger.Formatter
-	assert.IsType(t, &logrus.JSONFormatter{}, formatter)
+	assert.IsType(t, &OpenClawFormatter{}, formatter)
 }
 
 func TestInitLogger_WithCompression(t *testing.T) {

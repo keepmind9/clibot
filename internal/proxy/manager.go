@@ -12,7 +12,8 @@ import (
 
 const (
 	// DefaultHTTPClientTimeout is the default timeout for HTTP requests
-	DefaultHTTPClientTimeout = 30 * time.Second
+	// Increased to 100s to accommodate long polling (e.g. Telegram's 60s poll)
+	DefaultHTTPClientTimeout = 100 * time.Second
 )
 
 // ProxyConfig represents a proxy configuration

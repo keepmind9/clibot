@@ -79,39 +79,39 @@ var (
 			// Start engine in a goroutine
 			engineErrChan := make(chan error, 1)
 			go func() {
-				fmt.Println("clibot engine starting...")
-				fmt.Println("Press Ctrl+C to stop")
+				logger.Info("clibot engine starting...")
+				logger.Info("Press Ctrl+C to stop")
 				engineErrChan <- engine.Run(ctx)
 			}()
 
 			// Wait for signal or engine error
 			select {
 			case sig := <-sigChan:
-				log.Printf("\nReceived signal: %v, shutting down gracefully...", sig)
+				logger.Warnf("Received signal: %v, shutting down gracefully...", sig)
 				cancel() // Cancel context to stop event loop
 				if err := engine.Stop(); err != nil {
-					log.Printf("Error during shutdown: %v", err)
+					logger.Errorf("Error during shutdown: %v", err)
 				}
 			case err := <-engineErrChan:
 				if err != nil {
-					log.Fatalf("Engine error: %v", err)
+					logger.Fatalf("Engine error: %v", err)
 				}
 			}
 
 			// Wait for engine to actually stop (with timeout via second Ctrl+C)
 			select {
 			case sig := <-sigChan:
-				log.Printf("\nReceived second signal: %v, forcing shutdown...", sig)
+				logger.Warnf("Received second signal: %v, forcing shutdown...", sig)
 				if err := engine.Stop(); err != nil {
-					log.Printf("Error during forced shutdown: %v", err)
+					logger.Errorf("Error during forced shutdown: %v", err)
 				}
 			case err := <-engineErrChan:
 				if err != nil {
-					log.Fatalf("Engine error: %v", err)
+					logger.Fatalf("Engine error: %v", err)
 				}
 			}
 
-			log.Println("Clibot stopped")
+			logger.Info("clibot stopped")
 		},
 	}
 )
@@ -188,7 +188,7 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 				Env: cliConfig.Env,
 			})
 		default:
-			log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
+			logger.Warnf("Warning: CLI adapter type '%s' not implemented yet", cliType)
 			continue
 		}
 
@@ -197,7 +197,7 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 		}
 
 		engine.RegisterCLIAdapter(cliType, adapter)
-		log.Printf("Registered %s CLI adapter (mode: hook)", cliType)
+		logger.Infof("Registered %s CLI adapter (mode: hook)", cliType)
 	}
 
 	return nil
@@ -207,7 +207,7 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 func registerBotAdapters(engine *core.Engine, config *core.Config) error {
 	for botType, botConfig := range config.Bots {
 		if !botConfig.Enabled {
-			log.Printf("Bot %s is disabled, skipping", botType)
+			logger.Infof("Bot %s is disabled, skipping", botType)
 			continue
 		}
 
@@ -218,7 +218,7 @@ func registerBotAdapters(engine *core.Engine, config *core.Config) error {
 			discordBot := bot.NewDiscordBot(botConfig.Token, botConfig.ChannelID)
 			discordBot.SetProxyManager(engine.GetProxyManager())
 			botAdapter = discordBot
-			log.Printf("Registered %s bot adapter", botType)
+			logger.Infof("Registered %s bot adapter", botType)
 
 		case "feishu":
 			feishuBot := bot.NewFeishuBot(botConfig.AppID, botConfig.AppSecret)
@@ -230,28 +230,31 @@ func registerBotAdapters(engine *core.Engine, config *core.Config) error {
 			}
 			feishuBot.SetProxyManager(engine.GetProxyManager())
 			botAdapter = feishuBot
-			log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
+			logger.Infof("Registered %s bot adapter (WebSocket long connection)", botType)
 
 		case "dingtalk":
 			dingtalkBot := bot.NewDingTalkBot(botConfig.AppID, botConfig.AppSecret)
 			dingtalkBot.SetProxyManager(engine.GetProxyManager())
 			botAdapter = dingtalkBot
-			log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
+			logger.Infof("Registered %s bot adapter (WebSocket long connection)", botType)
 
 		case "telegram":
 			telegramBot := bot.NewTelegramBot(botConfig.Token)
+			if botConfig.ParseMode != "" {
+				telegramBot.SetParseMode(botConfig.ParseMode)
+			}
 			telegramBot.SetProxyManager(engine.GetProxyManager())
 			botAdapter = telegramBot
-			log.Printf("Registered %s bot adapter (long polling)", botType)
+			logger.Infof("Registered %s bot adapter (long polling, parse_mode: %s)", botType, botConfig.ParseMode)
 
 		case "qq":
 			qqBot := bot.NewQQBot(botConfig.AppID, botConfig.AppSecret)
 			qqBot.SetProxyManager(engine.GetProxyManager())
 			botAdapter = qqBot
-			log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
+			logger.Infof("Registered %s bot adapter (WebSocket long connection)", botType)
 
 		default:
-			log.Printf("Warning: Bot type '%s' not implemented yet", botType)
+			logger.Warnf("Warning: Bot type '%s' not implemented yet", botType)
 			continue
 		}
 
