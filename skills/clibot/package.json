@@ -1,0 +1,51 @@
+{
+  "name": "clibot",
+  "version": "1.0.0",
+  "description": "Claude Code skill for automated deployment and setup of clibot",
+  "type": "module",
+  "main": "cli.js",
+  "bin": {
+    "clibot": "./cli.js"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.js",
+    "install": "node scripts/install.js",
+    "config": "node scripts/config.js",
+    "validate": "node scripts/validate.js",
+    "start": "node scripts/service.js start",
+    "stop": "node scripts/service.js stop",
+    "restart": "node scripts/service.js restart",
+    "status": "node scripts/service.js status",
+    "logs": "node scripts/logs.js",
+    "help": "node scripts/help.js"
+  },
+  "keywords": [
+    "clibot",
+    "claude",
+    "claude-code",
+    "telegram",
+    "discord",
+    "feishu",
+    "lark",
+    "bot",
+    "deployment",
+    "skill"
+  ],
+  "author": "clibot contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/keepmind9/clibot.git"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chalk": "^5.3.0",
+    "commander": "^11.1.0",
+    "inquirer": "^9.2.0",
+    "js-yaml": "^4.1.0",
+    "ora": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

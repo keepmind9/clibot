@@ -52,3 +52,6 @@ BUG_*.md
 # Git worktrees (local development branches)
 .worktrees/
 worktrees/
+
+*.skill
+node_modules
