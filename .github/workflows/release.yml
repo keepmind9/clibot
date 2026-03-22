@@ -76,28 +76,28 @@ jobs:
           \`\`\`bash
           curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-linux-amd64
           chmod +x clibot-linux-amd64
-          sudo mv clibot-linux-amd64 /usr/local/bin/clibot
+          mv clibot-linux-amd64 ~/.local/bin/clibot
           \`\`\`
 
           **Linux (ARM64):**
           \`\`\`bash
           curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-linux-arm64
           chmod +x clibot-linux-arm64
-          sudo mv clibot-linux-arm64 /usr/local/bin/clibot
+          mv clibot-linux-arm64 ~/.local/bin/clibot
           \`\`\`
 
           **macOS (Intel):**
           \`\`\`bash
           curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-darwin-amd64
           chmod +x clibot-darwin-amd64
-          sudo mv clibot-darwin-amd64 /usr/local/bin/clibot
+          mv clibot-darwin-amd64 ~/.local/bin/clibot
           \`\`\`
 
           **macOS (Apple Silicon):**
           \`\`\`bash
           curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-darwin-arm64
           chmod +x clibot-darwin-arm64
-          sudo mv clibot-darwin-arm64 /usr/local/bin/clibot
+          mv clibot-darwin-arm64 ~/.local/bin/clibot
           \`\`\`
 
           **Windows (AMD64):**
