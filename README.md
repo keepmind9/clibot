@@ -16,6 +16,18 @@ clibot is a lightweight middleware that bridges ACP-compatible AI CLI tools (Cla
 - **🔌 Flexible Extension**: Add new CLI or Bot by implementing interfaces
 - **⚡ ACP Support**: Streaming responses, no tmux required (for compatible CLIs)
 
+## ✨ Claude Code Skill
+
+For Claude Code users, an interactive skill is available for one-command setup:
+
+```bash
+/clibot setup
+```
+
+The skill handles everything: binary download, bot token setup, config generation, and service startup — all through a guided wizard. No manual config editing required.
+
+See [`skills/clibot/`](skills/clibot/) for details.
+
 ## 🚀 Quick Start
 
 ### Prerequisites

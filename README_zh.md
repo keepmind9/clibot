@@ -16,6 +16,18 @@ clibot 是一个轻量级中间件，将 ACP 兼容的 AI CLI 工具（Claude Co
 - **🔌 灵活扩展**：通过实现接口添加新的 CLI 或 Bot
 - **⚡ ACP 支持**：流式响应，无需 tmux（兼容的 CLI）
 
+## ✨ Claude Code 技能
+
+Claude Code 用户可以使用交互式技能，一键启动配置向导：
+
+```bash
+/clibot setup
+```
+
+技能自动完成：二进制下载、机器人令牌配置、配置生成、服务启动——全程向导式操作，无需手动编辑配置文件。
+
+详见 [`skills/clibot/`](skills/clibot/)。
+
 ## 🚀 快速开始
 
 ### 前置要求
