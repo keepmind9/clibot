@@ -8,6 +8,7 @@ BUILD_TIME=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GIT_BRANCH=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 GIT_COMMIT=$(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME) -X main.GitBranch=$(GIT_BRANCH) -X main.GitCommit=$(GIT_COMMIT)"
+LDFLAGS_RELEASE=-ldflags "-s -w -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME) -X main.GitBranch=$(GIT_BRANCH) -X main.GitCommit=$(GIT_COMMIT)"
 
 # Directories
 CMD_DIR=./cmd/$(BINARY_NAME)
@@ -41,26 +42,62 @@ build:
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
 	@echo "$(GREEN)Build complete: $(BUILD_DIR)/$(BINARY_NAME)$(NC)"
 
-## build-linux: Build for Linux
-.PHONY: build-linux
-build-linux:
-	@echo "$(BLUE)Building $(BINARY_NAME) for Linux...$(NC)"
+## build-linux-amd64: Build for Linux AMD64
+.PHONY: build-linux-amd64
+build-linux-amd64:
+	@echo "$(BLUE)Building $(BINARY_NAME) for Linux AMD64...$(NC)"
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_DIR)
 	@echo "$(GREEN)Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64$(NC)"
 
-## build-darwin: Build for macOS
-.PHONY: build-darwin
-build-darwin:
-	@echo "$(BLUE)Building $(BINARY_NAME) for macOS...$(NC)"
+## build-linux-arm64: Build for Linux ARM64
+.PHONY: build-linux-arm64
+build-linux-arm64:
+	@echo "$(BLUE)Building $(BINARY_NAME) for Linux ARM64...$(NC)"
 	@mkdir -p $(BUILD_DIR)
-	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(CMD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(CMD_DIR)
+	@echo "$(GREEN)Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64$(NC)"
+
+## build-darwin-amd64: Build for macOS Intel
+.PHONY: build-darwin-amd64
+build-darwin-amd64:
+	@echo "$(BLUE)Building $(BINARY_NAME) for macOS Intel...$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(CMD_DIR)
 	@echo "$(GREEN)Build complete: $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64$(NC)"
+
+## build-darwin-arm64: Build for macOS Apple Silicon
+.PHONY: build-darwin-arm64
+build-darwin-arm64:
+	@echo "$(BLUE)Building $(BINARY_NAME) for macOS Apple Silicon...$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(CMD_DIR)
+	@echo "$(GREEN)Build complete: $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64$(NC)"
+
+## build-windows-amd64: Build for Windows AMD64
+.PHONY: build-windows-amd64
+build-windows-amd64:
+	@echo "$(BLUE)Building $(BINARY_NAME) for Windows AMD64...$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(CMD_DIR)
+	@echo "$(GREEN)Build complete: $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe$(NC)"
 
 ## build-all: Build for all platforms
 .PHONY: build-all
-build-all: build-linux build-darwin
+build-all: build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64
 	@echo "$(GREEN)All builds complete!$(NC)"
+
+## build-release: Build release artifacts with checksums
+.PHONY: build-release
+build-release: build-all
+	@echo "$(BLUE)Generating checksums...$(NC)"
+	@cd $(BUILD_DIR) && \
+		for file in $(BINARY_NAME)-*; do \
+			if [ -f "$$file" ]; then \
+				sha256sum "$$file" > "$$file.sha256"; \
+			fi; \
+		done
+	@echo "$(GREEN)Release artifacts ready in $(BUILD_DIR)$(NC)"
 
 ## install: Install the application to $GOPATH/bin
 .PHONY: install
