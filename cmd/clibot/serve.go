@@ -250,6 +250,20 @@ func registerBotAdapters(engine *core.Engine, config *core.Config) error {
 			botAdapter = qqBot
 			log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
 
+		case "weixin":
+			baseURL := botConfig.BaseURL
+			if baseURL == "" {
+				baseURL = bot.DefaultBaseURL
+			}
+			credPath := botConfig.CredentialsPath
+			if credPath == "" {
+				credPath = bot.DefaultCredentialsPath()
+			}
+			weixinBot := bot.NewWeixinBot(baseURL, credPath)
+			weixinBot.SetProxyManager(engine.GetProxyManager())
+			botAdapter = weixinBot
+			log.Printf("Registered %s bot adapter (QR login + long polling)", botType)
+
 		default:
 			log.Printf("Warning: Bot type '%s' not implemented yet", botType)
 			continue

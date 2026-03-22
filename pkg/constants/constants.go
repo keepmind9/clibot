@@ -12,6 +12,8 @@ const (
 	MaxFeishuMessageLength = 20000
 	// MaxDingTalkMessageLength is DingTalk's message character limit
 	MaxDingTalkMessageLength = 20000
+	// MaxWeixinMessageLength is WeChat iLink's message character limit
+	MaxWeixinMessageLength = 2000
 )
 
 // Timeouts and delays

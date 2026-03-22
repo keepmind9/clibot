@@ -36,7 +36,7 @@ func buildShellCommand(command string) *exec.Cmd {
 		return exec.Command("cmd", "/c", command)
 	}
 	// Linux/macOS (including WSL2): use sh -c with process group
-	cmd := exec.Command("sh", "-c", command)
+	cmd := exec.Command("/bin/sh", "-c", command)
 
 	// Set process group ID to allow killing entire process tree
 	// This ensures that when we kill the shell process, all its

@@ -102,6 +102,8 @@ type BotConfig struct {
 	ChannelID         string       `yaml:"channel_id"`         // For Discord: server channel ID
 	EncryptKey        string       `yaml:"encrypt_key"`        // Feishu: event encryption key (optional)
 	VerificationToken string       `yaml:"verification_token"` // Feishu: verification token (optional)
+	BaseURL           string       `yaml:"base_url"`           // WeChat iLink: API base URL (optional)
+	CredentialsPath   string       `yaml:"credentials_path"`   // WeChat iLink: credentials file path (optional)
 	Proxy             *ProxyConfig `yaml:"proxy"`              // Optional bot-level proxy override
 }
 

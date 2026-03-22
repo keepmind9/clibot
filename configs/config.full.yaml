@@ -253,6 +253,16 @@ bots:
     app_id: "ding_1234567890abcd"         # Replace with your app_id
     app_secret: "abc123def456..."         # Replace with your app_secret
 
+  # WeChat iLink Bot
+  # Uses QR code login (no static token required)
+  # Credentials are automatically saved after first login
+  weixin:
+    enabled: false  # Set to true to enable
+    # Optional: API base URL (default: https://ilinkai.weixin.qq.com)
+    # base_url: "https://ilinkai.weixin.qq.com"
+    # Optional: Path to credentials file (default: ~/.clibot/weixin/credentials.json)
+    # credentials_path: "~/.clibot/weixin/credentials.json"
+
 # ==============================================================================
 # CLI Adapter Configuration
 # ==============================================================================
