@@ -6,7 +6,7 @@
 
 [English](./README.md) | 中文版
 
-clibot 是一个轻量级中间件，将 ACP 兼容的 AI CLI 工具（Claude Code、Gemini CLI、OpenCode）与 IM 平台（Discord、Telegram、飞书、钉钉、QQ 机器人）连接起来，让你可以在手机上使用桌面 AI 编程助手，支持流式响应，无需公网 IP。
+clibot 是一个轻量级中间件，将 ACP 兼容的 AI CLI 工具（Claude Code、Gemini CLI、OpenCode）与 IM 平台（Discord、Telegram、飞书、钉钉、QQ 机器人、微信）连接起来，让你可以在手机上使用桌面 AI 编程助手，支持流式响应，无需公网 IP。
 
 ## ✨ 特性
 
@@ -271,6 +271,25 @@ bots:
 ```
 
 **注意：** QQ 机器人使用 WebSocket 接收消息，使用 HTTP API 发送消息。支持 C2C（私聊）消息。
+
+### 微信
+
+微信机器人使用二维码登录，无需静态 Token。首次运行需要在终端扫码认证。
+
+1. 启用机器人并运行 clibot
+2. 出现二维码时用微信扫描
+3. 在微信中点击"确认"授权
+4. 凭证会自动保存供后续使用
+
+```yaml
+bots:
+  weixin:
+    enabled: true
+    # 可选：凭证文件路径（默认：~/.clibot/weixin/credentials.json）
+    # credentials_path: "~/.clibot/weixin/credentials.json"
+```
+
+**注意：** 首次登录需要在有显示器的终端扫码。认证后凭证会自动存储复用。会话过期（错误码 -14）时需重新扫码。
 
 ## 🎮 使用方法
 

@@ -6,7 +6,7 @@
 
 English | [中文版](./README_zh.md)
 
-clibot is a lightweight middleware that bridges ACP-compatible AI CLI tools (Claude Code, Gemini CLI, OpenCode) to IM platforms (Discord, Telegram, Feishu, DingTalk, QQ). Use powerful desktop AI programming assistants from your phone with streaming responses - no public IP required.
+clibot is a lightweight middleware that bridges ACP-compatible AI CLI tools (Claude Code, Gemini CLI, OpenCode) to IM platforms (Discord, Telegram, Feishu, DingTalk, QQ, WeChat). Use powerful desktop AI programming assistants from your phone with streaming responses - no public IP required.
 
 ## ✨ Features
 
@@ -271,6 +271,25 @@ bots:
 ```
 
 **Note:** QQ bot uses WebSocket for receiving messages and HTTP API for sending. Supports C2C (private chat) messages.
+
+### WeChat
+
+WeChat bot uses QR code login instead of a static token. On first run, scan the QR code with your WeChat app to authenticate.
+
+1. Enable the bot and run clibot:
+2. Scan the QR code when prompted (rendered in terminal)
+3. Click "Confirm" in WeChat to authorize
+4. Credentials are saved automatically for future runs
+
+```yaml
+bots:
+  weixin:
+    enabled: true
+    # Optional: credentials file path (default: ~/.clibot/weixin/credentials.json)
+    # credentials_path: "~/.clibot/weixin/credentials.json"
+```
+
+**Note:** The first login requires scanning the QR code in a terminal with a display. After initial authentication, credentials are stored and reused automatically. Session expiry (code -14) will require re-scanning.
 
 ## 🎮 Usage
 
