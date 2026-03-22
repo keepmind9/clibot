@@ -25,10 +25,10 @@ jobs:
         run: go mod download
 
       - name: Build for Linux
-        run: make build-linux
+        run: make build-linux-amd64
 
       - name: Build for macOS (Intel)
-        run: make build-darwin
+        run: make build-darwin-amd64
 
       - name: Build for current platform
         run: make build

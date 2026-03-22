@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Normalize version to always have v prefix
+          if [ "${VERSION}" != "${VERSION#v}" ]; then
+            VERSION_DISPLAY="${VERSION#v}"
+          else
+            VERSION_DISPLAY="${VERSION}"
+            VERSION="v${VERSION}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "VERSION_DISPLAY=${VERSION_DISPLAY}" >> $GITHUB_ENV
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: make test
+
+      - name: Build all platforms
+        run: make build-release
+
+      - name: Display build artifacts
+        run: |
+          echo "Build artifacts:"
+          ls -lh bin/
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## Clibot ${{ env.VERSION_DISPLAY }}
+
+          ### Installation
+
+          **Linux (AMD64):**
+          \`\`\`bash
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-linux-amd64
+          chmod +x clibot-linux-amd64
+          sudo mv clibot-linux-amd64 /usr/local/bin/clibot
+          \`\`\`
+
+          **Linux (ARM64):**
+          \`\`\`bash
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-linux-arm64
+          chmod +x clibot-linux-arm64
+          sudo mv clibot-linux-arm64 /usr/local/bin/clibot
+          \`\`\`
+
+          **macOS (Intel):**
+          \`\`\`bash
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-darwin-amd64
+          chmod +x clibot-darwin-amd64
+          sudo mv clibot-darwin-amd64 /usr/local/bin/clibot
+          \`\`\`
+
+          **macOS (Apple Silicon):**
+          \`\`\`bash
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-darwin-arm64
+          chmod +x clibot-darwin-arm64
+          sudo mv clibot-darwin-arm64 /usr/local/bin/clibot
+          \`\`\`
+
+          **Windows (AMD64):**
+          \`\`\`powershell
+          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-windows-amd64.exe" -OutFile "clibot.exe"
+          \`\`\`
+
+          ### Verify Checksum
+
+          **Linux/macOS:**
+          \`\`\`bash
+          sha256sum -c clibot-*.sha256
+          \`\`\`
+
+          **Windows (PowerShell):**
+          \`\`\`powershell
+          Get-FileHash clibot.exe -Algorithm SHA256
+          \`\`\`
+
+          ### What's Changed
+
+          ${{ github.event.head_commit && github.event.head_commit.message != '' && github.event.head_commit.message || 'No description provided.' }}
+
+          ---
+          Full Changelog: https://github.com/${{ github.repository }}/compare/${{ env.VERSION }}
+          EOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Clibot ${{ env.VERSION_DISPLAY }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          files: |
+            bin/clibot-linux-amd64
+            bin/clibot-linux-amd64.sha256
+            bin/clibot-linux-arm64
+            bin/clibot-linux-arm64.sha256
+            bin/clibot-darwin-amd64
+            bin/clibot-darwin-amd64.sha256
+            bin/clibot-darwin-arm64
+            bin/clibot-darwin-arm64.sha256
+            bin/clibot-windows-amd64.exe
+            bin/clibot-windows-amd64.exe.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
