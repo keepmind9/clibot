@@ -236,6 +236,9 @@ bots:
     # TIP: Use environment variables for better security
     # See docs above on how to use ENV variables in config
     token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"  # Replace with your bot token
+    # Optional: Message formatting mode (Markdown, MarkdownV2, HTML)
+    # Use "Markdown" or "HTML" to enable rich text and code blocks for tables
+    parse_mode: "Markdown"
     # Optional: Bot-level proxy (overrides global proxy)
     # proxy:
     #   enabled: true  # Set to true to use this proxy instead of global

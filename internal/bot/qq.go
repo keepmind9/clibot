@@ -556,6 +556,7 @@ func (q *QQBot) SendMessage(channel, message string) error {
 // sendSingleMessage sends a single message (without splitting)
 func (q *QQBot) sendSingleMessage(channel, message, token string) error {
 	url := fmt.Sprintf("%s/v2/users/%s/messages", QQAPIBase, channel)
+	message = WrapTablesInCodeBlocks(message)
 
 	reqBody := SendMessageRequest{
 		Content: message,

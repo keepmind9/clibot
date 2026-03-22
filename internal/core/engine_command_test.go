@@ -71,6 +71,13 @@ func TestIsSpecialCommand_ExactMatch(t *testing.T) {
 			expectedIsCmd: true,
 			expectedArgs:  nil,
 		},
+		{
+			name:          "help command with slash",
+			input:         "/help",
+			expectedCmd:   "help",
+			expectedIsCmd: true,
+			expectedArgs:  nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -236,6 +243,20 @@ func TestIsSpecialCommand_WithArgs(t *testing.T) {
 			expectedCmd:   "",
 			expectedIsCmd: false,
 			expectedArgs:  nil,
+		},
+		{
+			name:          "snewg with args",
+			input:         "snewg my-sess /tmp",
+			expectedCmd:   "snewg",
+			expectedIsCmd: true,
+			expectedArgs:  []string{"my-sess", "/tmp"},
+		},
+		{
+			name:          "snewg with args and slash",
+			input:         "/snewg my-sess /tmp",
+			expectedCmd:   "snewg",
+			expectedIsCmd: true,
+			expectedArgs:  []string{"my-sess", "/tmp"},
 		},
 	}
 

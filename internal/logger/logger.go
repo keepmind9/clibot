@@ -1,47 +1,14 @@
 // Package logger provides structured logging configuration for clibot.
-//
-// This package initializes and configures logrus for structured logging with support for:
-//
-//   - Multiple log levels (debug, info, warn, error)
-//   - File output with automatic log rotation
-//   - Console output with color formatting
-//   - JSON format for production environments
-//
-// # Configuration
-//
-// Logging behavior is configured through the Config struct:
-//
-//   - Level: Minimum log level to capture (default: "info")
-//   - File: Path to log file (optional)
-//   - MaxSize: Maximum size of single log file in MB (default: 100)
-//   - MaxBackups: Maximum number of old log files to keep (default: 5)
-//   - MaxAge: Maximum number of days to retain old logs (default: 30)
-//   - Compress: Whether to compress rotated logs (default: true)
-//   - EnableStdout: Also output to stdout (default: true)
-//
-// # Usage
-//
-//	// Initialize logger with configuration
-//	config := logger.Config{
-//	    Level: "debug",
-//	    File: "/var/log/clibot/app.log",
-//	    EnableStdout: true,
-//	}
-//	if err := logger.InitLogger(config); err != nil {
-//	    log.Fatal(err)
-//	}
-//
-//	// Use structured logging
-//	logger.WithFields(logrus.Fields{
-//	    "user": "alice",
-//	    "action": "login",
-//	}).Info("User logged in")
 package logger
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -50,6 +17,117 @@ import (
 var (
 	globalLogger *logrus.Logger
 )
+
+// ANSI 256-color palette for an artistic CLI experience
+// Using \033[38;5;Nm for foreground colors
+const (
+	colorReset = "\033[0m"
+	colorBold  = "\033[1m"
+
+	// Level & Metadata
+	colorTime  = "\033[38;5;242m" // Gray
+	colorInfo  = "\033[38;5;75m"  // Sky Blue
+	colorWarn  = "\033[38;5;214m" // Orange
+	colorError = "\033[38;5;196m" // Bright Red
+	colorDebug = "\033[38;5;239m" // Deep Gray
+
+	// Semantic Keywords
+	colorSuccess = "\033[38;5;48m"  // Spring Green
+	colorNeutral = "\033[38;5;250m" // Silver
+
+	// Field Keys (Artistic Palette)
+	clrSession  = "\033[38;5;120m" // Lime Green
+	clrPlatform = "\033[38;5;39m"  // Deep Sky Blue
+	clrUser     = "\033[38;5;170m" // Hot Pink/Plum
+	clrCmd      = "\033[38;5;220m" // Gold/Yellow
+	clrAction   = "\033[38;5;147m" // Light Purple
+	clrMsg      = "\033[38;5;44m"  // Turquoise
+	clrErrorKey = "\033[38;5;160m" // Crimson
+	clrDefault  = "\033[38;5;37m"  // Teal
+)
+
+// OpenClawFormatter produces colorful, high-signal CLI output.
+type OpenClawFormatter struct{}
+
+// Format implements the logrus.Formatter interface
+func (f *OpenClawFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	var b *bytes.Buffer
+	if entry.Buffer != nil {
+		b = entry.Buffer
+	} else {
+		b = &bytes.Buffer{}
+	}
+
+	// 1. Timestamp (Low-key Gray)
+	fmt.Fprintf(b, "%s[%s]%s ", colorTime, entry.Time.Format("15:04:05"), colorReset)
+
+	// 2. Level Icon & Label
+	var levelColor, levelText, icon string
+	switch entry.Level {
+	case logrus.InfoLevel:
+		levelColor, levelText, icon = colorInfo, "INFO", "ℹ️ "
+	case logrus.WarnLevel:
+		levelColor, levelText, icon = colorWarn, "WARN", "⚠️ "
+	case logrus.ErrorLevel, logrus.FatalLevel, logrus.PanicLevel:
+		levelColor, levelText, icon = colorError, "ERRO", "❌"
+	case logrus.DebugLevel, logrus.TraceLevel:
+		levelColor, levelText, icon = colorDebug, "DEBU", "🔍"
+	default:
+		levelColor, levelText, icon = colorNeutral, "LOG ", "📝"
+	}
+	fmt.Fprintf(b, "%s%s %s%s%s ", levelColor, icon, colorBold, levelText, colorReset)
+
+	// 3. Message with Semantic Highlighting
+	msg := entry.Message
+	lowerMsg := strings.ToLower(msg)
+	if strings.Contains(lowerMsg, "start") || strings.Contains(lowerMsg, "success") || strings.Contains(lowerMsg, "initialized") {
+		msg = colorSuccess + msg + colorReset
+	} else if strings.Contains(lowerMsg, "stop") || strings.Contains(lowerMsg, "close") || strings.Contains(lowerMsg, "disconnect") {
+		msg = colorWarn + msg + colorReset
+	} else if strings.Contains(lowerMsg, "fail") || strings.Contains(lowerMsg, "error") {
+		msg = colorError + msg + colorReset
+	}
+	fmt.Fprintf(b, "%-35s ", msg)
+
+	// 4. Fields with Artistic Key Color Mapping
+	if len(entry.Data) > 0 {
+		keys := make([]string, 0, len(entry.Data))
+		for k := range entry.Data {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			v := entry.Data[k]
+			valStr := fmt.Sprintf("%v", v)
+
+			var kClr string
+			switch k {
+			case "session":
+				kClr = clrSession
+			case "platform":
+				kClr = clrPlatform
+			case "user", "user_id", "username":
+				kClr = clrUser
+			case "command", "cmd":
+				kClr = clrCmd
+			case "action", "event", "state":
+				kClr = clrAction
+			case "content", "msg", "input":
+				kClr = clrMsg
+			case "error", "panic":
+				kClr = clrErrorKey
+			default:
+				kClr = clrDefault
+			}
+			// key:value formatting
+			fmt.Fprintf(b, " %s%s%s:%s%s%s", kClr, k, colorReset, colorBold, valStr, colorReset)
+		}
+	}
+
+	b.WriteByte('\n')
+	return b.Bytes(), nil
+}
 
 // Config represents the configuration for the logger
 type Config struct {
@@ -66,15 +144,12 @@ type Config struct {
 func InitLogger(config Config) error {
 	globalLogger = logrus.New()
 
-	// Set log level
 	level, err := logrus.ParseLevel(config.Level)
 	if err != nil {
-		// Default to info level if parsing fails
 		level = logrus.InfoLevel
 	}
 	globalLogger.SetLevel(level)
 
-	// Create log directory if it doesn't exist
 	if config.File != "" {
 		logDir := filepath.Dir(config.File)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
@@ -82,123 +157,52 @@ func InitLogger(config Config) error {
 		}
 	}
 
-	// Configure output
 	var writers []io.Writer
-
-	// File output with rotation
 	if config.File != "" {
 		fileWriter := &lumberjack.Logger{
 			Filename:   config.File,
-			MaxSize:    config.MaxSize,    // megabytes
-			MaxBackups: config.MaxBackups, // number of backups
-			MaxAge:     config.MaxAge,     // days
-			Compress:   config.Compress,   // compress old logs
+			MaxSize:    config.MaxSize,
+			MaxBackups: config.MaxBackups,
+			MaxAge:     config.MaxAge,
+			Compress:   config.Compress,
 		}
 		writers = append(writers, fileWriter)
 	}
 
-	// Stdout output
 	if config.EnableStdout {
 		writers = append(writers, os.Stdout)
 	}
 
-	// Set multi-writer if needed
 	if len(writers) > 0 {
-		multiWriter := io.MultiWriter(writers...)
-		globalLogger.SetOutput(multiWriter)
+		globalLogger.SetOutput(io.MultiWriter(writers...))
 	}
 
-	// Set formatter based on level
-	if level == logrus.DebugLevel {
-		// Use text formatter with colors for debug mode
-		globalLogger.SetFormatter(&logrus.TextFormatter{
-			ForceColors:     true,
-			FullTimestamp:   true,
-			TimestampFormat: "2006-01-02 15:04:05",
-			DisableColors:   false,
-		})
-	} else {
-		// Use JSON formatter for production
-		globalLogger.SetFormatter(&logrus.JSONFormatter{
-			TimestampFormat: "2006-01-02T15:04:05Z",
-		})
-	}
-
+	globalLogger.SetFormatter(&OpenClawFormatter{})
 	return nil
 }
 
 // GetLogger returns the global logger instance
 func GetLogger() *logrus.Logger {
 	if globalLogger == nil {
-		// Initialize with default config if not initialized
 		globalLogger = logrus.New()
 		globalLogger.SetLevel(logrus.InfoLevel)
-		globalLogger.SetFormatter(&logrus.TextFormatter{
-			FullTimestamp:   true,
-			TimestampFormat: "2006-01-02 15:04:05",
-		})
+		globalLogger.SetFormatter(&OpenClawFormatter{})
 	}
 	return globalLogger
 }
 
-// Convenience functions for logging
+// Convenience functions
+func Debug(args ...interface{}) { GetLogger().Debug(args...) }
+func Info(args ...interface{}) { GetLogger().Info(args...) }
+func Warn(args ...interface{}) { GetLogger().Warn(args...) }
+func Error(args ...interface{}) { GetLogger().Error(args...) }
+func Fatal(args ...interface{}) { GetLogger().Fatal(args...) }
 
-// Debug logs a message at debug level
-func Debug(args ...interface{}) {
-	GetLogger().Debug(args...)
-}
+func Debugf(format string, args ...interface{}) { GetLogger().Debugf(format, args...) }
+func Infof(format string, args ...interface{}) { GetLogger().Infof(format, args...) }
+func Warnf(format string, args ...interface{}) { GetLogger().Warnf(format, args...) }
+func Errorf(format string, args ...interface{}) { GetLogger().Errorf(format, args...) }
+func Fatalf(format string, args ...interface{}) { GetLogger().Fatalf(format, args...) }
 
-// Info logs a message at info level
-func Info(args ...interface{}) {
-	GetLogger().Info(args...)
-}
-
-// Warn logs a message at warning level
-func Warn(args ...interface{}) {
-	GetLogger().Warn(args...)
-}
-
-// Error logs a message at error level
-func Error(args ...interface{}) {
-	GetLogger().Error(args...)
-}
-
-// Fatal logs a message at fatal level and exits
-func Fatal(args ...interface{}) {
-	GetLogger().Fatal(args...)
-}
-
-// Debugf logs a formatted message at debug level
-func Debugf(format string, args ...interface{}) {
-	GetLogger().Debugf(format, args...)
-}
-
-// Infof logs a formatted message at info level
-func Infof(format string, args ...interface{}) {
-	GetLogger().Infof(format, args...)
-}
-
-// Warnf logs a formatted message at warning level
-func Warnf(format string, args ...interface{}) {
-	GetLogger().Warnf(format, args...)
-}
-
-// Errorf logs a formatted message at error level
-func Errorf(format string, args ...interface{}) {
-	GetLogger().Errorf(format, args...)
-}
-
-// Fatalf logs a formatted message at fatal level and exits
-func Fatalf(format string, args ...interface{}) {
-	GetLogger().Fatalf(format, args...)
-}
-
-// WithFields returns a logger entry with structured fields
-func WithFields(fields logrus.Fields) *logrus.Entry {
-	return GetLogger().WithFields(fields)
-}
-
-// WithField returns a logger entry with a single field
-func WithField(key string, value interface{}) *logrus.Entry {
-	return GetLogger().WithField(key, value)
-}
+func WithFields(fields logrus.Fields) *logrus.Entry { return GetLogger().WithFields(fields) }
+func WithField(key string, value interface{}) *logrus.Entry { return GetLogger().WithField(key, value) }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/internal/watchdog"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,6 +29,18 @@ func NewOpenCodeAdapter(config OpenCodeAdapterConfig) (*OpenCodeAdapter, error) 
 	return &OpenCodeAdapter{
 		BaseAdapter: NewBaseAdapter("opencode", "opencode", 0),
 	}, nil
+}
+
+// ListSessions returns a list of available CLI-native sessions (not implemented for OpenCode)
+func (o *OpenCodeAdapter) ListSessions(sessionName string, botUsername string) ([]string, error) {
+	return nil, nil
+}
+
+// ResetSession starts a new session for OpenCode CLI
+func (o *OpenCodeAdapter) ResetSession(sessionName string) error {
+	logger.WithField("session", sessionName).Info("resetting-opencode-session")
+	// Send "/new" command followed by enter
+	return watchdog.SendKeys(sessionName, "/new\n", o.inputDelayMs)
 }
 
 // HandleHookData handles raw hook data from OpenCode
@@ -286,4 +299,7 @@ func extractLatestInteractionFromFile(path string) (string, string, error) {
 	}
 
 	return "", "", fmt.Errorf("unsupported opencode file format: %s", path)
+}
+func (o *OpenCodeAdapter) GetSessionStats(sessionName string, botUsername string) (map[string]interface{}, error) {
+	return nil, nil
 }

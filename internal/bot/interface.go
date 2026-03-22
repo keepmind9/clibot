@@ -64,6 +64,11 @@ func (d *DefaultTypingIndicator) RemoveTypingIndicator(messageID string) error {
 	return nil
 }
 
+// GetBotUsername returns an empty string (not supported by default)
+func (d *DefaultTypingIndicator) GetBotUsername() string {
+	return ""
+}
+
 // BotAdapter defines the interface for bot adapters
 type BotAdapter interface {
 	// Start starts the bot, establishes connection and begins listening for messages
@@ -89,6 +94,9 @@ type BotAdapter interface {
 
 	// SetProxyManager sets the proxy manager for the bot
 	SetProxyManager(mgr proxy.Manager)
+
+	// GetBotUsername returns the bot's username on the platform
+	GetBotUsername() string
 
 	// Stop stops the bot and cleans up resources
 	Stop() error

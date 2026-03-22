@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,7 @@ const (
 // Performance: O(1) map lookup for exact match commands.
 var specialCommands = map[string]struct{}{
 	"help":    {},
+	"帮助":      {},
 	"status":  {},
 	"slist":   {},
 	"sstatus": {},
@@ -44,6 +46,11 @@ var specialCommands = map[string]struct{}{
 	"sdel":    {},
 	"suse":    {},
 	"sclose":  {},
+	"ssnew":   {},
+	"scd":     {},
+	"ssls":    {},
+	"sssw":    {},
+	"snewg":   {},
 }
 
 // isSpecialCommand checks if input is a special command.
@@ -64,19 +71,23 @@ func isSpecialCommand(input string) (string, bool, []string) {
 		return "", false, nil
 	}
 
+	// Handle optional leading slash for mobile apps/link clicking compatibility
+	input = strings.TrimPrefix(input, "/")
+
 	// Fast path: exact match for commands without arguments.
 	// This covers 95% of cases with a single O(1) map lookup.
 	if _, exists := specialCommands[input]; exists {
 		return input, true, nil
 	}
 
-	// Handle commands with string arguments (suse, snew, sdel, sclose, sstatus)
+	// Handle commands with string arguments (suse, snew, sdel, sclose, sstatus, etc.)
 	// These commands accept arbitrary string arguments (session names, paths, etc.)
 	fields := strings.Fields(input)
 	if len(fields) > 1 {
 		cmd := fields[0]
 		// Only check known commands that accept string arguments
-		if cmd == "suse" || cmd == "snew" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" {
+		if cmd == "suse" || cmd == "snew" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" ||
+			cmd == "sssw" || cmd == "scd" || cmd == "ssnew" || cmd == "ssls" || cmd == "snewg" {
 			if _, exists := specialCommands[cmd]; exists {
 				return cmd, true, fields[1:]
 			}
@@ -506,7 +517,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		for _, s := range availableSessions {
 			errorMsg += s + "\n"
 		}
-		errorMsg += "\n💡 Use: suse <session_name> to select a session"
+		errorMsg += "\n💡 Use: " + e.fmtCmd(msg, "slist") + " to see available sessions, then " + e.fmtCmd(msg, "suse [name]") + " to select one"
 
 		e.SendToBot(msg.Platform, msg.Channel, errorMsg)
 		return
@@ -640,6 +651,8 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 	switch command {
 	case "help":
 		e.showHelp(msg)
+	case "帮助":
+		e.showHelpChinese(msg)
 	case "slist":
 		e.listSessions(msg)
 	case "suse":
@@ -658,9 +671,19 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		e.handleCloseSession(args, msg)
 	case "sstatus":
 		e.handleSessionStatus(args, msg)
+	case "ssnew":
+		e.handleNewGeminiSession(args, msg)
+	case "scd":
+		e.handleSwitchWorkDir(args, msg)
+	case "ssls":
+		e.handleListGeminiSessions(args, msg)
+	case "sssw":
+		e.handleSwitchGeminiSession(args, msg)
+	case "snewg":
+		e.handleNewGeminiACPSession(args, msg)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Unknown command: %s\nUse 'help' to see available commands", command))
+			fmt.Sprintf("❌ Unknown command: %s\nUse %s to see available commands", command, e.fmtCmd(msg, "help")))
 	}
 }
 
@@ -691,6 +714,20 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 		}
 	}
 
+	// Get bot username for link formatting
+	botUsername := ""
+	if botAdapter, exists := e.activeBots[msg.Platform]; exists {
+		botUsername = botAdapter.GetBotUsername()
+	}
+
+	formatSessionName := func(name string) string {
+		escaped := url.QueryEscape(name)
+		if botUsername != "" {
+			return fmt.Sprintf("[**%s**](tg://resolve?domain=%s&text=suse%%20%s)", name, botUsername, escaped)
+		}
+		return fmt.Sprintf("[**%s**](tg://msg?text=suse%%20%s)", name, escaped)
+	}
+
 	// Display static sessions
 	if len(staticSessions) > 0 {
 		response += "Static Sessions (configured):\n"
@@ -700,7 +737,7 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 				marker = " ⬅️ **CURRENT**"
 			}
 			response += fmt.Sprintf("  • %s (%s) - %s [static]%s\n",
-				session.Name, session.CLIType, session.State, marker)
+				formatSessionName(session.Name), session.CLIType, session.State, marker)
 		}
 		response += "\n"
 	}
@@ -714,12 +751,12 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 				marker = " ⬅️ **CURRENT**"
 			}
 			response += fmt.Sprintf("  • %s (%s) - %s [dynamic, created by %s]%s\n",
-				session.Name, session.CLIType, session.State, session.CreatedBy, marker)
+				formatSessionName(session.Name), session.CLIType, session.State, session.CreatedBy, marker)
 		}
 	}
 
 	if !hasCurrent && len(e.sessions) > 0 {
-		response += "\n💡 Use: suse <session_name> to select a session\n"
+		response += "\n💡 Use: " + e.fmtCmd(msg, "suse [name]") + " to select a session\n"
 	}
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
@@ -729,6 +766,20 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 func (e *Engine) showStatus(msg bot.BotMessage) {
 	e.sessionMu.RLock()
 	defer e.sessionMu.RUnlock()
+
+	// Get bot username for link formatting
+	botUsername := ""
+	if botAdapter, exists := e.activeBots[msg.Platform]; exists {
+		botUsername = botAdapter.GetBotUsername()
+	}
+
+	formatSessionName := func(name string) string {
+		escaped := url.QueryEscape(name)
+		if botUsername != "" {
+			return fmt.Sprintf("[**%s**](tg://resolve?domain=%s&text=suse%%20%s)", name, botUsername, escaped)
+		}
+		return fmt.Sprintf("[**%s**](tg://msg?text=suse%%20%s)", name, escaped)
+	}
 
 	response := "📊 clibot Status:\n\n"
 	response += "Sessions:\n"
@@ -748,7 +799,7 @@ func (e *Engine) showStatus(msg bot.BotMessage) {
 			origin = fmt.Sprintf("[dynamic, created by %s]", session.CreatedBy)
 		}
 
-		response += fmt.Sprintf("  %s %s (%s) - %s %s\n", status, session.Name, session.CLIType, session.State, origin)
+		response += fmt.Sprintf("  %s %s (%s) - %s %s\n", status, formatSessionName(session.Name), session.CLIType, session.State, origin)
 	}
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
@@ -772,8 +823,8 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 			"**User ID:** `%s`\n"+
 			"**Channel ID:** `%s`\n"+
 			"**Current Session:** ⚠️  Not selected\n\n"+
-			"💡 Use 'slist' to see available sessions\n"+
-			"   Use 'suse <name>' to select a session",
+			"💡 Use " + e.fmtCmd(msg, "slist") + " to see available sessions\n"+
+			"   Use " + e.fmtCmd(msg, "suse [name]") + " to select a session",
 			msg.Platform, msg.UserID, msg.Channel)
 		e.SendToBot(msg.Platform, msg.Channel, response)
 		return
@@ -799,58 +850,100 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 }
 
 // showHelp displays help information about available commands and keywords
+// showHelp displays help information about available commands and keywords
 func (e *Engine) showHelp(msg bot.BotMessage) {
-	help := `📖 **clibot Help**
+	help := `📖 **clibot Help Manual**
 
-**Special Commands** (no prefix required):
-  help         - Show this help message
-  slist        - List all available sessions
-  suse <name>  - Switch current session
-  sclose [name] - Close running session (default: current session)
-  sstatus [name] - Show session status (default: all sessions)
-  status       - Show status of all sessions
-  whoami       - Show your current session info
-  echo         - Echo your IM user info (for whitelist config)
-  snew <name> <cli_type> <work_dir> [cmd] - Create new session (admin only)
-  sdel <name>  - Delete dynamic session (admin only)
+**1. Bot Session Management** (clickable):
+# (Tap a command to copy/pre-fill)
 
-**Special Keywords** (exact match, case-insensitive):
-  ⚠️ These keywords only work in Hook mode with tmux input
-  tab            - Send Tab key
-  esc            - Send Escape key
-  stab/s-tab     - Send Shift+Tab
-  enter          - Send Enter key
-  ctrlc/ctrl-c    - Send Ctrl+C (interrupt)
-  ctrlt/ctrl-t    - Send Ctrl+T
+` + e.fmtCmd(msg, "slist") + `        - List all available sessions
+` + e.fmtCmd(msg, "suse [name]") + `    - Switch current session
+` + e.fmtCmd(msg, "sstatus [name]") + ` - View PID, memory, uptime
+` + e.fmtCmd(msg, "status") + `       - Brief status of all sessions
+` + e.fmtCmd(msg, "whoami") + `       - Your current session details
+` + e.fmtCmd(msg, "snew [name] [type] [dir] [cmd]") + ` - New session (Admin)
+` + e.fmtCmd(msg, "snewg [name] [dir]") + ` - Fast Gemini ACP (Admin)
+` + e.fmtCmd(msg, "sdel [name]") + `    - Permanently delete session (Admin)
+` + e.fmtCmd(msg, "sclose [name]") + `  - Stop background process to save RAM
 
-**Usage Examples:**
-  help              → Show help
-  slist             → List all sessions
-  suse myproject    → Switch to session 'myproject'
-  sclose            → Close current session
-  sclose backend    → Close session 'backend' (if you're the creator or admin)
-  sstatus           → Show status of all sessions
-  sstatus backend  → Show detailed status of 'backend' session
-  status            → Show status
-  tab               → Send Tab key to CLI
-  ctrl-c            → Interrupt current process
-  ctrl-t            → Trigger Ctrl+T action
-  snew myproject claude ~/work  → Create new session
 
-**Tips:**
-  - Special commands are exact match (case-sensitive)
-  - Special keywords are case-insensitive
-  - Any other input will be sent to the CLI
-  - Use "suse" to switch between sessions
-  - Use "sclose" to free up resources when not using a session
-  - Use "sstatus" to monitor session health and resource usage
-  - Use "help" anytime to see this message`
+**2. AI Memory & Context** (Gemini Only):
+
+` + e.fmtCmd(msg, "ssnew") + `        - [Important] Start NEW conversation (keep logic fresh)
+` + e.fmtCmd(msg, "scd [path]") + `    - Change AI focus directory (context switch)
+` + e.fmtCmd(msg, "ssls") + `         - List historical conversation IDs
+` + e.fmtCmd(msg, "sssw [ID]") + `    - Read/Switch to a specific history ID
+
+
+**3. Other Commands:**
+- ` + e.fmtCmd(msg, "help") + ` / ` + e.fmtCmd(msg, "帮助") + ` - Show this help
+- ` + e.fmtCmd(msg, "echo") + ` - Echo your IM User ID (for whitelist)
+
+
+**Special Keywords** (Send directly):
+` + "```text" + `
+tab, enter, ctrlc, esc, stab
+` + "```" + `
+⚠️ *Note: These only work in Hook mode with tmux.*
+
+
+**💡 Tips:**
+- Use ` + "`suse`" + ` frequently to switch between your bots.
+- If AI becomes less coherent, use ` + "`ssnew`" + ` to refresh its memory.
+- Any message not starting with a command will be sent directly to the AI.`
 
 	e.SendToBot(msg.Platform, msg.Channel, help)
 }
 
-// handleEcho returns the user's IM information to help with whitelist configuration
+// showHelpChinese displays Chinese help information
+func (e *Engine) showHelpChinese(msg bot.BotMessage) {
+	help := `📖 **clibot 帮助手册**
+
+**1. 机器人分身管理 (点击指令可复制):**
+# (点击指令即可预填充到输入框)
+
+` + e.fmtCmd(msg, "slist") + `        - 查看所有已配置的机器人
+` + e.fmtCmd(msg, "suse [名]") + `    - 切换到指定的机器人
+` + e.fmtCmd(msg, "sstatus [名]") + ` - 查看 PID, 内存, 运行时间
+` + e.fmtCmd(msg, "status") + `       - 查看所有机器人的简要状态
+` + e.fmtCmd(msg, "whoami") + `       - 查看当前会话详情
+` + e.fmtCmd(msg, "snew [名] [类型] [目录] [命令]") + ` - (管理员)
+` + e.fmtCmd(msg, "snewg [名] [目录]") + ` - 快速创建 Gemini ACP (管理员)
+` + e.fmtCmd(msg, "sdel [名]") + `    - 彻底删除会话 (管理员)
+` + e.fmtCmd(msg, "sclose [名]") + `  - 暂时关闭后台进程以节省资源
+
+
+**2. AI 记忆与存档管理 (Gemini 专用):**
+
+` + e.fmtCmd(msg, "ssnew") + `        - 【重要】开启全新对话 (保持 AI 逻辑敏捷)
+` + e.fmtCmd(msg, "scd [路径]") + `    - 更改 AI 关注的目录 (记忆环境切换)
+` + e.fmtCmd(msg, "ssls") + `         - 列出当前项目的历史存档 ID
+` + e.fmtCmd(msg, "sssw [ID]") + `    - 读档 (切换到特定的历史对话)
+
+
+**3. 其他指令:**
+- ` + e.fmtCmd(msg, "帮助") + ` / ` + e.fmtCmd(msg, "help") + ` - 显示此帮助
+- ` + e.fmtCmd(msg, "echo") + ` - 回显账号 ID (用于白名单配置)
+
+
+**特殊关键词 (直接发送):**
+` + "```text" + `
+tab, enter, ctrlc, esc, stab
+` + "```" + `
+⚠️ *注意: 这些关键词仅在使用 tmux 的 Hook 模式下有效。*
+
+
+**💡 提示:**
+- 绝大多数情况下，你只需要用 ` + "`suse`" + ` 切换机器人。
+- 聊太久导致 AI 变傻时，请务必使用 ` + "`ssnew`" + ` 刷新它。
+- 任何非指令消息都会被直接发送给底层的 AI 工具。`
+
+	e.SendToBot(msg.Platform, msg.Channel, help)
+}
+
 func (e *Engine) handleEcho(msg bot.BotMessage) {
+
 	response := fmt.Sprintf("🔍 **Your IM Information**\n\n"+
 		"**Platform:** %s\n"+
 		"**User ID:** `%s` (Use this for whitelist)\n"+
@@ -1366,12 +1459,351 @@ func (e *Engine) handleSessionStatus(args []string, msg bot.BotMessage) {
 	session, exists := e.sessions[sessionName]
 	if !exists {
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Session '%s' does not exist\nUse 'slist' to see available sessions", sessionName))
+			fmt.Sprintf("❌ Session '%s' does not exist\nUse %s to see available sessions", sessionName, e.fmtCmd(msg, "slist")))
 		return
 	}
 
 	status := e.getSessionStatus(session)
 	e.sendSessionStatus(msg, status)
+}
+
+// handleNewGeminiSession starts a new conversation session within the current clibot session
+func (e *Engine) handleNewGeminiSession(args []string, msg bot.BotMessage) {
+	userKey := getUserKey(msg.Platform, msg.UserID)
+	e.sessionMu.RLock()
+	sessionName, hasSession := e.userSessions[userKey]
+	var session *Session
+	if hasSession {
+		session = e.sessions[sessionName]
+	}
+	e.sessionMu.RUnlock()
+
+	if session == nil {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ No active session. Please use "+e.fmtCmd(msg, "slist")+" to see available sessions, then "+e.fmtCmd(msg, "suse [name]")+" to select one.")
+		return
+	}
+
+	adapter, exists := e.cliAdapters[session.CLIType]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ CLI adapter '%s' not found", session.CLIType))
+		return
+	}
+
+	if err := adapter.ResetSession(session.Name); err != nil {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to start new Gemini session: %v", err))
+		return
+	}
+
+	e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("✅ Started a NEW Gemini session for: **%s**", session.Name))
+}
+
+// handleSwitchWorkDir switches the working directory of the current session
+func (e *Engine) handleSwitchWorkDir(args []string, msg bot.BotMessage) {
+	if len(args) < 1 {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ Usage: scd <path>")
+		return
+	}
+
+	newPath := args[0]
+	expandedPath, err := expandPath(newPath)
+	if err != nil {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Invalid path: %v", err))
+		return
+	}
+
+	userKey := getUserKey(msg.Platform, msg.UserID)
+	e.sessionMu.RLock()
+	sessionName, hasSession := e.userSessions[userKey]
+	var session *Session
+	if hasSession {
+		session = e.sessions[sessionName]
+	}
+	e.sessionMu.RUnlock()
+
+	if session == nil {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ No active session. Please use "+e.fmtCmd(msg, "slist")+" to see available sessions, then "+e.fmtCmd(msg, "suse [name]")+" to select one.")
+		return
+	}
+
+	adapter, exists := e.cliAdapters[session.CLIType]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ CLI adapter '%s' not found", session.CLIType))
+		return
+	}
+
+	// Update session work dir in engine
+	e.sessionMu.Lock()
+	session.WorkDir = expandedPath
+	e.sessionMu.Unlock()
+
+	// Tell adapter to switch (this might restart the process)
+	if err := adapter.SwitchWorkDir(session.Name, expandedPath); err != nil {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to switch directory: %v", err))
+		return
+	}
+
+	e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("✅ Switched session '%s' to: %s", session.Name, expandedPath))
+}
+
+// handleListGeminiSessions natively lists all available Gemini session files for the current project
+func (e *Engine) handleListGeminiSessions(args []string, msg bot.BotMessage) {
+	userKey := getUserKey(msg.Platform, msg.UserID)
+	e.sessionMu.RLock()
+	sessionName, hasSession := e.userSessions[userKey]
+	var session *Session
+	if hasSession {
+		session = e.sessions[sessionName]
+	}
+	e.sessionMu.RUnlock()
+
+	if session == nil {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ No active session selected. Use "+e.fmtCmd(msg, "slist")+" and "+e.fmtCmd(msg, "suse [name]")+" first.")
+		return
+	}
+
+	if session.CLIType != "gemini" && session.CLIType != "acp" {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ This command is only for Gemini or ACP sessions.")
+		return
+	}
+
+	adapter, exists := e.cliAdapters[session.CLIType]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ CLI adapter '%s' not found.", session.CLIType))
+		return
+	}
+
+	// Use adapter's ListSessions to get a machine-readable list of sessions.
+	// Retrieve bot username for platform-specific linking (e.g., Telegram tg://resolve)
+	var botUsername string
+	if botAdapter, ok := e.activeBots[msg.Platform]; ok {
+		botUsername = botAdapter.GetBotUsername()
+	}
+
+	sessions, err := adapter.ListSessions(session.Name, botUsername)
+	if err != nil {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to list sessions: %v", err))
+		return
+	}
+
+	if len(sessions) == 0 {
+		e.SendToBot(msg.Platform, msg.Channel, "ℹ️ No previous Gemini sessions found for this project.")
+		return
+	}
+
+	// Format sessions into Telegram-friendly chunks (e.g., 15 sessions per message)
+	const chunkSize = 15
+	for i := 0; i < len(sessions); i += chunkSize {
+		end := i + chunkSize
+		if end > len(sessions) {
+			end = len(sessions)
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("📂 *Available Gemini Sessions* (%d/%d)\n\n", (i/chunkSize)+1, (len(sessions)+chunkSize-1)/chunkSize))
+		for _, s := range sessions[i:end] {
+			sb.WriteString(fmt.Sprintf("%s\n", s))
+		}
+		if end == len(sessions) {
+			sb.WriteString("\n💡 Use `sssw <id>` to switch to a session.")
+		}
+		e.SendToBot(msg.Platform, msg.Channel, sb.String())
+	}
+}
+
+// handleNewGeminiACPSession creates a new Gemini session in ACP mode with a specified WorkDir
+// Usage: snewg <name> <work_dir>
+func (e *Engine) handleNewGeminiACPSession(args []string, msg bot.BotMessage) {
+	logger.WithFields(logrus.Fields{
+		"platform": msg.Platform,
+		"user_id":  msg.UserID,
+		"args":     args,
+	}).Info("handle-snewg-command")
+
+	// 1. Permission check
+	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ Permission denied: admin only")
+		return
+	}
+
+	// 2. Parameter validation
+	if len(args) < 2 {
+		e.SendToBot(msg.Platform, msg.Channel,
+			"❌ Invalid arguments\nUsage: sadf <name> <work_dir>")
+		return
+	}
+
+	name := args[0]
+	workDir := args[1]
+	cliType := "acp"
+	startCmd := "gemini"
+
+	// 3. Validate session name format
+	if !isValidSessionName(name) {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Invalid session name: '%s'\nUse letters, numbers, hyphen, underscore only", name))
+		return
+	}
+
+	// 4. Validate CLI type
+	adapter, exists := e.cliAdapters[cliType]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			"❌ ACP CLI adapter not found. Please ensure it is registered.")
+		return
+	}
+
+	// 5. Validate and expand work directory
+	expandedDir, err := expandPath(workDir)
+	if err != nil {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Invalid work_dir: %v", err))
+		return
+	}
+
+	// Check if directory exists
+	if info, err := os.Stat(expandedDir); err != nil || !info.IsDir() {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Work directory does not exist or is not a directory: %s", expandedDir))
+		return
+	}
+
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+
+	// 6. Check for duplicate session name
+	if _, exists := e.sessions[name]; exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Session '%s' already exists", name))
+		return
+	}
+
+	// 7. Check dynamic session limit
+	dynamicCount := 0
+	for _, s := range e.sessions {
+		if s.IsDynamic {
+			dynamicCount++
+		}
+	}
+	if dynamicCount >= e.config.Session.MaxDynamicSessions {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Maximum dynamic session limit reached (%d)", e.config.Session.MaxDynamicSessions))
+		return
+	}
+
+	// 8. Create session object
+	session := &Session{
+		Name:      name,
+		CLIType:   cliType,
+		WorkDir:   expandedDir,
+		StartCmd:  startCmd,
+		State:     StateIdle,
+		CreatedAt: time.Now().Format(time.RFC3339),
+		IsDynamic: true,
+		CreatedBy: fmt.Sprintf("%s:%s", msg.Platform, msg.UserID),
+	}
+
+	// 9. Create ACP session
+	if err := adapter.CreateSession(name, expandedDir, startCmd, "stdio://"); err != nil {
+		logger.WithField("error", err).Error("failed-to-create-sadf-session")
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Failed to create session: %v", err))
+		return
+	}
+
+	// 10. Add to sessions map
+	e.sessions[name] = session
+
+	// 11. Automatically select for the current user
+	userKey := getUserKey(msg.Platform, msg.UserID)
+	e.userSessions[userKey] = name
+
+	logger.WithFields(logrus.Fields{
+		"action":     "create_snewg_session",
+		"session":    name,
+		"platform":   msg.Platform,
+		"user_id":    msg.UserID,
+		"work_dir":   expandedDir,
+		"is_dynamic": true,
+	}).Info("admin-created-snewg-session")
+
+	// 12. Success response
+	e.SendToBot(msg.Platform, msg.Channel,
+		fmt.Sprintf("✅ Gemini ACP session '%s' created and selected\nWorkDir: %s",
+			name, expandedDir))
+}
+
+// handleSwitchGeminiSession switches the current Gemini process to a different session file natively
+func (e *Engine) handleSwitchGeminiSession(args []string, msg bot.BotMessage) {
+	if len(args) < 1 {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ Usage: sssw <gemini_session_id>")
+		return
+	}
+
+	id := args[0]
+	userKey := getUserKey(msg.Platform, msg.UserID)
+	e.sessionMu.RLock()
+	sessionName, hasSession := e.userSessions[userKey]
+	var session *Session
+	if hasSession {
+		session = e.sessions[sessionName]
+	}
+	e.sessionMu.RUnlock()
+
+	if session == nil || (session.CLIType != "gemini" && session.CLIType != "acp") {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ No active Gemini or ACP session selected.")
+		return
+	}
+
+	adapter, exists := e.cliAdapters[session.CLIType]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ CLI adapter '%s' not found.", session.CLIType))
+		return
+	}
+
+	// Use adapter's SwitchSession to switch natively.
+	// This will typically send a /resume <id> command to the CLI.
+	contextStr, err := adapter.SwitchSession(session.Name, id)
+	if err != nil {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to switch session: %v", err))
+		return
+	}
+
+	responseMsg := fmt.Sprintf("✅ Switched Gemini session to: **%s**", id)
+	if contextStr != "" {
+		responseMsg += fmt.Sprintf("\n\n%s", contextStr)
+	}
+
+	// Append status bar to the switch confirmation if enabled
+	if e.config.Session.ShowSessionStats {
+		// Retrieve bot username for platform-specific linking
+		var botUsername string
+		if botAdapter, ok := e.activeBots[msg.Platform]; ok {
+			botUsername = botAdapter.GetBotUsername()
+		}
+
+		stats, err := adapter.GetSessionStats(session.Name, botUsername)
+		if err == nil && len(stats) > 0 {
+			workDir := ""
+			if wd, ok := stats["work_dir"].(string); ok {
+				workDir = wd
+			}
+			usagePerc := 0.0
+			if up, ok := stats["usage_perc"].(float64); ok {
+				usagePerc = up
+			}
+			sessionTitle := ""
+			if st, ok := stats["session_title"].(string); ok {
+				sessionTitle = st
+			}
+
+			// Markdown Format: 📂 `[dir]` | 💬 ID: Summary | 🧠 `[usage]%` used
+			statsBar := fmt.Sprintf("\n\n---\n📂 `%s` | 💬 %s | 🧠 `%.0f%%` used",
+				workDir, sessionTitle, usagePerc)
+			responseMsg += statsBar
+		}
+	}
+
+	e.SendToBot(msg.Platform, msg.Channel, responseMsg)
 }
 
 // showAllSessionsStatus shows status of all sessions
@@ -1775,11 +2207,10 @@ func (e *Engine) removeTypingIndicatorAsync(platform, messageID string) {
 	}()
 }
 
-// SendResponseToSession sends a message to the bot channel associated with a session
-// This is used by CLI adapters to send responses back to users
 func (e *Engine) SendResponseToSession(sessionName, message string) {
 	e.sessionMu.RLock()
 	botChannel, exists := e.sessionChannels[sessionName]
+	session, sessExists := e.sessions[sessionName]
 	e.sessionMu.RUnlock()
 
 	if !exists {
@@ -1796,15 +2227,50 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 		return
 	}
 
+	finalMessage := message
+
+	// Append Session Stats if enabled
+	if sessExists && e.config.Session.ShowSessionStats {
+		adapter, ok := e.cliAdapters[session.CLIType]
+		if ok {
+			// Retrieve bot username for platform-specific linking
+			var botUsername string
+			if botAdapter, ok := e.activeBots[botChannel.Platform]; ok {
+				botUsername = botAdapter.GetBotUsername()
+			}
+
+			stats, err := adapter.GetSessionStats(sessionName, botUsername)
+			if err == nil && len(stats) > 0 {
+				workDir := ""
+				if wd, ok := stats["work_dir"].(string); ok {
+					workDir = wd
+				}
+				usagePerc := 0.0
+				if up, ok := stats["usage_perc"].(float64); ok {
+					usagePerc = up
+				}
+				sessionTitle := ""
+				if st, ok := stats["session_title"].(string); ok {
+					sessionTitle = st
+				}
+
+				// Markdown Format: 📂 `[dir]` | 💬 [id](...): [summary](...) | 🧠 `[usage]%` used
+				statsBar := fmt.Sprintf("\n\n---\n📂 `%s` | 💬 %s | 🧠 `%.0f%%` used",
+					workDir, sessionTitle, usagePerc)
+				finalMessage += statsBar
+			}
+		}
+	}
+
 	logger.WithFields(logrus.Fields{
 		"session":         sessionName,
 		"platform":        botChannel.Platform,
 		"channel":         botChannel.Channel,
-		"response_length": len(message),
+		"response_length": len(finalMessage),
 	}).Info("sending-response-to-user")
 
 	// Send the message
-	e.SendToBot(botChannel.Platform, botChannel.Channel, message)
+	e.SendToBot(botChannel.Platform, botChannel.Channel, finalMessage)
 
 	// Remove typing indicator after a short delay if supported
 	if botChannel.MessageID != "" {
@@ -1964,4 +2430,32 @@ func (e *Engine) Stop() error {
 // paths are either absolute or both relative to the same location.
 func normalizePath(path string) string {
 	return strings.TrimSuffix(path, "/")
+}
+
+// fmtCmd formats a command for the specific platform to allow pre-filling/linking
+func (e *Engine) fmtCmd(msg bot.BotMessage, cmd string) string {
+	// For Telegram, use Markdown link syntax with optimized pre-filling
+	if msg.Platform == "telegram" {
+		botUsername := ""
+		if botAdapter, exists := e.activeBots[msg.Platform]; exists {
+			botUsername = botAdapter.GetBotUsername()
+		}
+
+		parts := strings.Split(cmd, " ")
+		baseCmd := parts[0]
+
+		// Smart pre-fill: add a space if the command takes arguments
+		text := baseCmd
+		if strings.Contains(cmd, "[") {
+			text += " "
+		}
+		escapedText := url.QueryEscape(text)
+
+		if botUsername != "" {
+			return fmt.Sprintf("[%s](tg://resolve?domain=%s&text=%s)", cmd, botUsername, escapedText)
+		}
+		return fmt.Sprintf("[%s](tg://msg?text=%s)", cmd, escapedText)
+	}
+	// Default to monospace style for other platforms
+	return "`" + cmd + "`"
 }

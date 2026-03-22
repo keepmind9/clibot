@@ -1,0 +1,307 @@
+=== RUN   TestNewACPAdapter_DefaultConfig
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m acp-adapter-configured               [38;5;37menv_count[0m:[1m0[0m [38;5;37menv_vars[0m:[1mmap[][0m [38;5;37midle_timeout[0m:[1m5m0s[0m [38;5;37mmax_total_timeout[0m:[1m1h0m0s[0m
+--- PASS: TestNewACPAdapter_DefaultConfig (0.01s)
+=== RUN   TestNewACPAdapter_CustomConfig
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m acp-adapter-configured               [38;5;37menv_count[0m:[1m1[0m [38;5;37menv_vars[0m:[1mmap[TEST_VAR:test_value][0m [38;5;37midle_timeout[0m:[1m10m0s[0m [38;5;37mmax_total_timeout[0m:[1m1h0m0s[0m
+--- PASS: TestNewACPAdapter_CustomConfig (0.00s)
+=== RUN   TestACPAdapter_UseHook
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m acp-adapter-configured               [38;5;37menv_count[0m:[1m0[0m [38;5;37menv_vars[0m:[1mmap[][0m [38;5;37midle_timeout[0m:[1m5m0s[0m [38;5;37mmax_total_timeout[0m:[1m1h0m0s[0m
+--- PASS: TestACPAdapter_UseHook (0.00s)
+=== RUN   TestACPAdapter_GetPollInterval
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m acp-adapter-configured               [38;5;37menv_count[0m:[1m0[0m [38;5;37menv_vars[0m:[1mmap[][0m [38;5;37midle_timeout[0m:[1m5m0s[0m [38;5;37mmax_total_timeout[0m:[1m1h0m0s[0m
+--- PASS: TestACPAdapter_GetPollInterval (0.00s)
+=== RUN   TestACPAdapter_GetStableCount
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m acp-adapter-configured               [38;5;37menv_count[0m:[1m0[0m [38;5;37menv_vars[0m:[1mmap[][0m [38;5;37midle_timeout[0m:[1m5m0s[0m [38;5;37mmax_total_timeout[0m:[1m1h0m0s[0m
+--- PASS: TestACPAdapter_GetStableCount (0.00s)
+=== RUN   TestACPAdapter_GetPollTimeout
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m acp-adapter-configured               [38;5;37menv_count[0m:[1m0[0m [38;5;37menv_vars[0m:[1mmap[][0m [38;5;37midle_timeout[0m:[1m3m0s[0m [38;5;37mmax_total_timeout[0m:[1m1h0m0s[0m
+--- PASS: TestACPAdapter_GetPollTimeout (0.00s)
+=== RUN   TestACPAdapter_HandleHookData
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m acp-adapter-configured               [38;5;37menv_count[0m:[1m0[0m [38;5;37menv_vars[0m:[1mmap[][0m [38;5;37midle_timeout[0m:[1m5m0s[0m [38;5;37mmax_total_timeout[0m:[1m1h0m0s[0m
+--- PASS: TestACPAdapter_HandleHookData (0.00s)
+=== RUN   TestACPAdapter_IsSessionAlive
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m acp-adapter-configured               [38;5;37menv_count[0m:[1m0[0m [38;5;37menv_vars[0m:[1mmap[][0m [38;5;37midle_timeout[0m:[1m5m0s[0m [38;5;37mmax_total_timeout[0m:[1m1h0m0s[0m
+    acp_test.go:93: 
+        	Error Trace:	E:/MCP/Gemini-Crab/clibot/clibot-repo/internal/cli/acp_test.go:93
+        	Error:      	Should be true
+        	Test:       	TestACPAdapter_IsSessionAlive
+--- FAIL: TestACPAdapter_IsSessionAlive (0.00s)
+=== RUN   TestParseTransportURL
+--- PASS: TestParseTransportURL (0.00s)
+=== RUN   TestACPAdapter_SetEngine
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m acp-adapter-configured               [38;5;37menv_count[0m:[1m0[0m [38;5;37menv_vars[0m:[1mmap[][0m [38;5;37midle_timeout[0m:[1m5m0s[0m [38;5;37mmax_total_timeout[0m:[1m1h0m0s[0m
+--- PASS: TestACPAdapter_SetEngine (0.00s)
+=== RUN   TestNewBaseAdapter
+--- PASS: TestNewBaseAdapter (0.00s)
+=== RUN   TestBaseAdapter_Name
+--- PASS: TestBaseAdapter_Name (0.00s)
+=== RUN   TestBaseAdapter_StartCmd
+--- PASS: TestBaseAdapter_StartCmd (0.00s)
+=== RUN   TestBaseAdapter_InputDelayMs
+=== RUN   TestBaseAdapter_InputDelayMs/custom_delay
+=== RUN   TestBaseAdapter_InputDelayMs/zero_delay
+--- PASS: TestBaseAdapter_InputDelayMs (0.00s)
+    --- PASS: TestBaseAdapter_InputDelayMs/custom_delay (0.00s)
+    --- PASS: TestBaseAdapter_InputDelayMs/zero_delay (0.00s)
+=== RUN   TestIsRealUserMessage
+=== RUN   TestIsRealUserMessage/real_user_message_with_content
+=== RUN   TestIsRealUserMessage/real_user_message_with_content_blocks
+=== RUN   TestIsRealUserMessage/meta_message
+=== RUN   TestIsRealUserMessage/assistant_message
+=== RUN   TestIsRealUserMessage/user_message_with_empty_content
+=== RUN   TestIsRealUserMessage/progress_message
+=== RUN   TestIsRealUserMessage/user_message_with_local_command
+=== RUN   TestIsRealUserMessage/user_message_with_command_name
+--- PASS: TestIsRealUserMessage (0.00s)
+    --- PASS: TestIsRealUserMessage/real_user_message_with_content (0.00s)
+    --- PASS: TestIsRealUserMessage/real_user_message_with_content_blocks (0.00s)
+    --- PASS: TestIsRealUserMessage/meta_message (0.00s)
+    --- PASS: TestIsRealUserMessage/assistant_message (0.00s)
+    --- PASS: TestIsRealUserMessage/user_message_with_empty_content (0.00s)
+    --- PASS: TestIsRealUserMessage/progress_message (0.00s)
+    --- PASS: TestIsRealUserMessage/user_message_with_local_command (0.00s)
+    --- PASS: TestIsRealUserMessage/user_message_with_command_name (0.00s)
+=== RUN   TestGetMessageText
+=== RUN   TestGetMessageText/text_from_ContentText
+=== RUN   TestGetMessageText/text_from_content_blocks
+=== RUN   TestGetMessageText/mixed_content_blocks
+=== RUN   TestGetMessageText/empty_content
+=== RUN   TestGetMessageText/non-text_content_blocks_only
+--- PASS: TestGetMessageText (0.00s)
+    --- PASS: TestGetMessageText/text_from_ContentText (0.00s)
+    --- PASS: TestGetMessageText/text_from_content_blocks (0.00s)
+    --- PASS: TestGetMessageText/mixed_content_blocks (0.00s)
+    --- PASS: TestGetMessageText/empty_content (0.00s)
+    --- PASS: TestGetMessageText/non-text_content_blocks_only (0.00s)
+=== RUN   TestContentBlock_TextExtraction
+=== RUN   TestContentBlock_TextExtraction/text_block
+=== RUN   TestContentBlock_TextExtraction/thinking_block
+=== RUN   TestContentBlock_TextExtraction/image_block
+--- PASS: TestContentBlock_TextExtraction (0.00s)
+    --- PASS: TestContentBlock_TextExtraction/text_block (0.00s)
+    --- PASS: TestContentBlock_TextExtraction/thinking_block (0.00s)
+    --- PASS: TestContentBlock_TextExtraction/image_block (0.00s)
+=== RUN   TestTranscriptMessage_Fields
+--- PASS: TestTranscriptMessage_Fields (0.00s)
+=== RUN   TestMessageContent_Structure
+--- PASS: TestMessageContent_Structure (0.00s)
+=== RUN   TestMessageContent_UnmarshalJSON
+=== RUN   TestMessageContent_UnmarshalJSON/full_message_object_with_string_content
+=== RUN   TestMessageContent_UnmarshalJSON/full_message_object_with_array_content
+=== RUN   TestMessageContent_UnmarshalJSON/simple_string_content
+=== RUN   TestMessageContent_UnmarshalJSON/empty_string
+=== RUN   TestMessageContent_UnmarshalJSON/null_value
+=== RUN   TestMessageContent_UnmarshalJSON/invalid_JSON
+=== RUN   TestMessageContent_UnmarshalJSON/full_message_with_usage
+=== RUN   TestMessageContent_UnmarshalJSON/message_with_stop_reason
+=== RUN   TestMessageContent_UnmarshalJSON/message_with_nested_content_blocks
+--- PASS: TestMessageContent_UnmarshalJSON (0.00s)
+    --- PASS: TestMessageContent_UnmarshalJSON/full_message_object_with_string_content (0.00s)
+    --- PASS: TestMessageContent_UnmarshalJSON/full_message_object_with_array_content (0.00s)
+    --- PASS: TestMessageContent_UnmarshalJSON/simple_string_content (0.00s)
+    --- PASS: TestMessageContent_UnmarshalJSON/empty_string (0.00s)
+    --- PASS: TestMessageContent_UnmarshalJSON/null_value (0.00s)
+    --- PASS: TestMessageContent_UnmarshalJSON/invalid_JSON (0.00s)
+    --- PASS: TestMessageContent_UnmarshalJSON/full_message_with_usage (0.00s)
+    --- PASS: TestMessageContent_UnmarshalJSON/message_with_stop_reason (0.00s)
+    --- PASS: TestMessageContent_UnmarshalJSON/message_with_nested_content_blocks (0.00s)
+=== RUN   TestTranscriptMessage_UnmarshalJSON
+=== RUN   TestTranscriptMessage_UnmarshalJSON/valid_transcript_message
+=== RUN   TestTranscriptMessage_UnmarshalJSON/transcript_message_with_metadata
+--- PASS: TestTranscriptMessage_UnmarshalJSON (0.00s)
+    --- PASS: TestTranscriptMessage_UnmarshalJSON/valid_transcript_message (0.00s)
+    --- PASS: TestTranscriptMessage_UnmarshalJSON/transcript_message_with_metadata (0.00s)
+=== RUN   TestExtractLatestSubagentFile
+=== RUN   TestExtractLatestSubagentFile/nonexistent_directory
+=== RUN   TestExtractLatestSubagentFile/empty_directory_path
+--- PASS: TestExtractLatestSubagentFile (0.00s)
+    --- PASS: TestExtractLatestSubagentFile/nonexistent_directory (0.00s)
+    --- PASS: TestExtractLatestSubagentFile/empty_directory_path (0.00s)
+=== RUN   TestParseTranscript
+=== RUN   TestParseTranscript/nonexistent_file
+=== RUN   TestParseTranscript/empty_file_path
+=== RUN   TestParseTranscript/invalid_JSON_file
+=== RUN   TestParseTranscript/valid_JSONL_with_single_message
+=== RUN   TestParseTranscript/valid_JSONL_with_multiple_messages
+=== RUN   TestParseTranscript/JSONL_with_empty_lines
+--- PASS: TestParseTranscript (0.01s)
+    --- PASS: TestParseTranscript/nonexistent_file (0.00s)
+    --- PASS: TestParseTranscript/empty_file_path (0.00s)
+    --- PASS: TestParseTranscript/invalid_JSON_file (0.00s)
+    --- PASS: TestParseTranscript/valid_JSONL_with_single_message (0.00s)
+    --- PASS: TestParseTranscript/valid_JSONL_with_multiple_messages (0.00s)
+    --- PASS: TestParseTranscript/JSONL_with_empty_lines (0.00s)
+=== RUN   TestExtractLatestInteraction_FromTranscript
+=== RUN   TestExtractLatestInteraction_FromTranscript/transcript_with_user_and_assistant
+=== RUN   TestExtractLatestInteraction_FromTranscript/transcript_with_only_user_message
+=== RUN   TestExtractLatestInteraction_FromTranscript/empty_transcript
+--- PASS: TestExtractLatestInteraction_FromTranscript (0.00s)
+    --- PASS: TestExtractLatestInteraction_FromTranscript/transcript_with_user_and_assistant (0.00s)
+    --- PASS: TestExtractLatestInteraction_FromTranscript/transcript_with_only_user_message (0.00s)
+    --- PASS: TestExtractLatestInteraction_FromTranscript/empty_transcript (0.00s)
+=== RUN   TestClaudeAdapter_NewClaudeAdapter
+--- PASS: TestClaudeAdapter_NewClaudeAdapter (0.00s)
+=== RUN   TestClaudeAdapter_SendInput
+[38;5;242m[23:35:06][0m [38;5;196m❌ [1mERRO[0m [38;5;196mfailed-to-send-input-to-tmux-session[0m  [38;5;160merror[0m:[1mexec: "tmux": executable file not found in %PATH%[0m [38;5;37moutput[0m:[1m[0m [38;5;120msession[0m:[1mtest-session-nonexistent[0m
+[38;5;242m[23:35:06][0m [38;5;196m❌ [1mERRO[0m [38;5;196mfailed to send input to tmux: failed to send input to session test-session-nonexistent: exec: "tmux": executable file not found in %PATH% (output: )[0m 
+--- PASS: TestClaudeAdapter_SendInput (0.01s)
+=== RUN   TestClaudeAdapter_IsSessionAlive
+--- PASS: TestClaudeAdapter_IsSessionAlive (0.01s)
+=== RUN   TestClaudeAdapter_CreateSession
+    claude_test.go:73: CreateSession failed as expected in test environment: session test-clibot-session-12345: work_dir does not exist: /tmp
+--- PASS: TestClaudeAdapter_CreateSession (0.04s)
+=== RUN   TestClaudeAdapter_CreateSession_Idempotent
+    claude_test.go:95: Skipping test, First CreateSession failed (tmux may not be installed): session test-clibot-idempotent: work_dir does not exist: /tmp
+--- SKIP: TestClaudeAdapter_CreateSession_Idempotent (0.04s)
+=== RUN   TestExtractLatestInteraction
+=== RUN   TestExtractLatestInteraction/nonexistent_file
+=== RUN   TestExtractLatestInteraction/empty_path
+--- PASS: TestExtractLatestInteraction (0.00s)
+    --- PASS: TestExtractLatestInteraction/nonexistent_file (0.00s)
+    --- PASS: TestExtractLatestInteraction/empty_path (0.00s)
+=== RUN   TestExtractLastAssistantResponse
+=== RUN   TestExtractLastAssistantResponse/nonexistent_file
+=== RUN   TestExtractLastAssistantResponse/empty_path
+--- PASS: TestExtractLastAssistantResponse (0.00s)
+    --- PASS: TestExtractLastAssistantResponse/nonexistent_file (0.00s)
+    --- PASS: TestExtractLastAssistantResponse/empty_path (0.00s)
+=== RUN   TestClaudeAdapter_HandleHookData
+=== RUN   TestClaudeAdapter_HandleHookData/valid_hook_data_with_cwd
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m interaction-extracted-from-transcript  [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;37mprompt_len[0m:[1m0[0m [38;5;37mresponse_len[0m:[1m0[0m
+=== RUN   TestClaudeAdapter_HandleHookData/hook_data_with_prompt_and_response
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m interaction-extracted-from-transcript  [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;37mprompt_len[0m:[1m0[0m [38;5;37mresponse_len[0m:[1m0[0m
+=== RUN   TestClaudeAdapter_HandleHookData/invalid_JSON_data
+[38;5;242m[23:35:06][0m [38;5;196m❌ [1mERRO[0m [38;5;196mfailed-to-parse-hook-json-data[0m  [38;5;160merror[0m:[1minvalid character 'i' looking for beginning of value[0m
+=== RUN   TestClaudeAdapter_HandleHookData/empty_JSON_object
+--- PASS: TestClaudeAdapter_HandleHookData (0.00s)
+    --- PASS: TestClaudeAdapter_HandleHookData/valid_hook_data_with_cwd (0.00s)
+    --- PASS: TestClaudeAdapter_HandleHookData/hook_data_with_prompt_and_response (0.00s)
+    --- PASS: TestClaudeAdapter_HandleHookData/invalid_JSON_data (0.00s)
+    --- PASS: TestClaudeAdapter_HandleHookData/empty_JSON_object (0.00s)
+=== RUN   TestExtractLatestSubagentFile_FileOperations
+=== RUN   TestExtractLatestSubagentFile_FileOperations/returns_error_for_non-existent_subagents_directory
+=== RUN   TestExtractLatestSubagentFile_FileOperations/returns_error_when_subagents_directory_exists_but_has_no_jsonl_files
+=== RUN   TestExtractLatestSubagentFile_FileOperations/finds_the_latest_jsonl_file_by_modification_time
+=== RUN   TestExtractLatestSubagentFile_FileOperations/ignores_non-jsonl_files_in_subagents_directory
+--- PASS: TestExtractLatestSubagentFile_FileOperations (0.03s)
+    --- PASS: TestExtractLatestSubagentFile_FileOperations/returns_error_for_non-existent_subagents_directory (0.00s)
+    --- PASS: TestExtractLatestSubagentFile_FileOperations/returns_error_when_subagents_directory_exists_but_has_no_jsonl_files (0.00s)
+    --- PASS: TestExtractLatestSubagentFile_FileOperations/finds_the_latest_jsonl_file_by_modification_time (0.02s)
+    --- PASS: TestExtractLatestSubagentFile_FileOperations/ignores_non-jsonl_files_in_subagents_directory (0.00s)
+=== RUN   TestComputeProjectHash
+=== RUN   TestComputeProjectHash/returns_a_valid_SHA256_hash
+=== RUN   TestComputeProjectHash/returns_consistent_hash_for_same_path
+=== RUN   TestComputeProjectHash/returns_different_hashes_for_different_paths
+=== RUN   TestComputeProjectHash/handles_relative_paths
+--- PASS: TestComputeProjectHash (0.00s)
+    --- PASS: TestComputeProjectHash/returns_a_valid_SHA256_hash (0.00s)
+    --- PASS: TestComputeProjectHash/returns_consistent_hash_for_same_path (0.00s)
+    --- PASS: TestComputeProjectHash/returns_different_hashes_for_different_paths (0.00s)
+    --- PASS: TestComputeProjectHash/handles_relative_paths (0.00s)
+=== RUN   TestNewGeminiAdapter
+=== RUN   TestNewGeminiAdapter/creates_adapter_with_default_config
+--- PASS: TestNewGeminiAdapter (0.00s)
+    --- PASS: TestNewGeminiAdapter/creates_adapter_with_default_config (0.00s)
+=== RUN   TestGeminiAdapter_HandleHookData
+=== RUN   TestGeminiAdapter_HandleHookData/valid_hook_data_with_cwd
+[38;5;242m[23:35:06][0m [38;5;214m⚠️  [1mWARN[0m [38;5;196mfailed-to-extract-gemini-response[0m  [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;160merror[0m:[1mfailed to read session file: open /path/to/session.json: The system cannot find the path specified.[0m [38;5;37mtranscript_path[0m:[1m/path/to/session.json[0m
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m response-extracted-from-gemini-history  [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;37mprompt_len[0m:[1m0[0m [38;5;37mresponse_len[0m:[1m0[0m
+=== RUN   TestGeminiAdapter_HandleHookData/hook_data_with_notification_event
+[38;5;242m[23:35:06][0m [38;5;214m⚠️  [1mWARN[0m [38;5;196mfailed-to-extract-gemini-response[0m  [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;160merror[0m:[1mfailed to read session file: open /path/to/session.json: The system cannot find the path specified.[0m [38;5;37mtranscript_path[0m:[1m/path/to/session.json[0m
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m response-extracted-from-gemini-history  [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;37mprompt_len[0m:[1m0[0m [38;5;37mresponse_len[0m:[1m0[0m
+=== RUN   TestGeminiAdapter_HandleHookData/invalid_JSON
+[38;5;242m[23:35:06][0m [38;5;196m❌ [1mERRO[0m [38;5;196mfailed-to-parse-hook-json-data[0m  [38;5;160merror[0m:[1minvalid character 'i' looking for beginning of value[0m
+=== RUN   TestGeminiAdapter_HandleHookData/missing_cwd_in_hook_data
+[38;5;242m[23:35:06][0m [38;5;214m⚠️  [1mWARN[0m missing-cwd-in-hook-data            
+=== RUN   TestGeminiAdapter_HandleHookData/empty_hook_data
+[38;5;242m[23:35:06][0m [38;5;214m⚠️  [1mWARN[0m missing-cwd-in-hook-data            
+--- PASS: TestGeminiAdapter_HandleHookData (0.00s)
+    --- PASS: TestGeminiAdapter_HandleHookData/valid_hook_data_with_cwd (0.00s)
+    --- PASS: TestGeminiAdapter_HandleHookData/hook_data_with_notification_event (0.00s)
+    --- PASS: TestGeminiAdapter_HandleHookData/invalid_JSON (0.00s)
+    --- PASS: TestGeminiAdapter_HandleHookData/missing_cwd_in_hook_data (0.00s)
+    --- PASS: TestGeminiAdapter_HandleHookData/empty_hook_data (0.00s)
+=== RUN   TestGeminiAdapter_LastSessionFile
+=== RUN   TestGeminiAdapter_LastSessionFile/directory_does_not_exist
+=== RUN   TestGeminiAdapter_LastSessionFile/directory_exists_but_no_session_files
+--- PASS: TestGeminiAdapter_LastSessionFile (0.00s)
+    --- PASS: TestGeminiAdapter_LastSessionFile/directory_does_not_exist (0.00s)
+    --- PASS: TestGeminiAdapter_LastSessionFile/directory_exists_but_no_session_files (0.00s)
+=== RUN   TestGeminiAdapter_ExtractLatestInteraction
+=== RUN   TestGeminiAdapter_ExtractLatestInteraction/transcript_path_provided
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m extracted-gemini-response-from-session-file  [38;5;37mgemini_messages[0m:[1m1[0m [38;5;37mlast_user_index[0m:[1m0[0m [38;5;37mresponse_length[0m:[1m9[0m [38;5;37mtotal_messages[0m:[1m2[0m
+=== RUN   TestGeminiAdapter_ExtractLatestInteraction/no_messages_in_session
+=== RUN   TestGeminiAdapter_ExtractLatestInteraction/no_user_message_in_session
+=== RUN   TestGeminiAdapter_ExtractLatestInteraction/multiple_gemini_responses
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m extracted-gemini-response-from-session-file  [38;5;37mgemini_messages[0m:[1m2[0m [38;5;37mlast_user_index[0m:[1m0[0m [38;5;37mresponse_length[0m:[1m14[0m [38;5;37mtotal_messages[0m:[1m3[0m
+=== RUN   TestGeminiAdapter_ExtractLatestInteraction/file_does_not_exist
+--- PASS: TestGeminiAdapter_ExtractLatestInteraction (0.01s)
+    --- PASS: TestGeminiAdapter_ExtractLatestInteraction/transcript_path_provided (0.00s)
+    --- PASS: TestGeminiAdapter_ExtractLatestInteraction/no_messages_in_session (0.00s)
+    --- PASS: TestGeminiAdapter_ExtractLatestInteraction/no_user_message_in_session (0.00s)
+    --- PASS: TestGeminiAdapter_ExtractLatestInteraction/multiple_gemini_responses (0.00s)
+    --- PASS: TestGeminiAdapter_ExtractLatestInteraction/file_does_not_exist (0.00s)
+=== RUN   TestClaudeAdapter_CLIAdapterInterface
+--- PASS: TestClaudeAdapter_CLIAdapterInterface (0.00s)
+=== RUN   TestNewOpenCodeAdapter
+=== RUN   TestNewOpenCodeAdapter/creates_adapter_with_default_config
+--- PASS: TestNewOpenCodeAdapter (0.00s)
+    --- PASS: TestNewOpenCodeAdapter/creates_adapter_with_default_config (0.00s)
+=== RUN   TestOpenCodeAdapter_HandleHookData
+=== RUN   TestOpenCodeAdapter_HandleHookData/valid_hook_data_with_cwd
+[38;5;242m[23:35:06][0m [38;5;214m⚠️  [1mWARN[0m [38;5;196mfailed-to-extract-interaction-from-storage[0m  [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;160merror[0m:[1mno messages found for session test-session[0m
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m response-extracted-from-storage      [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;37mprompt_len[0m:[1m0[0m [38;5;37mresponse_len[0m:[1m0[0m
+=== RUN   TestOpenCodeAdapter_HandleHookData/invalid_JSON
+[38;5;242m[23:35:06][0m [38;5;196m❌ [1mERRO[0m [38;5;196mfailed-to-parse-hook-json-data[0m  [38;5;160merror[0m:[1minvalid character 'i' looking for beginning of value[0m
+=== RUN   TestOpenCodeAdapter_HandleHookData/missing_cwd_in_hook_data
+=== RUN   TestOpenCodeAdapter_HandleHookData/notification_event_clears_response
+[38;5;242m[23:35:06][0m [38;5;214m⚠️  [1mWARN[0m [38;5;196mfailed-to-extract-interaction-from-storage[0m  [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;160merror[0m:[1mno messages found for session test-session[0m
+[38;5;242m[23:35:06][0m [38;5;75mℹ️  [1mINFO[0m response-extracted-from-storage      [38;5;37mcwd[0m:[1m/home/user/project[0m [38;5;37mprompt_len[0m:[1m0[0m [38;5;37mresponse_len[0m:[1m0[0m
+--- PASS: TestOpenCodeAdapter_HandleHookData (0.00s)
+    --- PASS: TestOpenCodeAdapter_HandleHookData/valid_hook_data_with_cwd (0.00s)
+    --- PASS: TestOpenCodeAdapter_HandleHookData/invalid_JSON (0.00s)
+    --- PASS: TestOpenCodeAdapter_HandleHookData/missing_cwd_in_hook_data (0.00s)
+    --- PASS: TestOpenCodeAdapter_HandleHookData/notification_event_clears_response (0.00s)
+=== RUN   TestGetOpencodeMessageText
+=== RUN   TestGetOpencodeMessageText/extracts_text_from_message_with_single_text_part
+=== RUN   TestGetOpencodeMessageText/extracts_and_joins_multiple_text_parts
+=== RUN   TestGetOpencodeMessageText/returns_empty_string_for_message_with_no_text_parts
+=== RUN   TestGetOpencodeMessageText/returns_empty_string_for_message_with_empty_parts
+--- PASS: TestGetOpencodeMessageText (0.00s)
+    --- PASS: TestGetOpencodeMessageText/extracts_text_from_message_with_single_text_part (0.00s)
+    --- PASS: TestGetOpencodeMessageText/extracts_and_joins_multiple_text_parts (0.00s)
+    --- PASS: TestGetOpencodeMessageText/returns_empty_string_for_message_with_no_text_parts (0.00s)
+    --- PASS: TestGetOpencodeMessageText/returns_empty_string_for_message_with_empty_parts (0.00s)
+=== RUN   TestExtractLatestInteractionFromFile
+=== RUN   TestExtractLatestInteractionFromFile/extracts_text_from_valid_OpenCode_message_file
+=== RUN   TestExtractLatestInteractionFromFile/returns_error_for_non-existent_file
+=== RUN   TestExtractLatestInteractionFromFile/returns_error_for_invalid_JSON
+--- PASS: TestExtractLatestInteractionFromFile (0.00s)
+    --- PASS: TestExtractLatestInteractionFromFile/extracts_text_from_valid_OpenCode_message_file (0.00s)
+    --- PASS: TestExtractLatestInteractionFromFile/returns_error_for_non-existent_file (0.00s)
+    --- PASS: TestExtractLatestInteractionFromFile/returns_error_for_invalid_JSON (0.00s)
+=== RUN   TestGetProjectID
+=== RUN   TestGetProjectID/returns_global_for_non-git_directory
+--- PASS: TestGetProjectID (0.03s)
+    --- PASS: TestGetProjectID/returns_global_for_non-git_directory (0.03s)
+=== RUN   TestExpandHome_WithTilde
+--- PASS: TestExpandHome_WithTilde (0.00s)
+=== RUN   TestExpandHome_WithoutTilde
+--- PASS: TestExpandHome_WithoutTilde (0.00s)
+=== RUN   TestExpandHome_WithTildeOnly
+--- PASS: TestExpandHome_WithTildeOnly (0.00s)
+=== RUN   TestExpandHome_ErrorHandling
+--- PASS: TestExpandHome_ErrorHandling (0.00s)
+=== RUN   TestExpandHome_WindowsPaths
+    utils_test.go:59: Skipping Windows-specific test
+--- SKIP: TestExpandHome_WindowsPaths (0.00s)
+=== RUN   TestBuildShellCommand_Unix
+    utils_test.go:72: Skipping Unix-specific test
+--- SKIP: TestBuildShellCommand_Unix (0.00s)
+=== RUN   TestBuildShellCommand_Windows
+--- PASS: TestBuildShellCommand_Windows (0.00s)
+=== RUN   TestBuildShellCommand_EmptyCommand
+--- PASS: TestBuildShellCommand_EmptyCommand (0.00s)
+FAIL
+FAIL	github.com/keepmind9/clibot/internal/cli	0.265s
+FAIL

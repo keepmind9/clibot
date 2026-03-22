@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/keepmind9/clibot/internal/logger"
+	"github.com/keepmind9/clibot/internal/watchdog"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,6 +29,18 @@ func NewClaudeAdapter(config ClaudeAdapterConfig) (*ClaudeAdapter, error) {
 	return &ClaudeAdapter{
 		BaseAdapter: NewBaseAdapter("claude", "claude", 0),
 	}, nil
+}
+
+// ListSessions returns a list of available CLI-native sessions (not implemented for Claude)
+func (c *ClaudeAdapter) ListSessions(sessionName string, botUsername string) ([]string, error) {
+	return nil, nil
+}
+
+// ResetSession starts a new session for Claude Code
+func (c *ClaudeAdapter) ResetSession(sessionName string) error {
+	logger.WithField("session", sessionName).Info("resetting-claude-session")
+	// Send "/reset" command followed by enter
+	return watchdog.SendKeys(sessionName, "/reset\n", c.inputDelayMs)
 }
 
 // HandleHookData handles raw hook data from Claude Code
@@ -354,4 +367,7 @@ func extractLatestSubagentFile(transcriptPath string) (string, error) {
 	})
 
 	return filepath.Join(subagentsDir, jsonlFiles[0].Name()), nil
+}
+func (c *ClaudeAdapter) GetSessionStats(sessionName string, botUsername string) (map[string]interface{}, error) {
+	return nil, nil
 }

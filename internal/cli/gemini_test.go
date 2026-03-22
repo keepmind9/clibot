@@ -337,3 +337,4 @@ func TestGeminiAdapter_ExtractLatestInteraction(t *testing.T) {
 		assert.Equal(t, "", response)
 	})
 }
+

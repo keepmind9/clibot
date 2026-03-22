@@ -88,6 +88,48 @@ func (b *BaseAdapter) Start(sessionName, startCmd string) error {
 	return nil
 }
 
+// ResetSession is a base implementation of ResetSession.
+// It can be overridden by specific adapters for their respective CLI tools.
+func (b *BaseAdapter) ResetSession(sessionName string) error {
+	return fmt.Errorf("ResetSession not implemented for %s", b.cliName)
+}
+
+// SwitchWorkDir is a base implementation of SwitchWorkDir.
+// It stops the current session and restarts it in the new directory.
+func (b *BaseAdapter) SwitchWorkDir(sessionName, newWorkDir string) error {
+	// Base implementation for tmux-based adapters:
+	// 1. Kill the current session
+	// 2. Create it again in the new directory
+
+	logger.WithFields(logrus.Fields{
+		"session":     sessionName,
+		"new_work_dir": newWorkDir,
+	}).Info("switching-work-dir-for-session")
+
+	// Kill existing session
+	exec.Command("tmux", "kill-session", "-t", sessionName).Run()
+
+	// Recreate session with new work dir
+	return b.CreateSession(sessionName, newWorkDir, b.startCmd, "")
+}
+
+// ListSessions returns a list of available CLI-native sessions/conversations
+// Base implementation for tmux-based adapters (not supported)
+func (b *BaseAdapter) ListSessions(sessionName string) ([]string, error) {
+	return []string{}, nil
+}
+
+// SwitchSession switches to a specific CLI-native session/conversation
+// Base implementation for tmux-based adapters (not supported)
+func (b *BaseAdapter) SwitchSession(sessionName, cliSessionID string) (string, error) {
+	return "", fmt.Errorf("SwitchSession not implemented for %s", b.cliName)
+}
+
+// GetSessionStats returns diagnostic stats for the session (default empty implementation)
+func (b *BaseAdapter) GetSessionStats(sessionName string, botUsername string) (map[string]interface{}, error) {
+	return make(map[string]interface{}), nil
+}
+
 // SendInput sends input to the CLI via tmux
 func (b *BaseAdapter) SendInput(sessionName, input string) error {
 	logger.WithFields(logrus.Fields{

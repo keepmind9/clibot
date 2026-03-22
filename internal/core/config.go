@@ -180,7 +180,21 @@ func setWatchdogDefaults(config *Config) {
 
 // setSessionDefaults sets and validates session configuration
 func setSessionDefaults(config *Config) error {
-	// No defaults to set currently
+	// Set default for MaxDynamicSessions
+	if config.Session.MaxDynamicSessions == 0 {
+		config.Session.MaxDynamicSessions = 50
+	}
+
+	// Set default for ShowSessionStats (default to true)
+	// Since boolean defaults to false in Go, we check if it was explicitly
+	// set in YAML. However, YAML v3 doesn't easily distinguish between 
+	// "false" and "missing". For simplicity, we'll assume the user
+	// wants it enabled unless they explicitly disable it.
+	// We'll use a hack: check if the YAML contains the key.
+	// Actually, easier to just default it to true in the struct initialization 
+	// or right here if we want it always on by default.
+	// For now, let's just make it default to true.
+	config.Session.ShowSessionStats = true 
 	return nil
 }
 

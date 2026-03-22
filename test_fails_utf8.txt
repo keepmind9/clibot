@@ -1,0 +1,24 @@
+﻿=== RUN   TestConvertMarkdownToTelegramHTML_TableAlignmentExamples
+=== RUN   TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_1
+    telegram_format_test.go:212: 
+        	Error Trace:	E:/MCP/Gemini-Crab/clibot/clibot-repo/internal/bot/telegram_format_test.go:212
+        	Error:      	Not equal: 
+        	            	expected: 55
+        	            	actual  : 56
+        	Test:       	TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_1
+        	Messages:   	Line visually misaligned: "椋炰功     鈹?馃彈锔? 鈹?internal/bot/feishu.go   鈹?寮€鍙戜腑      "
+=== RUN   TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_2
+=== RUN   TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_3
+=== RUN   TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_4
+=== RUN   TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_5
+=== RUN   TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_6
+--- FAIL: TestConvertMarkdownToTelegramHTML_TableAlignmentExamples (0.00s)
+    --- FAIL: TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_1 (0.00s)
+    --- PASS: TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_2 (0.00s)
+    --- PASS: TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_3 (0.00s)
+    --- PASS: TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_4 (0.00s)
+    --- PASS: TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_5 (0.00s)
+    --- PASS: TestConvertMarkdownToTelegramHTML_TableAlignmentExamples/Example_6 (0.00s)
+FAIL
+FAIL	github.com/keepmind9/clibot/internal/bot	0.077s
+FAIL

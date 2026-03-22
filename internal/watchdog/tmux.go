@@ -210,3 +210,13 @@ func ListSessions() ([]string, error) {
 
 	return sessions, nil
 }
+
+// GetCWD returns the current working directory of the first pane in a tmux session
+func GetCWD(sessionName string) (string, error) {
+	cmd := exec.Command("tmux", "display-message", "-p", "-F", "#{pane_current_path}", "-t", sessionName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get CWD for session %s: %w", sessionName, err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}

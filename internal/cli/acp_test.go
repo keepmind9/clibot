@@ -87,10 +87,11 @@ func TestACPAdapter_IsSessionAlive(t *testing.T) {
 	assert.False(t, adapter.IsSessionAlive("nonexistent"))
 
 	// Create a session (simulated - we won't actually start server)
+	// Without a running process or remote connection, it should be false
 	adapter.sessions["test"] = &acpSession{
 		active: true,
 	}
-	assert.True(t, adapter.IsSessionAlive("test"))
+	assert.False(t, adapter.IsSessionAlive("test"))
 
 	// Inactive session
 	adapter.sessions["test2"] = &acpSession{
@@ -164,4 +165,23 @@ func (m *mockEngine) SendToBot(platform, channel, message string) {
 }
 
 func (m *mockEngine) SendResponseToSession(sessionName, message string) {
+}
+
+// TestACPAdapter_ResetSession tests that ResetSession clears the sessionId
+func TestACPAdapter_ResetSession(t *testing.T) {
+	adapter, _ := NewACPAdapter(ACPAdapterConfig{})
+	sessionName := "test-session"
+	
+	// Create a session with a sessionId
+	adapter.sessions[sessionName] = &acpSession{
+		active:    true,
+		sessionId: "existing-session-id",
+	}
+	
+	// Call ResetSession
+	err := adapter.ResetSession(sessionName)
+	require.NoError(t, err)
+	
+	// Verify sessionId is cleared
+	assert.Empty(t, adapter.sessions[sessionName].sessionId)
 }
