@@ -69,5 +69,6 @@ type CLIAdapter interface {
 	// The startCmd parameter allows sessions to use different commands than the adapter default
 	// The transportURL parameter is for ACP adapter (e.g., "stdio://", "tcp://host:port", "unix:///path")
 	// Other adapters should ignore this parameter
-	CreateSession(sessionName, workDir, startCmd, transportURL string) error
+	// The env parameter sets session-level environment variables (merged with adapter-level env)
+	CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string) error
 }

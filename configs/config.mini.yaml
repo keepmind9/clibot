@@ -51,6 +51,8 @@ sessions:
     start_cmd: "claude-agent-acp"   # ACP server command
     transport: "stdio://"           # Use stdio transport
     auto_start: true
+    # env:                          # Optional: session-level env vars (ACP adapter only)
+    #   ANTHROPIC_API_KEY: "sk-ant-..."  # Or set ANTHROPIC_AUTH_TOKEN
 
 # CLI Adapter Configuration
 cli_adapters:

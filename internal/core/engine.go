@@ -226,7 +226,7 @@ func (e *Engine) ensureSessionStarted(session *Session, sessionConfig SessionCon
 	}
 
 	// Start the session
-	if err := adapter.CreateSession(session.Name, session.WorkDir, startCmd, sessionConfig.Transport); err != nil {
+	if err := adapter.CreateSession(session.Name, session.WorkDir, startCmd, sessionConfig.Transport, sessionConfig.Env); err != nil {
 		return false, fmt.Errorf("failed to create session: %w", err)
 	}
 
@@ -969,7 +969,7 @@ func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
 
 	// 9. Create tmux session and start CLI
 	// For dynamic sessions, transport is typically empty (non-ACP adapters)
-	if err := adapter.CreateSession(name, expandedDir, startCmd, ""); err != nil {
+	if err := adapter.CreateSession(name, expandedDir, startCmd, "", nil); err != nil {
 		logger.WithField("error", err).Error("failed-to-create-dynamic-session")
 		e.SendToBot(msg.Platform, msg.Channel,
 			fmt.Sprintf("❌ Failed to create session: %v", err))

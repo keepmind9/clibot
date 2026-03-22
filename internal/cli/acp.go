@@ -167,7 +167,7 @@ func ensureGeminiChatsDir(workDir string) error {
 }
 
 // CreateSession creates a new ACP session and starts connection
-func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string) error {
+func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -185,6 +185,15 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 	// Parse transport URL
 	transportType, address := parseTransportURL(transportURL)
 
+	// Merge adapter-level env with session-level env (session takes precedence)
+	mergedEnv := make(map[string]string)
+	for k, v := range a.config.Env {
+		mergedEnv[k] = v
+	}
+	for k, v := range env {
+		mergedEnv[k] = v
+	}
+
 	logger.WithFields(logrus.Fields{
 		"session":   sessionName,
 		"work_dir":  workDir,
@@ -192,6 +201,7 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 		"transport": transportURL,
 		"type":      transportType,
 		"address":   address,
+		"env_keys":  mergedEnv,
 	}).Info("starting-acp-session")
 
 	// Create connReady channel for this session
@@ -207,7 +217,7 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 			sessionName:  sessionName,
 			activityChan: make(chan time.Time, 10), // Buffered channel to avoid blocking
 		}
-		err = a.startStdioServer(sessionName, workDir, startCmd, clientImpl, connReady)
+		err = a.startStdioServer(sessionName, workDir, startCmd, mergedEnv, clientImpl, connReady)
 	case ACPTransportTCP, ACPTransportUnix:
 		clientImpl = &acpClient{
 			adapter:      a,
@@ -535,7 +545,7 @@ func (a *ACPAdapter) Close() error {
 }
 
 // startStdioServer starts ACP server as subprocess with stdio transport
-func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clientImpl *acpClient, connReady chan struct{}) error {
+func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, env map[string]string, clientImpl *acpClient, connReady chan struct{}) error {
 	cmd := buildShellCommand(command)
 
 	// Set working directory
@@ -547,19 +557,19 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, clie
 		cmd.Dir = expandedDir
 	}
 
-	// Set environment variables
-	env := os.Environ()
+	// Set environment variables (env already merged in CreateSession)
+	envList := os.Environ()
 	envVarCount := 0
-	for k, v := range a.config.Env {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	for k, v := range env {
+		envList = append(envList, fmt.Sprintf("%s=%s", k, v))
 		envVarCount++
 	}
-	cmd.Env = env
+	cmd.Env = envList
 
 	logger.WithFields(logrus.Fields{
 		"session":       sessionName,
 		"env_var_count": envVarCount,
-		"env_vars":      a.config.Env,
+		"env_vars":      env,
 	}).Debug("acp-environment-variables-set")
 
 	// Setup stdio pipes

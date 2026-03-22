@@ -85,12 +85,13 @@ type SessionGlobalConfig struct {
 
 // SessionConfig represents a session configuration
 type SessionConfig struct {
-	Name      string `yaml:"name"`
-	CLIType   string `yaml:"cli_type"`
-	WorkDir   string `yaml:"work_dir"`
-	AutoStart bool   `yaml:"auto_start"`
-	StartCmd  string `yaml:"start_cmd"` // Command to start the CLI (default: same as CLIType)
-	Transport string `yaml:"transport"` // Connection URL for ACP: stdio://, tcp://host:port, unix:///path (for acp cli_type only)
+	Name      string            `yaml:"name"`
+	CLIType   string            `yaml:"cli_type"`
+	WorkDir   string            `yaml:"work_dir"`
+	AutoStart bool              `yaml:"auto_start"`
+	StartCmd  string            `yaml:"start_cmd"` // Command to start the CLI (default: same as CLIType)
+	Transport string            `yaml:"transport"` // Connection URL for ACP: stdio://, tcp://host:port, unix:///path (for acp cli_type only)
+	Env       map[string]string `yaml:"env"`       // Session-level environment variables (merged with adapter-level env)
 }
 
 // BotConfig represents bot configuration

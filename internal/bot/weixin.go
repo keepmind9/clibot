@@ -1125,11 +1125,13 @@ func (b *WeixinBot) RemoveTypingIndicator(messageID string) error {
 
 func (b *WeixinBot) Stop() error {
 	b.cancel()
-	b.sessionMu.RLock()
+	b.sessionMu.Lock()
 	b.contextTokens = make(map[string]string)
 	b.clientToUser = make(map[string]string)
+	b.seenMsgs = make(map[string]bool)
 	b.credentials = nil
 	b.cursor = ""
+	b.lastSyncBuf = ""
 	b.sessionMu.Unlock()
 	return nil
 }
