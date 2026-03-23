@@ -17,21 +17,25 @@ import (
 // DingTalkBot implements BotAdapter interface for DingTalk using WebSocket long connection
 type DingTalkBot struct {
 	DefaultTypingIndicator
-	mu             sync.RWMutex
-	clientID       string
-	clientSecret   string
-	streamClient   *client.StreamClient
-	messageHandler func(BotMessage)
-	ctx            context.Context
-	cancel         context.CancelFunc
-	proxyMgr       proxy.Manager
+	mu              sync.RWMutex
+	clientID        string
+	clientSecret    string
+	streamClient    *client.StreamClient
+	replier         *chatbot.ChatbotReplier
+	messageHandler  func(BotMessage)
+	sessionWebhooks map[string]string // conversationID -> sessionWebhook
+	ctx             context.Context
+	cancel          context.CancelFunc
+	proxyMgr        proxy.Manager
 }
 
 // NewDingTalkBot creates a new DingTalk bot instance
 func NewDingTalkBot(clientID, clientSecret string) *DingTalkBot {
 	return &DingTalkBot{
-		clientID:     clientID,
-		clientSecret: clientSecret,
+		clientID:        clientID,
+		clientSecret:    clientSecret,
+		sessionWebhooks: make(map[string]string),
+		replier:        chatbot.NewChatbotReplier(),
 	}
 }
 
@@ -74,6 +78,11 @@ func (d *DingTalkBot) Start(messageHandler func(BotMessage)) error {
 
 	// Start long connection
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.WithField("panic", r).Error("dingtalk-stream-client-panic")
+			}
+		}()
 		if err := streamClient.Start(d.ctx); err != nil {
 			logger.WithFields(logrus.Fields{
 				"client_id": d.clientID,
@@ -111,10 +120,46 @@ func (d *DingTalkBot) handleMessageReceive(ctx context.Context, data *chatbot.Bo
 		"create_at":         data.CreateAt,
 	}).Info("received-dingtalk-message-event-parsed")
 
-	// Extract message content
+	// Extract message content based on message type
 	content := ""
-	if data.Msgtype == "text" {
+	switch data.Msgtype {
+	case "text":
 		content = data.Text.Content
+	case "image":
+		content = "[image]"
+	case "voice":
+		content = "[voice]"
+	case "file":
+		content = "[file]"
+	case "video":
+		content = "[video]"
+	case "richText":
+		content = "[rich text]"
+	default:
+		// For unknown types, try to use text content if available
+		if data.Msgtype == "" && data.Text.Content != "" {
+			content = data.Text.Content
+		}
+	}
+
+	// Skip empty content messages
+	if content == "" {
+		return []byte(""), nil
+	}
+
+	// Store session webhook for sending replies later
+	if data.SessionWebhook != "" {
+		d.mu.Lock()
+		d.sessionWebhooks[data.ConversationId] = data.SessionWebhook
+		d.mu.Unlock()
+	}
+
+	// Convert CreateAt (Unix milliseconds) to time.Time
+	var msgTimestamp time.Time
+	if data.CreateAt > 0 {
+		msgTimestamp = time.Unix(data.CreateAt/1000, data.CreateAt%1000*int64(time.Millisecond))
+	} else {
+		msgTimestamp = time.Now()
 	}
 
 	// Call the handler with BotMessage
@@ -122,10 +167,11 @@ func (d *DingTalkBot) handleMessageReceive(ctx context.Context, data *chatbot.Bo
 	if handler != nil {
 		handler(BotMessage{
 			Platform:  "dingtalk",
-			UserID:    data.SenderStaffId, // Use staffId as user identifier
+			UserID:    data.SenderStaffId,
 			Channel:   data.ConversationId,
+			MessageID: data.MsgId,
 			Content:   content,
-			Timestamp: time.Now(),
+			Timestamp: msgTimestamp,
 		})
 	}
 
@@ -139,6 +185,15 @@ func (d *DingTalkBot) SendMessage(conversationID, message string) error {
 		return fmt.Errorf("conversation ID is required for DingTalk")
 	}
 
+	// Get session webhook for this conversation
+	d.mu.RLock()
+	sessionWebhook, ok := d.sessionWebhooks[conversationID]
+	d.mu.RUnlock()
+
+	if sessionWebhook == "" || !ok {
+		return fmt.Errorf("no session webhook found for conversation %s, please send a message first", conversationID)
+	}
+
 	// DingTalk message limit
 	const maxDingTalkLength = constants.MaxDingTalkMessageLength
 	if len(message) > maxDingTalkLength {
@@ -149,16 +204,21 @@ func (d *DingTalkBot) SendMessage(conversationID, message string) error {
 		message = message[:maxDingTalkLength]
 	}
 
-	// Note: DingTalk requires session-specific webhook URLs for sending messages.
-	// The webhook URL is received in each incoming message but needs to be stored
-	// and reused for replies. This implementation limitation is tracked at:
-	// https://github.com/keepmind9/clibot/issues/125
-	logger.WithFields(logrus.Fields{
-		"conversation_id": conversationID,
-		"message_length":  len(message),
-	}).Warn("dingtalk-send-message-not-fully-implemented-needs-session-webhook")
+	// Send message using ChatbotReplier
+	ctx, cancel := context.WithTimeout(context.Background(), constants.DingTalkMessageSendTimeout)
+	defer cancel()
 
-	return fmt.Errorf("sending messages to DingTalk requires session webhook URL (not yet implemented)")
+	err := d.replier.SimpleReplyText(ctx, sessionWebhook, []byte(message))
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"conversation_id": conversationID,
+			"error":          err,
+		}).Error("failed-to-send-message-to-dingtalk")
+		return fmt.Errorf("failed to send message to DingTalk: %w", err)
+	}
+
+	logger.WithField("conversation_id", conversationID).Info("message-sent-to-dingtalk")
+	return nil
 }
 
 // Stop closes the DingTalk WebSocket connection and cleans up resources
@@ -170,6 +230,7 @@ func (d *DingTalkBot) Stop() error {
 	d.mu.Lock()
 	streamClient := d.streamClient
 	d.streamClient = nil
+	d.sessionWebhooks = make(map[string]string)
 	d.mu.Unlock()
 
 	if streamClient != nil {

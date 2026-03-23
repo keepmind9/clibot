@@ -30,6 +30,8 @@ const (
 	TypingIndicatorTimeout = 5 * time.Second
 	// TypingIndicatorRemoveDelay is the delay before removing typing indicator after sending response
 	TypingIndicatorRemoveDelay = 500 * time.Millisecond
+	// DingTalkMessageSendTimeout is the timeout for sending messages to DingTalk
+	DingTalkMessageSendTimeout = 10 * time.Second
 )
 
 // Message buffer sizes
