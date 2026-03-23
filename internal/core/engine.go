@@ -302,6 +302,10 @@ func (e *Engine) Run(ctx context.Context) error {
 // runEventLoop runs the main event loop for processing messages
 func (e *Engine) runEventLoop(ctx context.Context) {
 	logger.Info("engine-event-loop-started")
+	logger.WithFields(logrus.Fields{
+		"bots":      len(e.activeBots),
+		"sessions":  len(e.config.Sessions),
+	}).Info("clibot-service-started-successfully")
 
 	for {
 		select {

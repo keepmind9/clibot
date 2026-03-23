@@ -554,6 +554,13 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, env 
 		if err != nil {
 			return fmt.Errorf("invalid work_dir: %w", err)
 		}
+		// Check if directory exists
+		if _, err := os.Stat(expandedDir); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("work_dir does not exist: %s", expandedDir)
+			}
+			return fmt.Errorf("work_dir is not accessible: %w", err)
+		}
 		cmd.Dir = expandedDir
 	}
 
@@ -590,7 +597,7 @@ func (a *ACPAdapter) startStdioServer(sessionName, workDir, command string, env 
 
 	// Start process
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start ACP server: %w", err)
+		return fmt.Errorf("failed to start ACP server: %w (path=%s, args=%v, dir=%s)", err, cmd.Path, cmd.Args, cmd.Dir)
 	}
 
 	a.cmd = cmd
