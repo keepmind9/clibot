@@ -80,13 +80,18 @@ func (t *TelegramBot) Start(messageHandler func(BotMessage)) error {
 
 	// Set up long polling configuration
 	u := tgbotapi.NewUpdate(0)
-	u.Timeout = int(constants.DefaultPollTimeout.Seconds()) // Long poll timeout in seconds
+	u.Timeout = int(constants.TelegramLongPollTimeout.Seconds())
 
 	// Start receiving updates via long polling
 	updates := bot.GetUpdatesChan(u)
 
 	// Process updates in background
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.WithField("panic", r).Error("telegram-message-handler-panic")
+			}
+		}()
 		for {
 			select {
 			case <-t.ctx.Done():
@@ -98,15 +103,46 @@ func (t *TelegramBot) Start(messageHandler func(BotMessage)) error {
 					return
 				}
 
-				if update.Message != nil {
-					t.handleMessage(update.Message)
-				}
+				t.handleUpdate(update)
 			}
 		}
 	}()
 
 	logger.Info("telegram-long-polling-connection-started")
 	return nil
+}
+
+// handleUpdate handles incoming update events from Telegram
+func (t *TelegramBot) handleUpdate(update tgbotapi.Update) {
+	// Handle regular messages
+	if update.Message != nil {
+		t.handleMessage(update.Message)
+		return
+	}
+
+	// Handle edited messages
+	if update.EditedMessage != nil {
+		t.handleMessage(update.EditedMessage)
+		return
+	}
+
+	// Handle channel posts
+	if update.ChannelPost != nil {
+		t.handleMessage(update.ChannelPost)
+		return
+	}
+
+	// Handle edited channel posts
+	if update.EditedChannelPost != nil {
+		t.handleMessage(update.EditedChannelPost)
+		return
+	}
+
+	// Handle callback queries (inline keyboard button clicks)
+	if update.CallbackQuery != nil {
+		t.handleCallbackQuery(update.CallbackQuery)
+		return
+	}
 }
 
 // handleMessage handles incoming message events from Telegram
@@ -116,7 +152,7 @@ func (t *TelegramBot) handleMessage(message *tgbotapi.Message) {
 	}
 
 	// Extract message information
-	var userID, chatID, content string
+	var userID, chatID string
 	var userName, firstName, lastName string
 
 	if message.From != nil {
@@ -130,8 +166,10 @@ func (t *TelegramBot) handleMessage(message *tgbotapi.Message) {
 		chatID = fmt.Sprintf("%d", message.Chat.ID)
 	}
 
-	if message.Text != "" {
-		content = message.Text
+	// Get text content - prefer Text, fallback to Caption
+	content := message.Text
+	if content == "" {
+		content = message.Caption
 	}
 
 	// Log parsed message data
@@ -148,19 +186,63 @@ func (t *TelegramBot) handleMessage(message *tgbotapi.Message) {
 		"content_len": len(content),
 	}).Info("received-telegram-message-parsed")
 
-	// Only process text messages
-	if message.Text != "" {
-		// Call the handler with BotMessage
-		handler := t.GetMessageHandler()
-		if handler != nil {
-			handler(BotMessage{
-				Platform:  "telegram",
-				UserID:    userID,
-				Channel:   chatID,
-				Content:   content,
-				Timestamp: time.Now(),
-			})
+	// Only process messages with text content
+	if content == "" {
+		return
+	}
+
+	// Call the handler with BotMessage
+	handler := t.GetMessageHandler()
+	if handler != nil {
+		handler(BotMessage{
+			Platform:  "telegram",
+			UserID:    userID,
+			Channel:   chatID,
+			MessageID: fmt.Sprintf("%d", message.MessageID),
+			Content:   content,
+			Timestamp: time.Unix(int64(message.Date), 0),
+		})
+	}
+}
+
+// handleCallbackQuery handles inline keyboard callback queries
+func (t *TelegramBot) handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
+	if callback == nil || callback.Message == nil {
+		return
+	}
+
+	var userID, chatID string
+	if callback.From != nil {
+		userID = fmt.Sprintf("%d", callback.From.ID)
+	}
+	if callback.Message.Chat != nil {
+		chatID = fmt.Sprintf("%d", callback.Message.Chat.ID)
+	}
+
+	logger.WithFields(logrus.Fields{
+		"platform":     "telegram",
+		"user_id":      userID,
+		"callback_id":  callback.ID,
+		"chat_id":      chatID,
+		"message_id":   callback.Message.MessageID,
+		"data":         callback.Data,
+	}).Info("received-telegram-callback-query")
+
+	handler := t.GetMessageHandler()
+	if handler != nil {
+		// Use callback data as content, prefixed to identify it as a callback
+		content := callback.Data
+		if content == "" {
+			content = "[callback]"
 		}
+		handler(BotMessage{
+			Platform:  "telegram",
+			UserID:    userID,
+			Channel:   chatID,
+			MessageID: fmt.Sprintf("%d", callback.Message.MessageID),
+			Content:   content,
+			Timestamp: time.Unix(int64(callback.Message.Date), 0),
+		})
 	}
 }
 
@@ -194,9 +276,8 @@ func (t *TelegramBot) SendMessage(chatID, message string) error {
 		return fmt.Errorf("invalid chat ID format: %w", err)
 	}
 
-	// Create message
+	// Create message - use plain text to avoid markdown parsing issues
 	msg := tgbotapi.NewMessage(chatIDInt, message)
-	msg.ParseMode = "Markdown" // Support markdown formatting
 
 	// Send message
 	_, err := bot.Send(msg)

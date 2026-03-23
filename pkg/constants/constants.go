@@ -20,8 +20,12 @@ const (
 const (
 	// DefaultConnectionTimeout is the timeout for establishing connections
 	DefaultConnectionTimeout = 2 * time.Second
-	// DefaultPollTimeout is the timeout for long polling operations
-	DefaultPollTimeout = 60 * time.Second
+	// TelegramLongPollTimeout is the long polling timeout for Telegram
+	// Must be less than proxy DefaultHTTPClientTimeout (30s)
+	TelegramLongPollTimeout = 20 * time.Second
+	// WechatLongPollTimeout is the long polling timeout for WeChat iLink
+	// Must be less than proxy DefaultHTTPClientTimeout (30s)
+	WechatLongPollTimeout = 20 * time.Second
 	// HookNotificationDelay is the delay for hook notification to send
 	HookNotificationDelay = 300 * time.Millisecond
 	// HookHTTPTimeout is the timeout for hook HTTP requests

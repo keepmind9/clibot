@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/keepmind9/clibot/internal/proxy"
+	"github.com/keepmind9/clibot/pkg/constants"
 	"github.com/mdp/qrterminal"
 )
 
@@ -205,7 +206,6 @@ func (e *ApiError) Error() string {
 const (
 	DefaultBaseURL        = "https://ilinkai.weixin.qq.com"
 	DefaultBaseVersion    = "1.0.0"
-	LongPollTimeout       = 40 * time.Second
 	QRCodePollInterval    = 2 * time.Second
 	APITimeout            = 15 * time.Second
 	MaxMessageLength      = 2000
@@ -854,7 +854,7 @@ func (b *WeixinBot) longPollLoop() {
 			continue
 		}
 
-		client := &http.Client{Timeout: LongPollTimeout}
+		client := &http.Client{Timeout: constants.WechatLongPollTimeout}
 
 		result, err := getUpdates(client, b.baseURL, token, botID, userID, cursor, lastSyncBuf)
 		if err != nil {
