@@ -62,6 +62,14 @@ func (b *BaseAdapter) CreateSession(sessionName, workDir, startCmd, transportURL
 		return fmt.Errorf("session %s: failed to create tmux session: %w (output: %s)", sessionName, err, string(output))
 	}
 
+	// Set session-level environment variables (inherited by CLI process)
+	for k, v := range env {
+		setEnvCmd := exec.Command("tmux", "set-environment", "-t", sessionName, k, v)
+		if output, err := setEnvCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("session %s: failed to set env %s: %w (output: %s)", sessionName, k, err, string(output))
+		}
+	}
+
 	// Start the CLI in the session with the specified command
 	if err := b.Start(sessionName, startCmd); err != nil {
 		return fmt.Errorf("session %s: failed to start %s: %w", sessionName, b.cliName, err)
