@@ -275,7 +275,7 @@ func TestWeixinBotImplementsBotAdapter(t *testing.T) {
 
 func TestGetUpdatesRequestJSON(t *testing.T) {
 	req := weixinGetUpdatesRequest{
-		SyncBuf: "cursor123",
+		SyncBuf:  "cursor123",
 		BaseInfo: weixinBaseInfo{ChannelVersion: "1.0.0"},
 	}
 	data, err := json.Marshal(req)

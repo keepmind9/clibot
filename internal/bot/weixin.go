@@ -65,7 +65,7 @@ type weixinBaseInfo struct {
 
 // QRCodeResponse is the response from GET /ilink/bot/get_bot_qrcode.
 type weixinQRCodeResponse struct {
-	QRCode          string `json:"qrcode"`            // UUID for polling
+	QRCode           string `json:"qrcode"`             // UUID for polling
 	QRCodeImgContent string `json:"qrcode_img_content"` // base64 PNG or URL/HTML
 }
 
@@ -80,21 +80,21 @@ type weixinQRStatusResponse struct {
 
 // GetUpdatesRequest is sent to POST /ilink/bot/getupdates.
 type weixinGetUpdatesRequest struct {
-	ILinkBotID    string          `json:"ilink_bot_id,omitempty"`
-	ILinkUserID   string          `json:"ilink_user_id,omitempty"`
-	GetUpdatesBuf string          `json:"get_updates_buf,omitempty"`
-	SyncBuf       string          `json:"sync_buf,omitempty"`
+	ILinkBotID    string         `json:"ilink_bot_id,omitempty"`
+	ILinkUserID   string         `json:"ilink_user_id,omitempty"`
+	GetUpdatesBuf string         `json:"get_updates_buf,omitempty"`
+	SyncBuf       string         `json:"sync_buf,omitempty"`
 	BaseInfo      weixinBaseInfo `json:"base_info"`
 }
 
 // InboundMessageItem represents a single item in an inbound message item_list.
 type inboundMessageItem struct {
-	Type       int                 `json:"type"`
-	TextItem   *inboundTextItem    `json:"text_item,omitempty"`
-	ImageItem  *inboundMediaItem   `json:"image_item,omitempty"`
-	VoiceItem  *inboundMediaItem   `json:"voice_item,omitempty"`
-	FileItem   *inboundMediaItem   `json:"file_item,omitempty"`
-	VideoItem  *inboundMediaItem   `json:"video_item,omitempty"`
+	Type      int               `json:"type"`
+	TextItem  *inboundTextItem  `json:"text_item,omitempty"`
+	ImageItem *inboundMediaItem `json:"image_item,omitempty"`
+	VoiceItem *inboundMediaItem `json:"voice_item,omitempty"`
+	FileItem  *inboundMediaItem `json:"file_item,omitempty"`
+	VideoItem *inboundMediaItem `json:"video_item,omitempty"`
 }
 
 type inboundTextItem struct {
@@ -107,25 +107,25 @@ type inboundMediaItem struct {
 
 // GetUpdatesResponse is the response from POST /ilink/bot/getupdates.
 type weixinGetUpdatesResponse struct {
-	Ret                  int               `json:"ret"`
-	Msgs                 []inboundMessage  `json:"msgs"`
-	GetUpdatesBuf         string            `json:"get_updates_buf"`
-	SyncBuf              string            `json:"sync_buf"`
-	LongpollingTimeoutMs int               `json:"longpolling_timeout_ms"`
-	ErrCode              int               `json:"errcode"`
-	ErrMsg               string            `json:"errmsg"`
+	Ret                  int              `json:"ret"`
+	Msgs                 []inboundMessage `json:"msgs"`
+	GetUpdatesBuf        string           `json:"get_updates_buf"`
+	SyncBuf              string           `json:"sync_buf"`
+	LongpollingTimeoutMs int              `json:"longpolling_timeout_ms"`
+	ErrCode              int              `json:"errcode"`
+	ErrMsg               string           `json:"errmsg"`
 }
 
 type inboundMessage struct {
-	MessageID    json.Number        `json:"message_id"`
-	FromUserID  string             `json:"from_user_id"`
-	ToUserID    string             `json:"to_user_id"`
-	ClientID    string             `json:"client_id"`
-	CreateTimeMs int64              `json:"create_time_ms"`
-	MessageType int                `json:"message_type"`
-	MessageState int               `json:"message_state"`
-	ContextToken string            `json:"context_token"`
-	ItemList    []inboundMessageItem `json:"item_list"`
+	MessageID    json.Number          `json:"message_id"`
+	FromUserID   string               `json:"from_user_id"`
+	ToUserID     string               `json:"to_user_id"`
+	ClientID     string               `json:"client_id"`
+	CreateTimeMs int64                `json:"create_time_ms"`
+	MessageType  int                  `json:"message_type"`
+	MessageState int                  `json:"message_state"`
+	ContextToken string               `json:"context_token"`
+	ItemList     []inboundMessageItem `json:"item_list"`
 }
 
 // SendMessageBody is sent to POST /ilink/bot/sendmessage.
@@ -135,19 +135,19 @@ type weixinSendMessageBody struct {
 }
 
 type weixinOutboundMsg struct {
-	FromUserID   string                  `json:"from_user_id"`
-	ToUserID     string                  `json:"to_user_id"`
-	ClientID     string                  `json:"client_id"`
-	MessageType  int                     `json:"message_type"`
-	MessageState int                     `json:"message_state"`
-	ContextToken string                  `json:"context_token"`
-	ItemList     []weixinOutboundItem    `json:"item_list"`
+	FromUserID   string               `json:"from_user_id"`
+	ToUserID     string               `json:"to_user_id"`
+	ClientID     string               `json:"client_id"`
+	MessageType  int                  `json:"message_type"`
+	MessageState int                  `json:"message_state"`
+	ContextToken string               `json:"context_token"`
+	ItemList     []weixinOutboundItem `json:"item_list"`
 }
 
 type weixinOutboundItem struct {
-	Type      int                    `json:"type"`
-	TextItem  *outboundTextItem      `json:"text_item,omitempty"`
-	ImageItem *outboundImageItem     `json:"image_item,omitempty"`
+	Type      int                `json:"type"`
+	TextItem  *outboundTextItem  `json:"text_item,omitempty"`
+	ImageItem *outboundImageItem `json:"image_item,omitempty"`
 }
 
 type outboundTextItem struct {
@@ -160,8 +160,8 @@ type outboundImageItem struct {
 
 // GetConfigRequest is sent to POST /ilink/bot/getconfig.
 type weixinGetConfigRequest struct {
-	ILinkUserID  string `json:"ilink_user_id"`
-	ContextToken string `json:"context_token"`
+	ILinkUserID  string         `json:"ilink_user_id"`
+	ContextToken string         `json:"context_token"`
 	BaseInfo     weixinBaseInfo `json:"base_info"`
 }
 
@@ -175,9 +175,9 @@ type weixinGetConfigResponse struct {
 
 // SendTypingRequest is sent to POST /ilink/bot/sendtyping.
 type weixinSendTypingRequest struct {
-	ILinkUserID  string `json:"ilink_user_id"`
-	TypingTicket string `json:"typing_ticket"`
-	Status       int    `json:"status"` // 1=start, 2=stop
+	ILinkUserID  string         `json:"ilink_user_id"`
+	TypingTicket string         `json:"typing_ticket"`
+	Status       int            `json:"status"` // 1=start, 2=stop
 	BaseInfo     weixinBaseInfo `json:"base_info"`
 }
 
@@ -301,10 +301,10 @@ func randomWechatUIN() string {
 // buildAuthHeaders returns headers for authenticated POST API calls.
 func buildAuthHeaders(token string) map[string]string {
 	return map[string]string{
-		"Content-Type":       "application/json",
-		"AuthorizationType":  "ilink_bot_token",
-		"Authorization":      "Bearer " + token,
-		"X-WECHAT-UIN":       randomWechatUIN(),
+		"Content-Type":      "application/json",
+		"AuthorizationType": "ilink_bot_token",
+		"Authorization":     "Bearer " + token,
+		"X-WECHAT-UIN":      randomWechatUIN(),
 	}
 }
 
@@ -685,7 +685,7 @@ type WeixinBot struct {
 	// sessionMu protects contextTokens, clientToUser, seenMsgs accessed by handleMessage.
 	// cursor and lastSyncBuf are only accessed by longPollLoop (single goroutine).
 	// httpClient may be accessed by both longPollLoop and SetProxyManager (called before polling).
-	sessionMu sync.RWMutex
+	sessionMu       sync.RWMutex
 	baseURL         string
 	credentialsPath string
 	credentials     *Credentials

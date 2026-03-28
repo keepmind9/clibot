@@ -220,12 +220,12 @@ func (t *TelegramBot) handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
 	}
 
 	logger.WithFields(logrus.Fields{
-		"platform":     "telegram",
-		"user_id":      userID,
-		"callback_id":  callback.ID,
-		"chat_id":      chatID,
-		"message_id":   callback.Message.MessageID,
-		"data":         callback.Data,
+		"platform":    "telegram",
+		"user_id":     userID,
+		"callback_id": callback.ID,
+		"chat_id":     chatID,
+		"message_id":  callback.Message.MessageID,
+		"data":        callback.Data,
 	}).Info("received-telegram-callback-query")
 
 	handler := t.GetMessageHandler()

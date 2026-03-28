@@ -45,8 +45,8 @@ const (
 
 	// Timeouts
 	qqWebSocketHandshakeTimeout = 10 * time.Second // WebSocket handshake timeout
-	qqAPIRequestTimeout        = 10 * time.Second // Timeout for token and gateway requests
-	qqMessageSendTimeout       = 15 * time.Second // Timeout for sending messages
+	qqAPIRequestTimeout         = 10 * time.Second // Timeout for token and gateway requests
+	qqMessageSendTimeout        = 15 * time.Second // Timeout for sending messages
 
 	// Token management
 	qqTokenExpirationBuffer = 60 // Buffer in seconds before token expiration

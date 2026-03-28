@@ -35,7 +35,7 @@ func NewDingTalkBot(clientID, clientSecret string) *DingTalkBot {
 		clientID:        clientID,
 		clientSecret:    clientSecret,
 		sessionWebhooks: make(map[string]string),
-		replier:        chatbot.NewChatbotReplier(),
+		replier:         chatbot.NewChatbotReplier(),
 	}
 }
 
@@ -212,7 +212,7 @@ func (d *DingTalkBot) SendMessage(conversationID, message string) error {
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"conversation_id": conversationID,
-			"error":          err,
+			"error":           err,
 		}).Error("failed-to-send-message-to-dingtalk")
 		return fmt.Errorf("failed to send message to DingTalk: %w", err)
 	}
