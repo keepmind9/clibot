@@ -4,49 +4,63 @@
 
 ## 1. 存储机制
 
-OpenCode 使用基于文件的存储系统，默认路径为：
-`~/.local/share/opencode/storage/`
+OpenCode 使用 **SQLite + 文件系统** 混合存储，默认路径为：
+`~/.local/share/opencode/`
 
-数据结构如下：
-*   **会话信息**: `session/{projectID}/{sessionID}.json`
-*   **消息内容**: `message/{sessionID}/msg_{messageID}.json` (每个消息一个独立文件)
+| 存储方式 | 路径 | 说明 |
+|----------|------|------|
+| SQLite 数据库 | `opencode.db` | 主存储，包含 session/message/part 三张表 |
+| 文件存储 (旧) | `storage/` | 早期版本的文件存储，仅包含旧会话 |
+
+适配器采用 **SQLite 优先、文件存储降级** 的策略。
+
+### SQLite 数据库表结构
+
+- **session**: `id`, `project_id`, `time_created`, `time_updated`, `data` (JSON)
+- **message**: `id`, `session_id`, `time_created`, `time_updated`, `data` (JSON，含 `role` 字段)
+- **part**: `id`, `message_id`, `session_id`, `time_created`, `time_updated`, `data` (JSON，含 `type` 和 `text` 字段)
+
+### 文件存储结构 (旧版)
+
+- **会话信息**: `storage/session/{projectID}/{sessionID}.json`
+- **消息元数据**: `storage/message/{sessionID}/{messageID}.json` (含 `id`、`role`，不含 parts)
+- **消息内容**: `storage/part/{messageID}/{partID}.json` (每个 part 独立文件)
 
 ## 2. 定位会话 (Session)
 
 为了提取正确的对话，适配器首先需要定位到具体的会话：
 
-1.  **项目识别 (ProjectID)**: 
+1.  **项目识别 (ProjectID)**:
     *   如果是 Git 仓库，OpenCode 使用仓库的**第一个 commit hash** 作为 `projectID`。
     *   如果不是 Git 仓库，则使用 `global`。
 2.  **自动识别最新会话**:
-    *   如果 Hook 未提供 `session_id`，适配器会扫描 `storage/session/{projectID}/` 目录下所有的 JSON 文件。
-    *   解析这些文件并比较 `time.updated` 字段，选择更新时间最晚的会话。
+    *   SQLite: 查询 `session` 表按 `time_updated` 降序取第一条。
+    *   文件存储: 扫描 `storage/session/{projectID}/` 目录，比较 `time.updated` 字段。
 
 ## 3. 提取逻辑 (`extractLatestInteractionFromStorage`)
 
-一旦确定了 `sessionID`，提取过程如下：
+适配器依次尝试两种数据源：
 
-### 第一步：收集消息
-1.  进入 `storage/message/{sessionID}/` 目录。
-2.  获取所有 `.json` 文件（文件名格式为 `msg_{顺序ID}.json`）。
-3.  按**文件名升序排序**，以确保消息的时间顺序正确。
-4.  逐个读取文件并反序列化为 `OpenCodeMessageInfo` 结构。
+### 优先：SQLite 提取 (`extractLatestInteractionFromDB`)
 
-### 第二步：定位最新用户输入
-1.  从消息列表末尾向前遍历。
-2.  查找第一个 `role` 为 `"user"` 的消息。
-3.  提取该消息中所有类型为 `"text"` 的 `parts` 内容，合并为 `lastUserPrompt`。
+1.  以只读模式打开 `opencode.db`。
+2.  查询 `message` 表：`SELECT id, json_extract(data, '$.role') FROM message WHERE session_id = ? ORDER BY time_created`。
+3.  从末尾向前查找最后一个 `role = "user"` 的消息。
+4.  对该用户消息及后续的 `role = "assistant"` 消息，分别查询 `part` 表：`SELECT json_extract(data, '$.text') FROM part WHERE message_id = ? AND json_extract(data, '$.type') = 'text'`。
+5.  用双换行符拼接所有 assistant 的文本 part 作为回复。
 
-### 第三步：收集助手回复
-1.  从找到的用户输入索引位置开始向后遍历。
-2.  收集所有 `role` 为 `"assistant"` 的后续消息。
-3.  提取每条助手消息中所有类型为 `"text"` 的 `parts` 内容。
-4.  使用双换行符 (`
+### 降级：文件存储提取 (`extractLatestInteractionFromFiles`)
 
-`) 将这些内容块拼接为最终的回复。
+当 SQLite 不可用（如数据库文件不存在）时降级为文件存储：
+
+1.  读取 `storage/message/{sessionID}/*.json` 获取消息列表（按文件名排序）。
+2.  定位最后一个 `role = "user"` 的消息。
+3.  对每条消息，从 `storage/part/{messageID}/*.json` 读取 parts，提取 `type = "text"` 的内容。
+4.  拼接 assistant 消息的文本 parts 作为回复。
 
 ## 4. 关键特性
 
-*   **分布式存储支持**: 与 Claude 的单文件 JSONL 不同，OpenCode 每个消息都是独立文件，适配器通过文件名排序保证了逻辑一致性。
-*   **多 Part 支持**: 能够解析并提取消息中嵌套的 `parts` 数组，过滤掉思考过程 (`reasoning`) 或工具调用 (`tool-invocation`) 等非文本内容。
-*   ** projectID 隔离**: 严格遵循 OpenCode 的项目计算逻辑，确保在不同工程间切换时的准确性。
+*   **SQLite 优先**: 新版 OpenCode 会话仅存储在 SQLite 中，适配器优先查询数据库确保覆盖最新会话。
+*   **文件存储降级**: 兼容早期仅使用文件存储的会话，确保旧数据仍可解析。
+*   **Parts 独立存储**: 消息内容（text、reasoning、step-start 等）以独立 part 文件/记录存储，适配器仅提取 `type = "text"` 的内容，过滤掉思考过程和工具调用。
+*   **ProjectID 隔离**: 严格遵循 OpenCode 的项目计算逻辑（首个 commit hash 排序取最小），确保在不同工程间切换时的准确性。
