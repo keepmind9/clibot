@@ -243,9 +243,10 @@ func isRealUserMessage(msg TranscriptMessage) bool {
 		return false
 	}
 
-	// Skip internal command/tool messages
+	// Skip internal command/tool messages and caveats
 	return !strings.HasPrefix(content, "<local-command-") &&
-		!strings.HasPrefix(content, "<command-name>")
+		!strings.HasPrefix(content, "<command-name>") &&
+		!strings.HasPrefix(content, "<local-command-caveat>")
 }
 
 // extractLatestInteraction extracts the latest user prompt and assistant response
