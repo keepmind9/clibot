@@ -1857,9 +1857,11 @@ func (e *Engine) handlePermissionResponse(session *Session, input string, msg bo
 	// Parse user input as option number (1-based)
 	idx, err := strconv.Atoi(strings.TrimSpace(input))
 	if err != nil || idx < 1 {
+		// Not a number — show hint but don't swallow the message.
+		// Fall through so the message is processed as normal input.
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("Please reply with a number (1-%d)", len(pending.Request.Options)))
-		return true
+			fmt.Sprintf("Permission pending. Reply 1-%d to respond, or type your message normally.", len(pending.Request.Options)))
+		return false
 	}
 
 	opt := pending.Request.OptionByIndex(idx)

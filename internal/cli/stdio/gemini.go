@@ -20,7 +20,11 @@ func (GeminiSpec) Mode() StdioMode { return PerTurnMode }
 func (GeminiSpec) Binary() string  { return "gemini" }
 
 func (GeminiSpec) BuildArgs(opts StartOptions) []string {
-	args := []string{"-p", opts.Prompt, "--output-format", "stream-json"}
+	prompt := opts.Prompt
+	if prompt == "" {
+		prompt = " " // Gemini requires non-empty -p flag
+	}
+	args := []string{"-p", prompt, "--output-format", "stream-json"}
 	if opts.Resume {
 		args = append(args, "--resume", "latest")
 	}

@@ -56,7 +56,7 @@ func TestGeminiSpec_BuildArgs_EmptyPrompt(t *testing.T) {
 	spec := GeminiSpec{}
 	args := spec.BuildArgs(StartOptions{})
 	assert.Equal(t, []string{
-		"-p", "",
+		"-p", " ",
 		"--output-format", "stream-json",
 	}, args)
 }

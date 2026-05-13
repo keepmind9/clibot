@@ -190,6 +190,11 @@ func (a *StdioAdapter) RespondPermission(sessionName, requestID, optionID string
 		return fmt.Errorf("session %q not found", sessionName)
 	}
 
+	// Per-turn mode does not support permission prompts
+	if a.spec.Mode() == PerTurnMode {
+		return fmt.Errorf("permissions not supported in per-turn mode")
+	}
+
 	sess.permMu.Lock()
 	defer sess.permMu.Unlock()
 
@@ -263,6 +268,7 @@ func (a *StdioAdapter) sendPersistent(sess *stdioSession, input string) error {
 }
 
 // sendPerTurn spawns a new process for this message, collects output, and delivers response.
+// Note: SendInput must not be called concurrently for the same session.
 func (a *StdioAdapter) sendPerTurn(sess *stdioSession, input string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), a.config.IdleTimeout)
 	defer cancel()
@@ -383,20 +389,28 @@ func (a *StdioAdapter) handlePermissionEvent(sess *stdioSession, perm *Permissio
 			return
 		}
 
-		// Auto-deny with last option (usually "Deny")
-		lastIdx := len(perm.Options)
-		if lastIdx > 0 {
-			opt := perm.Options[lastIdx-1]
+		// Auto-deny: look for option with ID "deny", fall back to last option
+		var denyOpt *PermissionOption
+		for i := range perm.Options {
+			if perm.Options[i].ID == "deny" {
+				denyOpt = &perm.Options[i]
+				break
+			}
+		}
+		if denyOpt == nil && len(perm.Options) > 0 {
+			denyOpt = &perm.Options[len(perm.Options)-1]
+		}
+		if denyOpt != nil {
 			logger.WithFields(logrus.Fields{
 				"cli":        a.spec.Name(),
 				"session":    sess.name,
 				"request_id": perm.RequestID,
-				"option":     opt.Text,
+				"option":     denyOpt.Text,
 			}).Warn("stdio-permission-timeout-auto-deny")
 
 			sess.pendingPerm.Responded = true
 			sess.pendingPerm = nil
-			sess.process.WritePermissionResponse(perm.RequestID, opt.ID)
+			sess.process.WritePermissionResponse(perm.RequestID, denyOpt.ID)
 		}
 	})
 

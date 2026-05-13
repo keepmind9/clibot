@@ -172,7 +172,7 @@ func summarizeInput(toolName string, input any) string {
 	switch v := input.(type) {
 	case string:
 		if len(v) > 300 {
-			return v[:300] + "..."
+			return truncateRunes(v, 300) + "..."
 		}
 		return v
 	case map[string]any:
@@ -191,13 +191,13 @@ func summarizeInput(toolName string, input any) string {
 		b, _ := json.Marshal(v)
 		s := string(b)
 		if len(s) > 300 {
-			return s[:300] + "..."
+			return truncateRunes(s, 300) + "..."
 		}
 		return s
 	default:
 		s := fmt.Sprintf("%v", input)
 		if len(s) > 300 {
-			return s[:300] + "..."
+			return truncateRunes(s, 300) + "..."
 		}
 		return s
 	}

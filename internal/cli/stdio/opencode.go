@@ -30,7 +30,11 @@ func (OpenCodeSpec) BuildArgs(opts StartOptions) []string {
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
 	}
-	args = append(args, opts.Prompt)
+	prompt := opts.Prompt
+	if prompt == "" {
+		prompt = " " // OpenCode requires non-empty positional arg
+	}
+	args = append(args, prompt)
 	return args
 }
 

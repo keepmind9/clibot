@@ -68,7 +68,7 @@ func (p *PermissionRequest) FormatOptions() string {
 	s := fmt.Sprintf("Permission requested: %s", p.ToolName)
 	if p.Input != "" {
 		if len(p.Input) > 500 {
-			s += fmt.Sprintf("\nInput: %s...", p.Input[:500])
+			s += fmt.Sprintf("\nInput: %s...", truncateRunes(p.Input, 500))
 		} else {
 			s += fmt.Sprintf("\nInput: %s", p.Input)
 		}
@@ -141,4 +141,13 @@ type CLISpec interface {
 	// FormatPermissionResponse formats a permission response for stdin.
 	// optionID is the ID from the selected PermissionOption.
 	FormatPermissionResponse(requestID string, optionID string) ([]byte, error)
+}
+
+// truncateRunes truncates a string to at most n runes, preserving valid UTF-8.
+func truncateRunes(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n])
 }

@@ -63,7 +63,7 @@ func TestOpenCodeSpec_BuildArgs_EmptyPrompt(t *testing.T) {
 	spec := OpenCodeSpec{}
 	args := spec.BuildArgs(StartOptions{})
 	assert.Equal(t, []string{
-		"run", "--format", "json", "",
+		"run", "--format", "json", " ",
 	}, args)
 }
 
