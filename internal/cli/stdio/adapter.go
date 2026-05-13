@@ -52,6 +52,8 @@ type stdioSession struct {
 	pendingPerm *PendingPermission
 	permMu      sync.Mutex
 	cancelCtx   context.CancelFunc
+	sessionID   string // CLI-side session ID for resume support
+	completed   bool   // True after first successful per-turn
 }
 
 // Engine interface matches cli.Engine — duplicated here to avoid
@@ -266,9 +268,12 @@ func (a *StdioAdapter) sendPerTurn(sess *stdioSession, input string) error {
 	defer cancel()
 
 	opts := StartOptions{
-		WorkDir: sess.workDir,
-		Env:     sess.env,
-		Context: ctx,
+		WorkDir:   sess.workDir,
+		Env:       sess.env,
+		Context:   ctx,
+		Prompt:    input,
+		Resume:    sess.completed,
+		SessionID: sess.sessionID,
 	}
 
 	proc, err := NewStdioProcess(ctx, a.spec, opts)
@@ -290,11 +295,18 @@ func (a *StdioAdapter) sendPerTurn(sess *stdioSession, input string) error {
 			if evt.Text != "" {
 				result += evt.Text
 			}
+			if evt.Done {
+				sess.completed = true
+			}
 		case EventError:
 			logger.WithFields(logrus.Fields{
 				"cli": a.spec.Name(),
 				"err": evt.Error,
 			}).Error("stdio-per-turn-error")
+		}
+		// Capture session ID for resume support
+		if evt.SessionID != "" {
+			sess.sessionID = evt.SessionID
 		}
 	}
 	proc.Close()

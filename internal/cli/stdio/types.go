@@ -45,6 +45,7 @@ type Event struct {
 	Permission *PermissionRequest // For EventPermission
 	Error      error              // For EventError
 	Done       bool               // True when the turn is fully complete
+	SessionID  string             // Populated when a new session is detected
 }
 
 // ToolUseInfo describes a tool invocation.
@@ -106,10 +107,13 @@ type PermissionOption struct {
 
 // StartOptions contains parameters for starting a CLI process.
 type StartOptions struct {
-	WorkDir string
-	Model   string
-	Env     map[string]string
-	Context context.Context
+	WorkDir   string
+	Model     string
+	Env       map[string]string
+	Context   context.Context
+	Prompt    string // User's input message (for CLIs that take prompt as arg)
+	Resume    bool   // Whether to resume a previous session
+	SessionID string // Explicit session ID to resume (optional)
 }
 
 // CLISpec defines how to interact with a specific CLI tool.

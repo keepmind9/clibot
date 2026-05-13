@@ -251,6 +251,12 @@ func newStdioSpec(cliType string) stdio.CLISpec {
 	switch cliType {
 	case "claude-stdio":
 		return stdio.ClaudeSpec{}
+	case "codex-stdio":
+		return stdio.CodexSpec{}
+	case "gemini-stdio":
+		return stdio.GeminiSpec{}
+	case "opencode-stdio":
+		return stdio.OpenCodeSpec{}
 	default:
 		return nil
 	}

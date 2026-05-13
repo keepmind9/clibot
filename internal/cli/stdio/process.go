@@ -118,10 +118,14 @@ func (p *StdioProcess) Events() <-chan Event {
 }
 
 // WriteInput writes a formatted user message to stdin.
+// If FormatInput returns nil, the write is skipped (for CLIs that take prompt as arg).
 func (p *StdioProcess) WriteInput(message string) error {
 	data, err := p.spec.FormatInput(message)
 	if err != nil {
 		return fmt.Errorf("format input: %w", err)
+	}
+	if data == nil {
+		return nil
 	}
 	return p.write(data)
 }
