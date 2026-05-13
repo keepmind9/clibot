@@ -16,6 +16,7 @@ import (
 
 	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/cli"
+	"github.com/keepmind9/clibot/internal/cli/stdio"
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/keepmind9/clibot/internal/proxy"
 	"github.com/keepmind9/clibot/internal/watchdog"
@@ -236,10 +237,10 @@ func (e *Engine) ensureSessionStarted(session *Session, sessionConfig SessionCon
 }
 
 // needsHookServer checks if any session requires hook server
-// Returns false if all sessions are ACP type (which use native protocol)
+// Returns false if all sessions use callback-based adapters (ACP, stdio)
 func (e *Engine) needsHookServer() bool {
 	for _, sessionConfig := range e.config.Sessions {
-		if sessionConfig.CLIType != "acp" {
+		if sessionConfig.CLIType != "acp" && !stdio.IsStdioCLIType(sessionConfig.CLIType) {
 			return true
 		}
 	}
@@ -578,6 +579,11 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 
 	// NOTE: Before snapshot capture removed - only hook mode is supported
 	adapter := e.cliAdapters[session.CLIType]
+
+	// Step 4.5: Check for pending permission response (stdio mode)
+	if e.handlePermissionResponse(session, input, msg) {
+		return
+	}
 
 	// Step 5: Send to CLI
 	if err := adapter.SendInput(session.Name, processedContent); err != nil {
@@ -1814,6 +1820,62 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 	if botChannel.MessageID != "" {
 		e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
 	}
+}
+
+// SendPermissionPrompt sends a permission request notification to the user.
+func (e *Engine) SendPermissionPrompt(sessionName, message string) {
+	e.sessionMu.RLock()
+	botChannel, exists := e.sessionChannels[sessionName]
+	e.sessionMu.RUnlock()
+
+	if !exists {
+		logger.WithField("session", sessionName).Warn("no-bot-channel-for-permission-prompt")
+		return
+	}
+
+	e.SendToBot(botChannel.Platform, botChannel.Channel, message)
+
+	if botChannel.MessageID != "" {
+		e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
+	}
+}
+
+// handlePermissionResponse checks if a user message is a response to a pending permission.
+// Returns true if the message was handled as a permission response.
+func (e *Engine) handlePermissionResponse(session *Session, input string, msg bot.BotMessage) bool {
+	adapter := e.cliAdapters[session.CLIType]
+	stdioAdapter, ok := adapter.(stdio.NeedsStdioAdapter)
+	if !ok {
+		return false
+	}
+
+	pending := stdioAdapter.GetPendingPermission(session.Name)
+	if pending == nil {
+		return false
+	}
+
+	// Parse user input as option number (1-based)
+	idx, err := strconv.Atoi(strings.TrimSpace(input))
+	if err != nil || idx < 1 {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("Please reply with a number (1-%d)", len(pending.Request.Options)))
+		return true
+	}
+
+	opt := pending.Request.OptionByIndex(idx)
+	if opt == nil {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("Invalid option. Please reply with a number (1-%d)", len(pending.Request.Options)))
+		return true
+	}
+
+	if err := stdioAdapter.RespondPermission(session.Name, pending.Request.RequestID, opt.ID); err != nil {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("Failed to respond: %v", err))
+		return true
+	}
+
+	e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("Permission response sent: %s", opt.Text))
+	return true
 }
 
 // SendToAllBots sends a message to all active bots

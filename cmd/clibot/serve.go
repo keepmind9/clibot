@@ -11,6 +11,7 @@ import (
 
 	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/cli"
+	"github.com/keepmind9/clibot/internal/cli/stdio"
 	"github.com/keepmind9/clibot/internal/core"
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/sirupsen/logrus"
@@ -164,6 +165,44 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 		}
 	}
 
+	// Register stdio adapters (e.g., claude-stdio)
+	// Collect unique stdio cli_types from sessions
+	stdioTypes := map[string]bool{}
+	for _, session := range config.Sessions {
+		if stdio.IsStdioCLIType(session.CLIType) {
+			stdioTypes[session.CLIType] = true
+		}
+	}
+	for cliType := range stdioTypes {
+		spec := newStdioSpec(cliType)
+		if spec == nil {
+			log.Printf("Warning: stdio adapter type '%s' not implemented yet", cliType)
+			continue
+		}
+
+		var permTimeout time.Duration
+		var idleTimeout time.Duration
+		var env map[string]string
+
+		if adapterCfg, ok := config.CLIAdapters[cliType]; ok {
+			env = adapterCfg.Env
+			if adapterCfg.Timeout != "" {
+				if d, err := time.ParseDuration(adapterCfg.Timeout); err == nil {
+					permTimeout = d
+				}
+			}
+		}
+
+		adapter := stdio.NewStdioAdapter(spec, stdio.StdioAdapterConfig{
+			PermissionTimeout: permTimeout,
+			IdleTimeout:       idleTimeout,
+			Env:               env,
+		})
+		adapter.SetEngine(engine)
+		engine.RegisterCLIAdapter(cliType, adapter)
+		log.Printf("Registered %s CLI adapter (mode: stdio)", cliType)
+	}
+
 	// Register hook adapters
 	for cliType, cliConfig := range config.CLIAdapters {
 		var adapter cli.CLIAdapter
@@ -171,6 +210,10 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 
 		// Skip ACP adapter (already registered above)
 		if cliType == "acp" {
+			continue
+		}
+		// Skip stdio adapters (already registered above)
+		if stdio.IsStdioCLIType(cliType) {
 			continue
 		}
 
@@ -201,6 +244,16 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 	}
 
 	return nil
+}
+
+// newStdioSpec creates a CLISpec for the given stdio cli_type.
+func newStdioSpec(cliType string) stdio.CLISpec {
+	switch cliType {
+	case "claude-stdio":
+		return stdio.ClaudeSpec{}
+	default:
+		return nil
+	}
 }
 
 // registerBotAdapters registers all configured bot adapters using factory pattern

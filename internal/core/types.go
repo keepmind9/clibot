@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+
+	"github.com/keepmind9/clibot/internal/cli/stdio"
 )
 
 // SessionState represents the current state of a session
@@ -28,12 +30,10 @@ type Session struct {
 }
 
 // NeedsWatchdog returns true if session requires watchdog monitoring
-// ACP sessions handle responses asynchronously via callbacks,
+// ACP and stdio sessions handle responses asynchronously via callbacks,
 // so they don't need watchdog (tmux polling or hook waiting)
 func (s *Session) NeedsWatchdog() bool {
-	// ACP adapter sends responses directly via SendResponseToSession
-	// No need for tmux polling or hook watchdog
-	return s.CLIType != "acp"
+	return s.CLIType != "acp" && !stdio.IsStdioCLIType(s.CLIType)
 }
 
 // ResponseEvent represents a CLI response event
