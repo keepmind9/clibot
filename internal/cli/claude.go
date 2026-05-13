@@ -96,10 +96,12 @@ func (c *ClaudeAdapter) HandleHookData(data []byte) (string, string, string, err
 // TranscriptMessage represents a single message in Claude Code's transcript.jsonl
 // Each line in the file is a JSON object with this structure
 type TranscriptMessage struct {
-	Type      string         `json:"type"` // "user", "assistant", "progress", etc.
-	SessionID string         `json:"sessionId"`
-	IsMeta    bool           `json:"isMeta"`
-	Message   MessageContent `json:"message"`
+	Type             string         `json:"type"` // "user", "assistant", "progress", etc.
+	SessionID        string         `json:"sessionId"`
+	IsMeta           bool           `json:"isMeta"`           // Legacy field, replaced by IsSidechain in newer versions
+	IsSidechain      bool           `json:"isSidechain"`      // Replaces isMeta in Claude Code >= 2.1.x
+	IsCompactSummary bool           `json:"isCompactSummary"` // Context compaction summary messages
+	Message          MessageContent `json:"message"`
 }
 
 // MessageContent represents the message content structure
@@ -234,7 +236,7 @@ func getMessageText(msg TranscriptMessage) string {
 
 // isRealUserMessage checks if a message is an actual user prompt
 func isRealUserMessage(msg TranscriptMessage) bool {
-	if msg.Type != "user" || msg.IsMeta {
+	if msg.Type != "user" || msg.IsMeta || msg.IsSidechain || msg.IsCompactSummary {
 		return false
 	}
 

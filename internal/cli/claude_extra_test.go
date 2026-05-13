@@ -39,6 +39,24 @@ func TestIsRealUserMessage(t *testing.T) {
 		assert.False(t, isRealUserMessage(msg))
 	})
 
+	t.Run("sidechain message", func(t *testing.T) {
+		msg := TranscriptMessage{
+			Type:        "user",
+			IsSidechain: true,
+			Message:     MessageContent{ContentText: "test"},
+		}
+		assert.False(t, isRealUserMessage(msg))
+	})
+
+	t.Run("compact summary message", func(t *testing.T) {
+		msg := TranscriptMessage{
+			Type:             "user",
+			IsCompactSummary: true,
+			Message:          MessageContent{ContentText: "This session is being continued from a previous conversation"},
+		}
+		assert.False(t, isRealUserMessage(msg))
+	})
+
 	t.Run("assistant message", func(t *testing.T) {
 		msg := TranscriptMessage{
 			Type:    "assistant",
@@ -168,9 +186,11 @@ func TestContentBlock_TextExtraction(t *testing.T) {
 // TestTranscriptMessage_Fields tests TranscriptMessage structure
 func TestTranscriptMessage_Fields(t *testing.T) {
 	msg := TranscriptMessage{
-		Type:      "user",
-		SessionID: "session-123",
-		IsMeta:    false,
+		Type:             "user",
+		SessionID:        "session-123",
+		IsMeta:           false,
+		IsSidechain:      false,
+		IsCompactSummary: false,
 		Message: MessageContent{
 			Role:        "user",
 			Type:        "message",
@@ -181,6 +201,8 @@ func TestTranscriptMessage_Fields(t *testing.T) {
 	assert.Equal(t, "user", msg.Type)
 	assert.Equal(t, "session-123", msg.SessionID)
 	assert.False(t, msg.IsMeta)
+	assert.False(t, msg.IsSidechain)
+	assert.False(t, msg.IsCompactSummary)
 	assert.Equal(t, "user", msg.Message.Role)
 }
 
