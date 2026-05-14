@@ -31,10 +31,44 @@
 #   - Git friendly: can commit config without exposing secrets
 # ==============================================================================
 
-# HTTP Hook Server Port
-# Used by CLI tools to notify clibot when they finish processing
-hook_server:
-  port: 8080
+# ==============================================================================
+# Security Configuration (IMPORTANT)
+# ==============================================================================
+# clibot is essentially a Remote Code Execution (RCE) tool.
+# Whitelist MUST be enabled to prevent unauthorized access.
+security:
+  whitelist_enabled: true
+
+  # Allowed users - Add your user IDs here
+  #
+  # How to get your user ID:
+  #   - Telegram: Send any message to your bot, then use 'echo' command
+  #   - Discord: Send any message, use 'echo' command to see your User ID
+  #   - Feishu: Use 'echo' command to see your open_id
+  #   - DingTalk: Use 'echo' command to see your staff_id
+  allowed_users:
+    telegram:
+      - "YOUR_TELEGRAM_USER_ID"     # Replace with your Telegram user_id (number)
+
+    discord:
+      - "YOUR_DISCORD_USER_ID"      # Replace with your Discord user_id (snowflake)
+
+    feishu:
+      - "YOUR_FEISHU_OPEN_ID"       # Replace with your Feishu open_id
+
+    dingtalk:
+      - "YOUR_DINGTALK_STAFF_ID"    # Replace with your DingTalk staff_id
+
+  # Admin list - Users who can create/delete dynamic sessions
+  admins:
+    telegram:
+      - "YOUR_TELEGRAM_USER_ID"
+
+    discord:
+      - "YOUR_DISCORD_USER_ID"
+
+    feishu:
+      - "YOUR_FEISHU_OPEN_ID"
 
 # ==============================================================================
 # Network Proxy Configuration (OPTIONAL)
@@ -49,16 +83,12 @@ hook_server:
 # Supported proxy types:
 #   - http: HTTP/HTTPS proxy (e.g., http://127.0.0.1:7890)
 #   - socks5: SOCKS5 proxy (e.g., socks5://127.0.0.1:1080)
-#
-# Authentication (optional):
-#   username: "your_username"
-#   password: "your_password"
 # ==============================================================================
 proxy:
-  enabled: false  # Set to true to enable global proxy
-  url: "http://127.0.0.1:7890"  # Proxy server URL
-  # username: ""  # Optional: proxy authentication username
-  # password: ""  # Optional: proxy authentication password
+  enabled: false
+  url: "http://127.0.0.1:7890"
+  # username: ""
+  # password: ""
 
   # Example SOCKS5 with authentication:
   # enabled: true
@@ -67,294 +97,56 @@ proxy:
   # password: "pass"
 
 # ==============================================================================
-# Security Configuration (IMPORTANT)
+# CLI Configuration
 # ==============================================================================
-# clibot is essentially a Remote Code Execution (RCE) tool.
-# Whitelist MUST be enabled to prevent unauthorized access.
-security:
-  # Enable whitelist (DO NOT set to false in production)
-  whitelist_enabled: true
-
-  # Allowed users - Add your user IDs here
-  #
-  # How to get your user ID:
-  #   - Telegram: Send any message to your bot, then use 'echo' command
-  #   - Discord: Send any message, use 'echo' command to see your User ID
-  #   - Feishu: Use 'echo' command to see your open_id
-  #   - DingTalk: Use 'echo' command to see your staff_id
-  allowed_users:
-    telegram:
-      - "YOUR_TELEGRAM_USER_ID"     # Replace with your Telegram user_id (number)
-      # Example: 123456789
-
-    discord:
-      - "YOUR_DISCORD_USER_ID"      # Replace with your Discord user_id (snowflake)
-      # Example: "123456789012345678"
-
-    feishu:
-      - "YOUR_FEISHU_OPEN_ID"       # Replace with your Feishu open_id
-      # Example: "ou_1234567890abcdef1234567890ab"
-
-    dingtalk:
-      - "YOUR_DINGTALK_STAFF_ID"    # Replace with your DingTalk staff_id
-      # Example: "123456789"
-
-  # Admin list - Users who can create/delete dynamic sessions
-  admins:
-    telegram:
-      - "YOUR_TELEGRAM_USER_ID"     # Replace with admin user_id
-
-    discord:
-      - "YOUR_DISCORD_USER_ID"      # Replace with admin user_id
-
-    feishu:
-      - "YOUR_FEISHU_OPEN_ID"       # Replace with admin open_id
-
-# ==============================================================================
-# Session Configuration
-# ==============================================================================
-session:
-  # Maximum dynamically created sessions (default: 50)
-  # Limits sessions created via 'snew' command
-  # Configured sessions below don't count against this limit
-  max_dynamic_sessions: 50
-
-# ==============================================================================
-# Session Management
-# ==============================================================================
-# Configure which CLI sessions clibot should manage
+# Three layers with clear responsibilities:
 #
-# Mode Priority: ACP > Hook > Stdio
-#   - ACP: Best experience, streaming, no tmux needed
-#   - Hook: Real-time, requires CLI hook configuration
-#   - Stdio: Zero-config, each message spawns a new process (per-turn)
-# ==============================================================================
-# Sessions Configuration
-# ==============================================================================
-# Each session represents a connection to an AI CLI tool.
+#   cli_adapters      Type-level shared config (timeout, env)
+#       ↓
+#   sessions          Static session instances (created at startup)
+#   session_templates Dynamic session blueprints (created via `sn` command)
 #
-# IMPORTANT: Session name vs CLI type
-#   - name: Your custom identifier for this session (e.g., "my-project", "backend-api")
-#   - cli_type: The AI CLI tool to use (acp, claude, gemini, opencode)
+# Env merge order: cli_adapters.env → sessions.env / session_templates.env
+# ==============================================================================
+
+# --- Layer 1: CLI Adapters (shared config per CLI type) ---
 #
-# The session name is just a label you choose to identify the session.
-# It does NOT need to match the CLI type!
+# Configure timeout and environment for each CLI tool.
+# Settings here are shared by all sessions using this cli_type.
 #
-# Example:
-#   sessions:
-#     - name: "my-website"        # ← Your custom name (could be anything)
-#       cli_type: "claude"        # ← The actual CLI tool
-# ==============================================================================
-# ============================================================================
-# Session Templates (for `sn` command)
-# ============================================================================
-# Templates define reusable blueprints for creating sessions via IM.
-# Built-in templates (zero config): codex, claude, gemini, opencode
+# Supported types:
+#   acp             - Agent Client Protocol (recommended)
+#   claude          - Claude Code hook mode
+#   gemini          - Gemini CLI hook mode
+#   opencode        - OpenCode CLI hook mode
+#   codex-stdio     - Codex CLI per-turn mode
+#   claude-stdio    - Claude Code per-turn mode
+#   gemini-stdio    - Gemini CLI per-turn mode
+#   opencode-stdio  - OpenCode CLI per-turn mode
 #
-# Usage in IM:
-#   sn codex /my/project           → auto-name: codex-project
-#   sn claude /data/app/demo        → auto-name: claude-demo
-#   sn codex /data/app/demo myname  → custom name: myname
-#
-# User-defined templates override built-in defaults:
-session_templates:
-  # Example: codex with yolo mode
-  # codex:
-  #   cli_type: codex-stdio
-  #   yolo: true
-
-  # Example: custom template name
-  # codex-safe:
-  #   cli_type: codex-stdio
-  #   yolo: false
-  #   env:
-  #     OPENAI_API_KEY: "sk-..."
-
-sessions:
-  # ============================================================================
-  # ACP Mode Sessions (Recommended)
-  # ============================================================================
-
-  # Example 1: Claude Code with ACP (Best Experience)
-  # Requires: claude-agent-acp installed
-  - name: "my-acp-session"
-    cli_type: "acp"
-    work_dir: "/home/user/projects/my-project"   # ABSOLUTE path required
-    start_cmd: "claude-agent-acp"                # ACP server command
-    transport: "stdio://"                        # stdio transport
-    auto_start: true
-
-  # Example 2: Gemini CLI with ACP
-  # Requires: gemini with --experimental-acp flag
-  # - name: "my-gemini-session"
-  #   cli_type: "acp"
-  #   work_dir: "/home/user/projects/my-project"
-  #   start_cmd: "gemini --experimental-acp"
-  #   transport: "stdio://"
-  #   auto_start: true
-
-  # Example 3: ACP remote via TCP
-  # - name: "my-remote-session"
-  #   cli_type: "acp"
-  #   work_dir: "/home/user/projects/demo"
-  #   transport: "tcp://127.0.0.1:9000"
-
-  # Example 4: ACP remote via Unix socket
-  # - name: "my-unix-session"
-  #   cli_type: "acp"
-  #   work_dir: "/home/user/projects/demo"
-  #   transport: "unix:///tmp/acp.sock"
-
-  # ============================================================================
-  # Hook Mode Sessions
-  # ============================================================================
-
-  # Example 5: Claude Code with Hook mode
-  # Requires: claude CLI installed with hook configuration
-  # - name: "my-project"
-  #   cli_type: "claude"
-  #   work_dir: "/home/user/projects/my-project"   # ABSOLUTE path required
-  #   auto_start: true
-  #   # start_cmd: "claude"                        # Optional: Custom startup command
-
-  # Example 6: Gemini CLI with Hook mode
-  # - name: "my-tests"
-  #   cli_type: "gemini"
-  #   work_dir: "/home/user/backend-tests"
-  #   auto_start: false                           # Don't auto-start
-
-  # Example 7: OpenCode with Hook mode
-  # - name: "my-work"
-  #   cli_type: "opencode"
-  #   work_dir: "/path/to/workdir"
-  #   auto_start: true
-
-  # ============================================================================
-  # Stdio Mode Sessions (Per-Turn)
-  # ============================================================================
-  # Each message spawns a new CLI process, collects output, and delivers response.
-  # No tmux or hook configuration required. Session resume is supported.
-  #
-  # Supported CLI types:
-  #   claude-stdio  - Claude Code (stream-json mode)
-  #   codex-stdio   - OpenAI Codex CLI
-  #   gemini-stdio  - Google Gemini CLI
-  #   opencode-stdio - OpenCode CLI
-  # ============================================================================
-
-  # Example 8: Claude Code stdio mode
-  # - name: "claude-stdio"
-  #   cli_type: "claude-stdio"
-  #   work_dir: "/home/user/projects/my-project"
-
-  # Example 9: Codex CLI stdio mode
-  # - name: "codex-stdio"
-  #   cli_type: "codex-stdio"
-  #   work_dir: "/home/user/projects/my-project"
-
-  # Example 10: Gemini CLI stdio mode
-  # - name: "gemini-stdio"
-  #   cli_type: "gemini-stdio"
-  #   work_dir: "/home/user/projects/my-project"
-
-  # Example 11: OpenCode CLI stdio mode
-  # - name: "opencode-stdio"
-  #   cli_type: "opencode-stdio"
-  #   work_dir: "/home/user/projects/my-project"
-
-# ==============================================================================
-# Bot Configuration
-# ==============================================================================
-bots:
-  # Discord Bot
-  discord:
-    enabled: false  # Set to true to enable
-    # Get token from: https://discord.com/developers/applications
-    #
-    # TIP: Use environment variables for better security
-    # See docs above on how to use ENV variables in config
-    token: "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.GhIjKl..."  # Replace with your bot token
-    channel_id: "123456789012345678"              # Replace with your channel ID
-    # Optional: Bot-level proxy (overrides global proxy)
-    # proxy:
-    #   enabled: true  # Set to true to use this proxy instead of global
-    #   url: "http://127.0.0.1:7890"
-    #   # username: ""  # Optional
-    #   # password: ""  # Optional
-
-  feishu:
-    enabled: false
-    app_id: "cli_a...."
-    app_secret: "HTCoxSDE3...."
-
-  # Telegram Bot
-  telegram:
-    enabled: false  # Set to true to enable
-    # Get token from BotFather: https://t.me/BotFather
-    #
-    # TIP: Use environment variables for better security
-    # See docs above on how to use ENV variables in config
-    token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"  # Replace with your bot token
-    # Optional: Bot-level proxy (overrides global proxy)
-    # proxy:
-    #   enabled: true  # Set to true to use this proxy instead of global
-    #   url: "socks5://127.0.0.1:1080"
-    #   # username: ""  # Optional
-    #   # password: ""  # Optional
-
-  # DingTalk Bot
-  dingtalk:
-    enabled: false  # Set to true to enable
-    # Get credentials from: https://open.dingtalk.com/document/org-app
-    #
-    # TIP: Use environment variables for better security
-    # See docs above on how to use ENV variables in config
-    app_id: "ding_1234567890abcd"         # Replace with your app_id
-    app_secret: "abc123def456..."         # Replace with your app_secret
-
-  # WeChat iLink Bot
-  # Uses QR code login (no static token required)
-  # Credentials are automatically saved after first login
-  weixin:
-    enabled: false  # Set to true to enable
-    # Optional: API base URL (default: https://ilinkai.weixin.qq.com)
-    # base_url: "https://ilinkai.weixin.qq.com"
-    # Optional: Path to credentials file (default: ~/.clibot/weixin/credentials.json)
-    # credentials_path: "~/.clibot/weixin/credentials.json"
-
-# ==============================================================================
-# CLI Adapter Configuration
-# ==============================================================================
-# Configure how clibot interacts with AI CLI tools
-#
-# Mode Priority: ACP > Hook
-#   - ACP: Best experience, configure in sessions section
-#   - Hook: Real-time, requires CLI hook configuration
-# ==============================================================================
 cli_adapters:
+  # --- ACP Adapter (recommended) ---
+  # Timeout = max idle time before cancelling request
+  acp:
+    timeout: "5m"
+    # env:
+    #   ANTHROPIC_API_KEY: "sk-ant-..."
+
+  # --- Hook Mode Adapters ---
   claude:
-    # Hook mode configuration (currently the only supported mode)
-    # Requires: Claude Code CLI with hook configuration
-
   gemini:
-    # Hook mode configuration
-    # Requires: Gemini CLI with hook configuration
-
   opencode:
-    # Hook mode configuration
-    # Requires: OpenCode CLI with hook configuration
 
-  # ============================================================================
-  # Stdio Adapter Configuration
-  # ============================================================================
-  # For per-turn mode CLIs (codex-stdio, gemini-stdio, opencode-stdio, claude-stdio)
-  # Each adapter controls timeout and environment for its CLI processes.
-  # ============================================================================
-
+  # --- Stdio Mode Adapters (per-turn, zero config) ---
   codex-stdio:
     timeout: "5m"
     # env:
-    #   OPENAI_API_KEY: "sk-..."  # Required if not set in shell environment
+    #   OPENAI_API_KEY: "sk-..."
+
+  claude-stdio:
+    timeout: "5m"
+    # env:
+    #   ANTHROPIC_API_KEY: "sk-ant-..."
 
   gemini-stdio:
     timeout: "5m"
@@ -364,40 +156,160 @@ cli_adapters:
   opencode-stdio:
     timeout: "5m"
 
-  claude-stdio:
-    timeout: "5m"
+# --- Layer 2: Static Sessions (created at startup) ---
+#
+# Each session is a connection to an AI CLI tool.
+# - name: your custom identifier (e.g., "my-project", "backend-api")
+# - cli_type: references a key in cli_adapters above
+#
+sessions:
+  # --- ACP Mode (best experience, streaming, no tmux) ---
+
+  - name: "my-acp-session"
+    cli_type: "acp"
+    work_dir: "/home/user/projects/my-project"
+    start_cmd: "claude-agent-acp"
+    transport: "stdio://"
+    auto_start: true
     # env:
     #   ANTHROPIC_API_KEY: "sk-ant-..."
 
-  # ACP Adapter (Agent Client Protocol) - Recommended
-  acp:
-    # Timeout - max time without any activity before cancelling request
-    # If the agent is actively working (sending updates), the request continues
-    # Only cancelled if there's no activity for this duration
-    # Default: 5 minutes. Set to "0" to use default.
-    timeout: "5m"
+  # - name: "my-gemini-acp"
+  #   cli_type: "acp"
+  #   work_dir: "/home/user/projects/my-project"
+  #   start_cmd: "gemini --experimental-acp"
+  #   transport: "stdio://"
+  #   auto_start: true
 
-    # Environment variables to set for the ACP server process
-    # These will be passed to the ACP agent (e.g., claude, gemini)
-    # env:
-    #   ANTHROPIC_API_KEY: "sk-ant-..."    # For Claude Code
-    #   GEMINI_API_KEY: "your-key"        # For Gemini CLI
-    #   LANG: "en_US.UTF-8"                # Set locale
-    #   PYTHONIOENCODING: "utf-8"          # Python encoding
+  # - name: "my-remote"
+  #   cli_type: "acp"
+  #   work_dir: "/home/user/projects/demo"
+  #   transport: "tcp://127.0.0.1:9000"
 
-    # Note: For ACP mode, timeout acts as idle timeout
-    # The system monitors activity from the agent and cancels requests only when
-    # there's no activity for the specified duration. This allows long-running
-    # tasks to complete as long as they're producing output.
+  # - name: "my-unix"
+  #   cli_type: "acp"
+  #   work_dir: "/home/user/projects/demo"
+  #   transport: "unix:///tmp/acp.sock"
+
+  # --- Hook Mode (requires CLI hook configuration) ---
+
+  # - name: "my-project"
+  #   cli_type: "claude"
+  #   work_dir: "/home/user/projects/my-project"
+  #   auto_start: true
+
+  # - name: "my-tests"
+  #   cli_type: "gemini"
+  #   work_dir: "/home/user/backend-tests"
+  #   auto_start: false
+
+  # - name: "my-work"
+  #   cli_type: "opencode"
+  #   work_dir: "/path/to/workdir"
+  #   auto_start: true
+
+  # --- Stdio Mode (per-turn, no tmux or hook needed) ---
+
+  # - name: "claude-stdio"
+  #   cli_type: "claude-stdio"
+  #   work_dir: "/home/user/projects/my-project"
+
+  # - name: "codex-stdio"
+  #   cli_type: "codex-stdio"
+  #   work_dir: "/home/user/projects/my-project"
+
+  # - name: "gemini-stdio"
+  #   cli_type: "gemini-stdio"
+  #   work_dir: "/home/user/projects/my-project"
+
+  # - name: "opencode-stdio"
+  #   cli_type: "opencode-stdio"
+  #   work_dir: "/home/user/projects/my-project"
+
+# --- Layer 3: Session Templates (for `sn` command) ---
+#
+# Reusable blueprints for creating sessions via IM.
+# Built-in templates (zero config): codex, claude, gemini, opencode
+#
+# Usage:
+#   sn codex /my/project           → auto-name: codex-project
+#   sn claude /data/app/demo        → auto-name: claude-demo
+#   sn codex /data/app/demo myname  → custom name: myname
+#
+# User-defined templates override built-in defaults.
+# Multiple templates can share the same cli_type (N:1 relationship).
+#
+session_templates:
+  # Example: codex with yolo mode (overrides built-in "codex" template)
+  # codex:
+  #   cli_type: codex-stdio
+  #   yolo: true
+
+  # Example: custom template using same adapter as built-in
+  # codex-safe:
+  #   cli_type: codex-stdio
+  #   yolo: false
+  #   env:
+  #     OPENAI_API_KEY: "sk-..."
+
+# Global session settings
+session:
+  max_dynamic_sessions: 50
+
+# ==============================================================================
+# Bot Configuration
+# ==============================================================================
+bots:
+  # Discord Bot
+  discord:
+    enabled: false
+    token: "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.GhIjKl..."
+    channel_id: "123456789012345678"
+    # proxy:
+    #   enabled: true
+    #   url: "http://127.0.0.1:7890"
+
+  feishu:
+    enabled: false
+    app_id: "cli_a...."
+    app_secret: "HTCoxSDE3...."
+
+  # Telegram Bot
+  telegram:
+    enabled: false
+    token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+    # proxy:
+    #   enabled: true
+    #   url: "socks5://127.0.0.1:1080"
+
+  # DingTalk Bot
+  dingtalk:
+    enabled: false
+    app_id: "ding_1234567890abcd"
+    app_secret: "abc123def456..."
+
+  # WeChat iLink Bot (QR code login, no static token)
+  weixin:
+    enabled: false
+    # base_url: "https://ilinkai.weixin.qq.com"
+    # credentials_path: "~/.clibot/weixin/credentials.json"
+
+# ==============================================================================
+# Hook Server
+# ==============================================================================
+# HTTP server for CLI tools to notify clibot when they finish processing
+# Not needed if all sessions use ACP or stdio mode
+hook_server:
+  port: 8080
 
 # ==============================================================================
 # Logging Configuration
 # ==============================================================================
 logging:
-  level: info  # debug, info, warn, error
-  # file: /var/log/clibot/clibot.log  # Log file path
-  max_size: 100  # Single file max size in MB (default: 100)
-  max_backups: 5  # Number of backups to keep (default: 5)
-  max_age: 30  # Maximum days to retain (default: 30)
-  compress: true  # Whether to compress old logs (default: true)
-  enable_stdout: true  # Also output to console (default: true)
+  level: info
+  # file: /var/log/clibot/clibot.log
+  max_size: 100
+  max_backups: 5
+  max_age: 30
+  compress: true
+  enable_stdout: true
