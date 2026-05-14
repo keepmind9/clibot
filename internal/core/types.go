@@ -19,17 +19,24 @@ const (
 
 // Session represents a tmux session with its metadata
 type Session struct {
-	Name         string             `json:"name"`           // tmux session name
-	CLIType      string             `json:"cli_type"`       // claude/gemini/opencode
-	WorkDir      string             `json:"work_dir"`       // Working directory
-	StartCmd     string             `json:"start_cmd"`      // Command to start the CLI (default: same as CLIType)
-	State        SessionState       `json:"-"`              // Current state (not persisted)
-	CreatedAt    string             `json:"created_at"`     // Creation timestamp
-	LastActiveAt time.Time          `json:"last_active_at"` // Last activity timestamp (input sent or response received)
-	IsDynamic    bool               `json:"is_dynamic"`     // true if session was created dynamically via IM
-	CreatedBy    string             `json:"created_by"`     // creator identity (format: "platform:userID")
-	Env          map[string]string  `json:"env,omitempty"`  // Environment variables for the session
-	cancelCtx    context.CancelFunc `json:"-"`              // Cancel function for active watchdog goroutine
+	Name         string             `json:"name"`                   // tmux session name
+	CLIType      string             `json:"cli_type"`               // claude/gemini/opencode
+	WorkDir      string             `json:"work_dir"`               // Working directory
+	StartCmd     string             `json:"start_cmd"`              // Command to start the CLI (default: same as CLIType)
+	State        SessionState       `json:"-"`                      // Current state (not persisted)
+	CreatedAt    string             `json:"created_at"`             // Creation timestamp
+	LastActiveAt time.Time          `json:"last_active_at"`         // Last activity timestamp (input sent or response received)
+	IsDynamic    bool               `json:"is_dynamic"`             // true if session was created dynamically via IM
+	CreatedBy    string             `json:"created_by"`             // creator identity (format: "platform:userID")
+	Env          map[string]string  `json:"env,omitempty"`          // Environment variables for the session
+	LastChannel  *BotChannelRef     `json:"last_channel,omitempty"` // Last active bot channel for response routing
+	cancelCtx    context.CancelFunc `json:"-"`                      // Cancel function for active watchdog goroutine
+}
+
+// BotChannelRef is the persistable subset of BotChannel.
+type BotChannelRef struct {
+	Platform string `json:"platform"`
+	Channel  string `json:"channel"`
 }
 
 // NeedsWatchdog returns true if session requires watchdog monitoring

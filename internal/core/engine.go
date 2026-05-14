@@ -558,7 +558,11 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	e.sessionChannels[session.Name] = BotChannel{
 		Platform:  msg.Platform,
 		Channel:   msg.Channel,
-		MessageID: msg.MessageID, // Save message ID for typing indicator removal
+		MessageID: msg.MessageID,
+	}
+	session.LastChannel = &BotChannelRef{
+		Platform: msg.Platform,
+		Channel:  msg.Channel,
 	}
 	e.sessionMu.Unlock()
 
@@ -1960,6 +1964,12 @@ func (e *Engine) sessionStateFile() string {
 }
 
 // persistSessions saves all dynamic sessions to disk using atomic write.
+// sessionState is the on-disk format for persisted dynamic sessions.
+type sessionState struct {
+	Sessions     []*Session        `json:"sessions"`
+	UserSessions map[string]string `json:"user_sessions,omitempty"` // userKey -> sessionName
+}
+
 func (e *Engine) persistSessions() {
 	e.sessionMu.RLock()
 	var dynamic []*Session
@@ -1967,6 +1977,10 @@ func (e *Engine) persistSessions() {
 		if s.IsDynamic {
 			dynamic = append(dynamic, s)
 		}
+	}
+	userSessions := make(map[string]string)
+	for k, v := range e.userSessions {
+		userSessions[k] = v
 	}
 	e.sessionMu.RUnlock()
 
@@ -1977,7 +1991,12 @@ func (e *Engine) persistSessions() {
 		return
 	}
 
-	data, err := json.Marshal(dynamic)
+	state := sessionState{
+		Sessions:     dynamic,
+		UserSessions: userSessions,
+	}
+
+	data, err := json.Marshal(state)
 	if err != nil {
 		logger.WithField("error", err).Error("failed-to-marshal-sessions")
 		return
@@ -2015,21 +2034,32 @@ func (e *Engine) loadPersistedSessions() {
 		return
 	}
 
-	var sessions []*Session
-	if err := json.Unmarshal(data, &sessions); err != nil {
-		logger.WithField("error", err).Warn("failed-to-parse-sessions-file")
+	var state sessionState
+	if err := json.Unmarshal(data, &state); err != nil {
+		// Backward compat: try old format (bare array)
+		var legacy []*Session
+		if err2 := json.Unmarshal(data, &legacy); err2 != nil {
+			logger.WithField("error", err).Warn("failed-to-parse-sessions-file")
+			return
+		}
+		state.Sessions = legacy
+	}
+
+	if len(state.Sessions) == 0 {
 		return
 	}
 
-	if len(sessions) == 0 {
-		return
+	// Collect env injections to execute outside the lock
+	type envEntry struct {
+		session string
+		key     string
+		value   string
 	}
+	var envInjects []envEntry
 
 	e.sessionMu.Lock()
-	defer e.sessionMu.Unlock()
-
 	restored := 0
-	for _, s := range sessions {
+	for _, s := range state.Sessions {
 		// Skip if already configured as static session
 		if _, exists := e.sessions[s.Name]; exists {
 			continue
@@ -2053,10 +2083,46 @@ func (e *Engine) loadPersistedSessions() {
 		s.cancelCtx = nil
 		e.sessions[s.Name] = s
 		restored++
+
+		// Restore session -> channel mapping
+		if s.LastChannel != nil {
+			e.sessionChannels[s.Name] = BotChannel{
+				Platform: s.LastChannel.Platform,
+				Channel:  s.LastChannel.Channel,
+			}
+		}
+
+		// Collect tmux env injections for execution outside lock
+		if len(s.Env) > 0 && !stdio.IsStdioCLIType(s.CLIType) {
+			for k, v := range s.Env {
+				envInjects = append(envInjects, envEntry{session: s.Name, key: k, value: v})
+			}
+		}
+	}
+
+	// Restore user -> session mappings from persisted state
+	for userKey, sessionName := range state.UserSessions {
+		if _, exists := e.sessions[sessionName]; exists {
+			e.userSessions[userKey] = sessionName
+		}
+	}
+	e.sessionMu.Unlock()
+
+	// Re-inject env variables outside the lock
+	for _, entry := range envInjects {
+		cmd := exec.Command("tmux", "set-environment", "-t", entry.session, entry.key, entry.value)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			logger.WithFields(logrus.Fields{
+				"session": entry.session,
+				"key":     entry.key,
+				"error":   err,
+				"output":  string(output),
+			}).Warn("failed-to-restore-env-for-session")
+		}
 	}
 
 	logger.WithFields(logrus.Fields{
-		"total":    len(sessions),
+		"total":    len(state.Sessions),
 		"restored": restored,
 	}).Info("persisted-sessions-loaded")
 }
