@@ -67,8 +67,8 @@ type PermissionRequest struct {
 func (p *PermissionRequest) FormatOptions() string {
 	s := fmt.Sprintf("Permission requested: %s", p.ToolName)
 	if p.Input != "" {
-		if len(p.Input) > 500 {
-			s += fmt.Sprintf("\nInput: %s...", truncateRunes(p.Input, 500))
+		if len(p.Input) > permissionInputMaxRunes {
+			s += fmt.Sprintf("\nInput: %s...", truncateRunes(p.Input, permissionInputMaxRunes))
 		} else {
 			s += fmt.Sprintf("\nInput: %s", p.Input)
 		}
@@ -104,6 +104,11 @@ type PermissionOption struct {
 	ID   string // Machine-readable identifier
 	Text string // Human-readable label
 }
+
+const (
+	// permissionInputMaxRunes is the max rune count displayed for permission input.
+	permissionInputMaxRunes = 500
+)
 
 // StartOptions contains parameters for starting a CLI process.
 type StartOptions struct {

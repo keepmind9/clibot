@@ -179,6 +179,11 @@ func TestOpenCodeSpec_ParseLine_JSONEvents(t *testing.T) {
 			},
 		},
 		{
+			name:         "tool_use with empty name ignored",
+			line:         `{"type":"tool_use","name":"","input":{}}`,
+			expectEvents: 0,
+		},
+		{
 			name:         "result type",
 			line:         `{"type":"result","text":"Final answer."}`,
 			expectEvents: 1,

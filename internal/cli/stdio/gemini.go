@@ -15,6 +15,8 @@ import (
 //	Resume:      gemini --resume latest --output-format stream-json -p PROMPT
 type GeminiSpec struct{}
 
+const defaultPromptPlaceholder = " " // Non-empty placeholder to satisfy CLI arg requirements
+
 func (GeminiSpec) Name() string    { return "gemini" }
 func (GeminiSpec) Mode() StdioMode { return PerTurnMode }
 func (GeminiSpec) Binary() string  { return "gemini" }
@@ -22,7 +24,7 @@ func (GeminiSpec) Binary() string  { return "gemini" }
 func (GeminiSpec) BuildArgs(opts StartOptions) []string {
 	prompt := opts.Prompt
 	if prompt == "" {
-		prompt = " " // Gemini requires non-empty -p flag
+		prompt = defaultPromptPlaceholder
 	}
 	args := []string{"-p", prompt, "--output-format", "stream-json"}
 	if opts.Resume {
@@ -102,6 +104,9 @@ func parseGeminiMessage(raw map[string]any) []Event {
 
 func parseGeminiToolUse(raw map[string]any) []Event {
 	name, _ := raw["name"].(string)
+	if name == "" {
+		return nil
+	}
 	input := summarizeGeminiArgs(name, raw["args"])
 	return []Event{
 		{

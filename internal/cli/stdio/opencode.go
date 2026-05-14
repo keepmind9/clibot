@@ -32,7 +32,7 @@ func (OpenCodeSpec) BuildArgs(opts StartOptions) []string {
 	}
 	prompt := opts.Prompt
 	if prompt == "" {
-		prompt = " " // OpenCode requires non-empty positional arg
+		prompt = defaultPromptPlaceholder
 	}
 	args = append(args, prompt)
 	return args
@@ -89,6 +89,9 @@ func parseOpenCodeMessage(raw map[string]any) []Event {
 
 func parseOpenCodeToolUse(raw map[string]any) []Event {
 	name, _ := raw["name"].(string)
+	if name == "" {
+		return nil
+	}
 	input := summarizeInput(name, raw["input"])
 	return []Event{
 		{

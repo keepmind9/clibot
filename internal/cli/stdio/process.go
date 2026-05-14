@@ -23,6 +23,9 @@ const (
 	// eventBufSize is the capacity of the event channel.
 	eventBufSize = 64
 
+	// logTruncateBytes is the max byte length for log lines.
+	logTruncateBytes = 200
+
 	// shutdownGracePeriod is the time to wait after closing stdin
 	// before sending SIGTERM.
 	shutdownGracePeriod = 10 * time.Second
@@ -131,10 +134,14 @@ func (p *StdioProcess) WriteInput(message string) error {
 }
 
 // WritePermissionResponse writes a formatted permission response to stdin.
+// If FormatPermissionResponse returns nil, the write is skipped.
 func (p *StdioProcess) WritePermissionResponse(requestID, optionID string) error {
 	data, err := p.spec.FormatPermissionResponse(requestID, optionID)
 	if err != nil {
 		return fmt.Errorf("format permission response: %w", err)
+	}
+	if data == nil {
+		return nil
 	}
 	return p.write(data)
 }
@@ -213,7 +220,7 @@ func (p *StdioProcess) readLoop() {
 		if err != nil {
 			logger.WithFields(logrus.Fields{
 				"cli":  p.spec.Name(),
-				"line": truncate(line, 200),
+				"line": truncate(line, logTruncateBytes),
 				"err":  err.Error(),
 			}).Debug("stdio-parse-line-error")
 			continue

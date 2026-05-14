@@ -171,8 +171,8 @@ func summarizeInput(toolName string, input any) string {
 
 	switch v := input.(type) {
 	case string:
-		if len(v) > 300 {
-			return truncateRunes(v, 300) + "..."
+		if len(v) > summarizeMaxRunes {
+			return truncateRunes(v, summarizeMaxRunes) + "..."
 		}
 		return v
 	case map[string]any:
@@ -190,18 +190,20 @@ func summarizeInput(toolName string, input any) string {
 		// Generic: JSON-encode truncated
 		b, _ := json.Marshal(v)
 		s := string(b)
-		if len(s) > 300 {
-			return truncateRunes(s, 300) + "..."
+		if len(s) > summarizeMaxRunes {
+			return truncateRunes(s, summarizeMaxRunes) + "..."
 		}
 		return s
 	default:
 		s := fmt.Sprintf("%v", input)
-		if len(s) > 300 {
-			return truncateRunes(s, 300) + "..."
+		if len(s) > summarizeMaxRunes {
+			return truncateRunes(s, summarizeMaxRunes) + "..."
 		}
 		return s
 	}
 }
+
+const summarizeMaxRunes = 300
 
 // Ensure ClaudeSpec implements CLISpec.
 var _ CLISpec = ClaudeSpec{}

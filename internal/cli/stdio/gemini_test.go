@@ -143,6 +143,11 @@ func TestGeminiSpec_ParseLine(t *testing.T) {
 			},
 		},
 		{
+			name:         "tool_use with empty name ignored",
+			line:         `{"type":"tool_use","name":""}`,
+			expectEvents: 0,
+		},
+		{
 			name:         "result event",
 			line:         `{"type":"result","response":"The code is clean."}`,
 			expectEvents: 1,
