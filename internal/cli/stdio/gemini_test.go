@@ -61,6 +61,12 @@ func TestGeminiSpec_BuildArgs_EmptyPrompt(t *testing.T) {
 	}, args)
 }
 
+func TestGeminiSpec_BuildArgs_Yolo(t *testing.T) {
+	spec := GeminiSpec{}
+	args := spec.BuildArgs(StartOptions{Prompt: "hello", Yolo: true})
+	assert.Contains(t, args, "--yolo")
+}
+
 func TestGeminiSpec_FormatInput(t *testing.T) {
 	spec := GeminiSpec{}
 	data, err := spec.FormatInput("hello")

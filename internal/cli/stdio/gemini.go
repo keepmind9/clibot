@@ -27,6 +27,9 @@ func (GeminiSpec) BuildArgs(opts StartOptions) []string {
 		prompt = defaultPromptPlaceholder
 	}
 	args := []string{"-p", prompt, "--output-format", "stream-json"}
+	if opts.Yolo {
+		args = append(args, "--yolo")
+	}
 	if opts.Resume {
 		args = append(args, "--resume", "latest")
 	}

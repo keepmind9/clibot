@@ -24,6 +24,7 @@ type StdioAdapterConfig struct {
 	PermissionTimeout time.Duration
 	IdleTimeout       time.Duration
 	Env               map[string]string
+	Yolo              bool
 }
 
 // PendingPermission holds a pending permission request waiting for user response.
@@ -49,6 +50,7 @@ type stdioSession struct {
 	process     *StdioProcess
 	workDir     string
 	env         map[string]string
+	yolo        bool
 	pendingPerm *PendingPermission
 	permMu      sync.Mutex
 	cancelCtx   context.CancelFunc
@@ -111,6 +113,7 @@ func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportUR
 		WorkDir: workDir,
 		Env:     mergedEnv,
 		Context: ctx,
+		Yolo:    a.config.Yolo,
 	}
 
 	proc, err := NewStdioProcess(ctx, a.spec, opts)
@@ -124,6 +127,7 @@ func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportUR
 		process:   proc,
 		workDir:   workDir,
 		env:       mergedEnv,
+		yolo:      a.config.Yolo,
 		cancelCtx: cancel,
 	}
 	a.sessions[sessionName] = sess
@@ -280,6 +284,7 @@ func (a *StdioAdapter) sendPerTurn(sess *stdioSession, input string) error {
 		Prompt:    input,
 		Resume:    sess.completed,
 		SessionID: sess.sessionID,
+		Yolo:      sess.yolo,
 	}
 
 	proc, err := NewStdioProcess(ctx, a.spec, opts)

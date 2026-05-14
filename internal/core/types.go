@@ -118,6 +118,9 @@ type CLIAdapterConfig struct {
 
 	// Environment variables to set for the CLI process
 	Env map[string]string `yaml:"env"`
+
+	// Yolo mode: auto-approve all permission prompts (each CLI appends its own flag)
+	Yolo bool `yaml:"yolo"`
 }
 
 // LoggingConfig represents logging configuration

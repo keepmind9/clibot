@@ -26,6 +26,12 @@ func TestClaudeSpec_BuildArgs(t *testing.T) {
 	}, args)
 }
 
+func TestClaudeSpec_BuildArgs_Yolo(t *testing.T) {
+	spec := ClaudeSpec{}
+	args := spec.BuildArgs(StartOptions{Yolo: true})
+	assert.Contains(t, args, "--dangerously-skip-permissions")
+}
+
 func TestClaudeSpec_FormatInput(t *testing.T) {
 	tests := []struct {
 		name    string

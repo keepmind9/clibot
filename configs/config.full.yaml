@@ -328,11 +328,15 @@ cli_adapters:
 
   codex-stdio:
     timeout: "5m"
+    # Yolo mode: auto-approve all permission prompts (appends --full-auto)
+    # yolo: true
     # env:
     #   OPENAI_API_KEY: "sk-..."  # Required if not set in shell environment
 
   gemini-stdio:
     timeout: "5m"
+    # Yolo mode: auto-approve all permission prompts (appends --yolo)
+    # yolo: true
     # env:
     #   GEMINI_API_KEY: "your-key"
 
@@ -341,6 +345,8 @@ cli_adapters:
 
   claude-stdio:
     timeout: "5m"
+    # Yolo mode: auto-approve all permission prompts (appends --dangerously-skip-permissions)
+    # yolo: true
     # env:
     #   ANTHROPIC_API_KEY: "sk-ant-..."
 

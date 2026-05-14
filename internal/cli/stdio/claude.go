@@ -21,12 +21,16 @@ func (ClaudeSpec) Mode() StdioMode { return PersistentMode }
 func (ClaudeSpec) Binary() string  { return "claude" }
 
 func (ClaudeSpec) BuildArgs(opts StartOptions) []string {
-	return []string{
+	args := []string{
 		"--output-format", "stream-json",
 		"--input-format", "stream-json",
 		"--permission-prompt-tool", "stdio",
 		"--verbose",
 	}
+	if opts.Yolo {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+	return args
 }
 
 func (ClaudeSpec) FormatInput(message string) ([]byte, error) {

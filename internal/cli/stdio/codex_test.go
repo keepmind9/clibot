@@ -65,6 +65,12 @@ func TestCodexSpec_BuildArgs_AllOptions(t *testing.T) {
 	assert.Contains(t, args, "--cd")
 }
 
+func TestCodexSpec_BuildArgs_Yolo(t *testing.T) {
+	spec := CodexSpec{}
+	args := spec.BuildArgs(StartOptions{Yolo: true})
+	assert.Contains(t, args, "--full-auto")
+}
+
 func TestCodexSpec_FormatInput(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -184,8 +184,11 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 		var idleTimeout time.Duration
 		var env map[string]string
 
+		var yolo bool
+
 		if adapterCfg, ok := config.CLIAdapters[cliType]; ok {
 			env = adapterCfg.Env
+			yolo = adapterCfg.Yolo
 			if adapterCfg.Timeout != "" {
 				if d, err := time.ParseDuration(adapterCfg.Timeout); err == nil {
 					permTimeout = d
@@ -197,6 +200,7 @@ func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
 			PermissionTimeout: permTimeout,
 			IdleTimeout:       idleTimeout,
 			Env:               env,
+			Yolo:              yolo,
 		})
 		adapter.SetEngine(engine)
 		engine.RegisterCLIAdapter(cliType, adapter)

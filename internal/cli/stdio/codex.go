@@ -21,6 +21,9 @@ func (CodexSpec) Binary() string  { return "codex" }
 
 func (CodexSpec) BuildArgs(opts StartOptions) []string {
 	args := []string{"exec", "--json", "--skip-git-repo-check"}
+	if opts.Yolo {
+		args = append(args, "--full-auto")
+	}
 	if opts.WorkDir != "" {
 		args = append(args, "--cd", opts.WorkDir)
 	}

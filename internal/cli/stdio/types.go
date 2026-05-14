@@ -119,6 +119,7 @@ type StartOptions struct {
 	Prompt    string // User's input message (for CLIs that take prompt as arg)
 	Resume    bool   // Whether to resume a previous session
 	SessionID string // Explicit session ID to resume (optional)
+	Yolo      bool   // Auto-approve all permission prompts
 }
 
 // CLISpec defines how to interact with a specific CLI tool.
