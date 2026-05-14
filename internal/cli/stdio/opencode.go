@@ -21,7 +21,9 @@ func (OpenCodeSpec) Binary() string  { return "opencode" }
 
 func (OpenCodeSpec) BuildArgs(opts StartOptions) []string {
 	args := []string{"run", "--format", "json"}
-	// TODO: add yolo flag when OpenCode officially supports it (e.g., --yolo)
+	if opts.Yolo {
+		args = append(args, "--dangerously-skip-permissions")
+	}
 	if opts.Resume {
 		args = append(args, "--continue")
 	}
