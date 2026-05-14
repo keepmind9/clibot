@@ -194,6 +194,38 @@ func TestStdioProcess_InvalidBinary(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestStdioProcess_CloseInput_SignalsEOF(t *testing.T) {
+	ctx := context.Background()
+	proc, err := NewStdioProcess(ctx, echoSpec{}, StartOptions{})
+	require.NoError(t, err)
+	defer proc.Close()
+
+	// Write input then close stdin — cat will exit after EOF
+	err = proc.WriteInput("close-test")
+	require.NoError(t, err)
+	require.NoError(t, proc.CloseInput())
+
+	// Read event produced before EOF
+	select {
+	case evt := <-proc.Events():
+		assert.Equal(t, EventResult, evt.Type)
+		assert.Equal(t, "close-test", evt.Text)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for event after CloseInput")
+	}
+}
+
+func TestStdioProcess_CloseInput_DoubleClose(t *testing.T) {
+	ctx := context.Background()
+	proc, err := NewStdioProcess(ctx, echoSpec{}, StartOptions{})
+	require.NoError(t, err)
+	defer proc.Close()
+
+	require.NoError(t, proc.CloseInput())
+	// Second close should not error — idempotent
+	require.NoError(t, proc.CloseInput())
+}
+
 func TestTruncate(t *testing.T) {
 	tests := []struct {
 		name     string

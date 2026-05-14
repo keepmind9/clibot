@@ -19,7 +19,7 @@ func TestCodexSpec_BuildArgs_FirstTurn(t *testing.T) {
 	spec := CodexSpec{}
 	args := spec.BuildArgs(StartOptions{})
 	assert.Equal(t, []string{
-		"exec", "--json", "-",
+		"exec", "--json", "--skip-git-repo-check", "-",
 	}, args)
 }
 
@@ -41,16 +41,16 @@ func TestCodexSpec_BuildArgs_Resume(t *testing.T) {
 	spec := CodexSpec{}
 	args := spec.BuildArgs(StartOptions{Resume: true})
 	assert.Equal(t, []string{
-		"exec", "--json", "resume", "--last", "-",
+		"exec", "--json", "--skip-git-repo-check", "resume", "--last", "-",
 	}, args)
 }
 
 func TestCodexSpec_BuildArgs_ResumeWithSessionID(t *testing.T) {
 	spec := CodexSpec{}
-	// CodexSpec uses --last regardless of SessionID
 	args := spec.BuildArgs(StartOptions{Resume: true, SessionID: "uuid-123"})
 	assert.Contains(t, args, "resume")
-	assert.Contains(t, args, "--last")
+	assert.Contains(t, args, "uuid-123")
+	assert.NotContains(t, args, "--last")
 }
 
 func TestCodexSpec_BuildArgs_AllOptions(t *testing.T) {

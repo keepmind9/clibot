@@ -41,10 +41,11 @@ type StdioProcess struct {
 	stdout io.ReadCloser
 	events chan Event
 
-	spec CLISpec
-	wg   sync.WaitGroup
-	ctx  context.Context
-	mu   sync.Mutex // protects stdin writes
+	spec     CLISpec
+	wg       sync.WaitGroup
+	ctx      context.Context
+	mu       sync.Mutex // protects stdin writes
+	inputClosed bool    // tracks whether stdin has been closed
 }
 
 // NewStdioProcess spawns a new CLI process and starts reading stdout.
@@ -131,6 +132,19 @@ func (p *StdioProcess) WriteInput(message string) error {
 		return nil
 	}
 	return p.write(data)
+}
+
+// CloseInput closes stdin, signaling EOF to the process.
+// Required for per-turn CLIs (e.g., codex) that read prompt from stdin.
+// Safe to call multiple times.
+func (p *StdioProcess) CloseInput() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.inputClosed {
+		return nil
+	}
+	p.inputClosed = true
+	return p.stdin.Close()
 }
 
 // WritePermissionResponse writes a formatted permission response to stdin.

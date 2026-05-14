@@ -20,16 +20,21 @@ func (CodexSpec) Mode() StdioMode { return PerTurnMode }
 func (CodexSpec) Binary() string  { return "codex" }
 
 func (CodexSpec) BuildArgs(opts StartOptions) []string {
-	args := []string{"exec", "--json"}
+	args := []string{"exec", "--json", "--skip-git-repo-check"}
+	if opts.WorkDir != "" {
+		args = append(args, "--cd", opts.WorkDir)
+	}
 	if opts.Resume {
-		args = append(args, "resume", "--last")
+		args = append(args, "resume")
+		if opts.SessionID != "" {
+			args = append(args, opts.SessionID)
+		} else {
+			args = append(args, "--last")
+		}
 	}
 	args = append(args, "-") // read prompt from stdin
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
-	}
-	if opts.WorkDir != "" {
-		args = append(args, "--cd", opts.WorkDir)
 	}
 	return args
 }

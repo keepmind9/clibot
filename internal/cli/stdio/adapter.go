@@ -293,6 +293,12 @@ func (a *StdioAdapter) sendPerTurn(sess *stdioSession, input string) error {
 		return fmt.Errorf("write input: %w", err)
 	}
 
+	// Close stdin to signal EOF — the CLI reads prompt until EOF then processes.
+	if err := proc.CloseInput(); err != nil {
+		proc.Close()
+		return fmt.Errorf("close input: %w", err)
+	}
+
 	// Collect events until process exits — only use EventResult for content
 	var result string
 	for evt := range proc.Events() {
