@@ -24,7 +24,6 @@ type StdioAdapterConfig struct {
 	PermissionTimeout time.Duration
 	IdleTimeout       time.Duration
 	Env               map[string]string
-	Yolo              bool
 }
 
 // PendingPermission holds a pending permission request waiting for user response.
@@ -89,7 +88,7 @@ func (a *StdioAdapter) SetEngine(engine Engine) {
 }
 
 // CreateSession creates a new session and starts the CLI process.
-func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string) error {
+func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string, yolo bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -113,7 +112,7 @@ func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportUR
 		WorkDir: workDir,
 		Env:     mergedEnv,
 		Context: ctx,
-		Yolo:    a.config.Yolo,
+		Yolo:    yolo,
 	}
 
 	proc, err := NewStdioProcess(ctx, a.spec, opts)
@@ -127,7 +126,7 @@ func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportUR
 		process:   proc,
 		workDir:   workDir,
 		env:       mergedEnv,
-		yolo:      a.config.Yolo,
+		yolo:      yolo,
 		cancelCtx: cancel,
 	}
 	a.sessions[sessionName] = sess

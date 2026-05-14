@@ -28,6 +28,10 @@ const (
 	// maxSpecialCommandInputLength is the maximum allowed input length for special commands.
 	// This prevents DoS attacks from extremely long inputs.
 	maxSpecialCommandInputLength = 10000 // 10KB
+
+	// maxNameConflictRetries is the maximum number of suffix increments (-2, -3, ...)
+	// when resolving session name conflicts before giving up.
+	maxNameConflictRetries = 100
 )
 
 // specialCommands defines commands that can be used without a prefix.
@@ -42,6 +46,7 @@ var specialCommands = map[string]struct{}{
 	"whoami":  {},
 	"echo":    {},
 	"snew":    {},
+	"sn":      {},
 	"sdel":    {},
 	"suse":    {},
 	"sclose":  {},
@@ -77,7 +82,7 @@ func isSpecialCommand(input string) (string, bool, []string) {
 	if len(fields) > 1 {
 		cmd := fields[0]
 		// Only check known commands that accept string arguments
-		if cmd == "suse" || cmd == "snew" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" {
+		if cmd == "suse" || cmd == "snew" || cmd == "sn" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" {
 			if _, exists := specialCommands[cmd]; exists {
 				return cmd, true, fields[1:]
 			}
@@ -227,7 +232,7 @@ func (e *Engine) ensureSessionStarted(session *Session, sessionConfig SessionCon
 	}
 
 	// Start the session
-	if err := adapter.CreateSession(session.Name, session.WorkDir, startCmd, sessionConfig.Transport, sessionConfig.Env); err != nil {
+	if err := adapter.CreateSession(session.Name, session.WorkDir, startCmd, sessionConfig.Transport, sessionConfig.Env, false); err != nil {
 		return false, fmt.Errorf("failed to create session: %w", err)
 	}
 
@@ -660,6 +665,8 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		e.showWhoami(msg)
 	case "echo":
 		e.handleEcho(msg)
+	case "sn":
+		e.handleNewFromTemplate(args, msg)
 	case "snew":
 		e.handleNewSession(args, msg)
 	case "sdel":
@@ -822,6 +829,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   whoami       - Show your current session info
   echo         - Echo your IM user info (for whitelist config)
   snew <name> <cli_type> <work_dir> [cmd] - Create new session (admin only)
+  sn <template> <work_dir> [name] - Create session from template (admin only)
   sdel <name>  - Delete dynamic session (admin only)
 
 **Special Keywords** (exact match, case-insensitive):
@@ -845,7 +853,8 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   tab               → Send Tab key to CLI
   ctrl-c            → Interrupt current process
   ctrl-t            → Trigger Ctrl+T action
-  snew myproject claude ~/work  → Create new session
+  snew myproject claude ~/work  → Create session (legacy)
+  sn codex ~/work               → Create session from template
 
 **Tips:**
   - Special commands are exact match (case-sensitive)
@@ -870,8 +879,150 @@ func (e *Engine) handleEcho(msg bot.BotMessage) {
 	e.SendToBot(msg.Platform, msg.Channel, response)
 }
 
+// createDynamicSession holds the shared logic for creating dynamic sessions.
+// Both handleNewSession and handleNewFromTemplate delegate to this.
+func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage) {
+	// Validate adapter
+	adapter, exists := e.cliAdapters[p.cliType]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ CLI adapter '%s' not registered", p.cliType))
+		return
+	}
+
+	// Check hook server availability for non-ACP sessions
+	if p.cliType != "acp" && !stdio.IsStdioCLIType(p.cliType) && e.hookServer == nil {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Cannot create '%s' session: HTTP hook server is not running\n\n"+
+				"Reason: All configured sessions are ACP type, so the HTTP hook server was not started.\n"+
+				"Non-ACP sessions (like '%s') require the hook server to receive CLI responses.\n\n"+
+				"Solutions:\n"+
+				"  1. Add at least one non-ACP session to your config file and restart\n"+
+				"  2. Or use 'acp' CLI type for this session", p.cliType, p.cliType))
+		return
+	}
+
+	// Expand and validate work directory
+	expandedDir, err := expandPath(p.workDir)
+	if err != nil {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Invalid work_dir: %v", err))
+		return
+	}
+	if _, err := exec.Command("test", "-d", expandedDir).CombinedOutput(); err != nil {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Work directory does not exist: %s", expandedDir))
+		return
+	}
+
+	// Validate session name
+	if !isValidSessionName(p.name) {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Invalid session name: '%s'\nUse letters, numbers, hyphen, underscore only", p.name))
+		return
+	}
+
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+
+	// Resolve name conflicts (only for template-based sessions)
+	name := p.name
+	if p.autoName {
+		name = e.resolveNameConflict(name)
+		if name == "" {
+			e.SendToBot(msg.Platform, msg.Channel,
+				"❌ Too many sessions with similar names. Please specify a custom name.")
+			return
+		}
+	} else if _, exists := e.sessions[name]; exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Session '%s' already exists", name))
+		return
+	}
+
+	// Check dynamic session limit
+	dynamicCount := 0
+	for _, s := range e.sessions {
+		if s.IsDynamic {
+			dynamicCount++
+		}
+	}
+	if dynamicCount >= e.config.Session.MaxDynamicSessions {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("❌ Maximum dynamic session limit reached (%d)", e.config.Session.MaxDynamicSessions))
+		return
+	}
+
+	// Build env: adapter-level merged with caller-provided env
+	mergedEnv := make(map[string]string)
+	if adapterCfg, ok := e.config.CLIAdapters[p.cliType]; ok {
+		for k, v := range adapterCfg.Env {
+			mergedEnv[k] = v
+		}
+	}
+	for k, v := range p.env {
+		mergedEnv[k] = v
+	}
+
+	session := &Session{
+		Name:      name,
+		CLIType:   p.cliType,
+		WorkDir:   expandedDir,
+		StartCmd:  p.startCmd,
+		State:     StateIdle,
+		CreatedAt: time.Now().Format(time.RFC3339),
+		IsDynamic: true,
+		CreatedBy: fmt.Sprintf("%s:%s", msg.Platform, msg.UserID),
+	}
+
+	if err := adapter.CreateSession(name, expandedDir, p.startCmd, "", mergedEnv, p.yolo); err != nil {
+		logger.WithField("error", err).Error("failed-to-create-dynamic-session")
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to create session: %v", err))
+		return
+	}
+
+	e.sessions[name] = session
+
+	logFields := logrus.Fields{
+		"action":     "create_session",
+		"session":    name,
+		"platform":   msg.Platform,
+		"user_id":    msg.UserID,
+		"cli_type":   p.cliType,
+		"work_dir":   expandedDir,
+		"is_dynamic": true,
+	}
+	if p.templateName != "" {
+		logFields["template"] = p.templateName
+		logFields["yolo"] = p.yolo
+	}
+	logger.WithFields(logFields).Info("admin-created-dynamic-session")
+
+	yoloStr := ""
+	if p.yolo {
+		yoloStr = " [yolo]"
+	}
+	tplStr := ""
+	if p.templateName != "" {
+		tplStr = fmt.Sprintf("\nTemplate: %s", p.templateName)
+	}
+	e.SendToBot(msg.Platform, msg.Channel,
+		fmt.Sprintf("✅ Session '%s' created%s%s\nCLI: %s\nWorkDir: %s",
+			name, yoloStr, tplStr, p.cliType, expandedDir))
+}
+
+// dynamicSessionParams holds parameters for dynamic session creation.
+type dynamicSessionParams struct {
+	name         string
+	cliType      string
+	workDir      string
+	startCmd     string
+	env          map[string]string
+	yolo         bool
+	templateName string // empty for snew, set for sn
+	autoName     bool   // true: resolve name conflicts automatically; false: reject duplicates
+}
+
 // handleNewSession creates a new dynamic session (admin only)
-// Usage: new <name> <cli_type> <work_dir> [start_cmd]
+// Usage: snew <name> <cli_type> <work_dir> [start_cmd]
 func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
 	logger.WithFields(logrus.Fields{
 		"platform": msg.Platform,
@@ -879,13 +1030,11 @@ func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
 		"args":     args,
 	}).Info("handle-new-session-command")
 
-	// 1. Permission check
 	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
 		e.SendToBot(msg.Platform, msg.Channel, "❌ Permission denied: admin only")
 		return
 	}
 
-	// 2. Parameter validation
 	if len(args) < 3 {
 		e.SendToBot(msg.Platform, msg.Channel,
 			"❌ Invalid arguments\nUsage: snew <name> <cli_type> <work_dir> [start_cmd]")
@@ -900,110 +1049,124 @@ func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
 		startCmd = args[3]
 	}
 
-	// 3. Validate session name format
-	if !isValidSessionName(name) {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Invalid session name: '%s'\nUse letters, numbers, hyphen, underscore only", name))
+	e.createDynamicSession(dynamicSessionParams{
+		name:     name,
+		cliType:  cliType,
+		workDir:  workDir,
+		startCmd: startCmd,
+	}, msg)
+}
+
+// handleNewFromTemplate creates a dynamic session from a template (admin only).
+// Usage: sn <template> <work_dir> [name]
+// Built-in templates: codex, claude, gemini, opencode
+func (e *Engine) handleNewFromTemplate(args []string, msg bot.BotMessage) {
+	logger.WithFields(logrus.Fields{
+		"platform": msg.Platform,
+		"user_id":  msg.UserID,
+		"args":     args,
+	}).Info("handle-new-from-template-command")
+
+	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
+		e.SendToBot(msg.Platform, msg.Channel, "❌ Permission denied: admin only")
 		return
 	}
 
-	// 4. Validate CLI type
-	adapter, exists := e.cliAdapters[cliType]
-	if !exists {
+	if len(args) < 2 {
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Invalid CLI type: '%s'\nSupported: claude, gemini, opencode", cliType))
+			"❌ Invalid arguments\nUsage: sn <template> <work_dir> [name]\nTemplates: codex, claude, gemini, opencode")
 		return
 	}
 
-	// 4.5. Check if hook server is available for non-ACP sessions
-	if cliType != "acp" && e.hookServer == nil {
+	templateName := args[0]
+	workDir := args[1]
+
+	tpl := e.resolveTemplate(templateName)
+	if tpl == nil {
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Cannot create '%s' session: HTTP hook server is not running\n\n"+
-				"Reason: All configured sessions are ACP type, so the HTTP hook server was not started.\n"+
-				"Non-ACP sessions (like '%s') require the hook server to receive CLI responses.\n\n"+
-				"Solutions:\n"+
-				"  1. Add at least one non-ACP session to your config file and restart\n"+
-				"  2. Or use 'acp' CLI type for this session", cliType, cliType))
+			fmt.Sprintf("❌ Unknown template: '%s'\nBuilt-in: codex, claude, gemini, opencode", templateName))
 		return
 	}
 
-	// 5. Validate and expand work directory
-	expandedDir, err := expandPath(workDir)
-	if err != nil {
+	if tpl.CLIType == "" {
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Invalid work_dir: %v", err))
+			fmt.Sprintf("❌ Template '%s' has no cli_type configured", templateName))
 		return
 	}
 
-	// Check if directory exists
-	if _, err := exec.Command("test", "-d", expandedDir).CombinedOutput(); err != nil {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Work directory does not exist: %s", expandedDir))
-		return
+	var name string
+	if len(args) >= 3 {
+		name = args[2]
+	} else {
+		name = generateSessionName(templateName, workDir)
 	}
 
-	e.sessionMu.Lock()
-	defer e.sessionMu.Unlock()
+	e.createDynamicSession(dynamicSessionParams{
+		name:         name,
+		cliType:      tpl.CLIType,
+		workDir:      workDir,
+		startCmd:     tpl.CLIType,
+		env:          tpl.Env,
+		yolo:         tpl.Yolo,
+		templateName: templateName,
+		autoName:     true,
+	}, msg)
+}
 
-	// 6. Check for duplicate session name
-	if _, exists := e.sessions[name]; exists {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Session '%s' already exists", name))
-		return
-	}
-
-	// 7. Check dynamic session limit
-	dynamicCount := 0
-	for _, s := range e.sessions {
-		if s.IsDynamic {
-			dynamicCount++
+// resolveTemplate finds a session template by name.
+func (e *Engine) resolveTemplate(name string) *SessionTemplate {
+	if e.config.SessionTemplates != nil {
+		if tpl, ok := e.config.SessionTemplates[name]; ok {
+			return &tpl
 		}
 	}
-	if dynamicCount >= e.config.Session.MaxDynamicSessions {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Maximum dynamic session limit reached (%d)", e.config.Session.MaxDynamicSessions))
-		return
+	if tpl, ok := defaultBuiltinTemplates()[name]; ok {
+		return &tpl
 	}
+	return nil
+}
 
-	// 8. Create session object
-	session := &Session{
-		Name:      name,
-		CLIType:   cliType,
-		WorkDir:   expandedDir,
-		StartCmd:  startCmd,
-		State:     StateIdle,
-		CreatedAt: time.Now().Format(time.RFC3339),
-		IsDynamic: true,
-		CreatedBy: fmt.Sprintf("%s:%s", msg.Platform, msg.UserID),
+// resolveNameConflict appends -2, -3, etc. if name exists.
+// Returns empty string if all candidates are exhausted.
+func (e *Engine) resolveNameConflict(name string) string {
+	if _, exists := e.sessions[name]; !exists {
+		return name
 	}
-
-	// 9. Create tmux session and start CLI
-	// For dynamic sessions, transport is typically empty (non-ACP adapters)
-	if err := adapter.CreateSession(name, expandedDir, startCmd, "", nil); err != nil {
-		logger.WithField("error", err).Error("failed-to-create-dynamic-session")
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Failed to create session: %v", err))
-		return
+	for i := 2; i <= maxNameConflictRetries; i++ {
+		candidate := fmt.Sprintf("%s-%d", name, i)
+		if _, exists := e.sessions[candidate]; !exists {
+			return candidate
+		}
 	}
+	return ""
+}
 
-	// 10. Add to sessions map
-	e.sessions[name] = session
+// generateSessionName creates a name from template + workdir basename.
+// Non-alphanumeric characters are replaced with hyphens.
+func generateSessionName(template, workDir string) string {
+	base := filepath.Base(workDir)
+	if base == "" || base == "." || base == "/" {
+		base = "session"
+	}
+	// Sanitize: replace non-alphanumeric chars with hyphens
+	sanitized := regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(base, "-")
+	// Collapse consecutive hyphens and trim edges
+	sanitized = regexp.MustCompile(`-{2,}`).ReplaceAllString(sanitized, "-")
+	sanitized = strings.Trim(sanitized, "-")
+	if sanitized == "" {
+		sanitized = "session"
+	}
+	return template + "-" + sanitized
+}
 
-	logger.WithFields(logrus.Fields{
-		"action":     "create_session",
-		"session":    name,
-		"platform":   msg.Platform,
-		"user_id":    msg.UserID,
-		"cli_type":   cliType,
-		"work_dir":   expandedDir,
-		"start_cmd":  startCmd,
-		"is_dynamic": true,
-	}).Info("admin-created-dynamic-session")
-
-	// 11. Success response
-	e.SendToBot(msg.Platform, msg.Channel,
-		fmt.Sprintf("✅ Session '%s' created successfully\nCLI: %s\nWorkDir: %s\nStartCmd: %s",
-			name, cliType, expandedDir, startCmd))
+// defaultBuiltinTemplates returns the built-in session templates.
+func defaultBuiltinTemplates() map[string]SessionTemplate {
+	return map[string]SessionTemplate{
+		"codex":    {CLIType: "codex-stdio"},
+		"claude":   {CLIType: "claude-stdio"},
+		"gemini":   {CLIType: "gemini-stdio"},
+		"opencode": {CLIType: "opencode-stdio"},
+	}
 }
 
 // isValidSessionName checks if session name is valid
@@ -1016,19 +1179,21 @@ func isValidSessionName(name string) bool {
 	return matched
 }
 
-// expandPath expands ~ and environment variables in path
+// expandPath expands ~, $HOME, and $VAR environment variables in path
 func expandPath(path string) (string, error) {
+	// Expand ~ to home directory
 	if strings.HasPrefix(path, "~/") {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(homeDir, path[2:]), nil
-	}
-	if path == "~" {
+		path = filepath.Join(homeDir, path[2:])
+	} else if path == "~" {
 		return os.UserHomeDir()
 	}
-	return path, nil
+	// Expand environment variables ($HOME, $PROJECT, etc.)
+	expanded := os.ExpandEnv(path)
+	return expanded, nil
 }
 
 // handleUseSession switches the user's current active session

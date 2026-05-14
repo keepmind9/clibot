@@ -167,7 +167,10 @@ func ensureGeminiChatsDir(workDir string) error {
 }
 
 // CreateSession creates a new ACP session and starts connection
-func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string) error {
+func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string, yolo bool) error {
+	if yolo {
+		logger.WithField("adapter", "acp").Warn("yolo mode is not supported by ACP adapter, ignoring")
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

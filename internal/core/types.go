@@ -45,15 +45,16 @@ type ResponseEvent struct {
 
 // Config represents the complete clibot configuration structure
 type Config struct {
-	HookServer  HookServerConfig            `yaml:"hook_server"`
-	Security    SecurityConfig              `yaml:"security"`
-	Watchdog    WatchdogConfig              `yaml:"watchdog"`
-	Session     SessionGlobalConfig         `yaml:"session"`
-	Sessions    []SessionConfig             `yaml:"sessions"`
-	Bots        map[string]BotConfig        `yaml:"bots"`
-	CLIAdapters map[string]CLIAdapterConfig `yaml:"cli_adapters"`
-	Logging     LoggingConfig               `yaml:"logging"`
-	Proxy       ProxyConfig                 `yaml:"proxy"`
+	HookServer       HookServerConfig            `yaml:"hook_server"`
+	Security         SecurityConfig              `yaml:"security"`
+	Watchdog         WatchdogConfig              `yaml:"watchdog"`
+	Session          SessionGlobalConfig         `yaml:"session"`
+	Sessions         []SessionConfig             `yaml:"sessions"`
+	SessionTemplates map[string]SessionTemplate  `yaml:"session_templates"`
+	Bots             map[string]BotConfig        `yaml:"bots"`
+	CLIAdapters      map[string]CLIAdapterConfig `yaml:"cli_adapters"`
+	Logging          LoggingConfig               `yaml:"logging"`
+	Proxy            ProxyConfig                 `yaml:"proxy"`
 }
 
 // HookServerConfig represents HTTP Hook server configuration
@@ -118,9 +119,14 @@ type CLIAdapterConfig struct {
 
 	// Environment variables to set for the CLI process
 	Env map[string]string `yaml:"env"`
+}
 
-	// Yolo mode: auto-approve all permission prompts (each CLI appends its own flag)
-	Yolo bool `yaml:"yolo"`
+// SessionTemplate defines a reusable blueprint for creating sessions via IM.
+// Built-in defaults: codex, claude, gemini, opencode (zero config needed).
+type SessionTemplate struct {
+	CLIType string            `yaml:"cli_type"` // Required: e.g., codex-stdio, claude-stdio
+	Yolo    bool              `yaml:"yolo"`     // Auto-approve all permission prompts
+	Env     map[string]string `yaml:"env"`      // Template-level env vars
 }
 
 // LoggingConfig represents logging configuration

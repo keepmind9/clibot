@@ -70,5 +70,6 @@ type CLIAdapter interface {
 	// The transportURL parameter is for ACP adapter (e.g., "stdio://", "tcp://host:port", "unix:///path")
 	// Other adapters should ignore this parameter
 	// The env parameter sets session-level environment variables (merged with adapter-level env)
-	CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string) error
+	// The yolo parameter enables auto-approve mode (each CLI appends its own flag)
+	CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string, yolo bool) error
 }

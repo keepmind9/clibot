@@ -145,6 +145,31 @@ session:
 #     - name: "my-website"        # ← Your custom name (could be anything)
 #       cli_type: "claude"        # ← The actual CLI tool
 # ==============================================================================
+# ============================================================================
+# Session Templates (for `sn` command)
+# ============================================================================
+# Templates define reusable blueprints for creating sessions via IM.
+# Built-in templates (zero config): codex, claude, gemini, opencode
+#
+# Usage in IM:
+#   sn codex /my/project           → auto-name: codex-project
+#   sn claude /data/app/demo        → auto-name: claude-demo
+#   sn codex /data/app/demo myname  → custom name: myname
+#
+# User-defined templates override built-in defaults:
+session_templates:
+  # Example: codex with yolo mode
+  # codex:
+  #   cli_type: codex-stdio
+  #   yolo: true
+
+  # Example: custom template name
+  # codex-safe:
+  #   cli_type: codex-stdio
+  #   yolo: false
+  #   env:
+  #     OPENAI_API_KEY: "sk-..."
+
 sessions:
   # ============================================================================
   # ACP Mode Sessions (Recommended)
@@ -328,15 +353,11 @@ cli_adapters:
 
   codex-stdio:
     timeout: "5m"
-    # Yolo mode: auto-approve all permission prompts (appends --full-auto)
-    # yolo: true
     # env:
     #   OPENAI_API_KEY: "sk-..."  # Required if not set in shell environment
 
   gemini-stdio:
     timeout: "5m"
-    # Yolo mode: auto-approve all permission prompts (appends --yolo)
-    # yolo: true
     # env:
     #   GEMINI_API_KEY: "your-key"
 
@@ -345,8 +366,6 @@ cli_adapters:
 
   claude-stdio:
     timeout: "5m"
-    # Yolo mode: auto-approve all permission prompts (appends --dangerously-skip-permissions)
-    # yolo: true
     # env:
     #   ANTHROPIC_API_KEY: "sk-ant-..."
 
