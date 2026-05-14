@@ -39,6 +39,52 @@ type Engine interface {
 	SendResponseToSession(sessionName, message string)
 }
 
+// SessionOptions holds parameters for session creation.
+type SessionOptions struct {
+	WorkDir      string
+	StartCmd     string
+	TransportURL string
+	Env          map[string]string
+	Yolo         bool
+}
+
+// SessionOption configures a SessionOptions value.
+type SessionOption func(*SessionOptions)
+
+// ApplySessionOptions applies all options to a new SessionOptions value.
+func ApplySessionOptions(opts []SessionOption) SessionOptions {
+	var o SessionOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return o
+}
+
+// WithWorkDir sets the working directory for the session.
+func WithWorkDir(dir string) SessionOption {
+	return func(o *SessionOptions) { o.WorkDir = dir }
+}
+
+// WithStartCmd sets the command to start the CLI.
+func WithStartCmd(cmd string) SessionOption {
+	return func(o *SessionOptions) { o.StartCmd = cmd }
+}
+
+// WithTransportURL sets the transport URL (for ACP adapter).
+func WithTransportURL(transportURL string) SessionOption {
+	return func(o *SessionOptions) { o.TransportURL = transportURL }
+}
+
+// WithEnv sets session-level environment variables.
+func WithEnv(env map[string]string) SessionOption {
+	return func(o *SessionOptions) { o.Env = env }
+}
+
+// WithYolo enables auto-approve mode (each CLI appends its own flag).
+func WithYolo(yolo bool) SessionOption {
+	return func(o *SessionOptions) { o.Yolo = yolo }
+}
+
 // CLIAdapter defines the interface for CLI adapters
 type CLIAdapter interface {
 	// SendInput sends input to the CLI (via tmux send-keys)
@@ -65,11 +111,7 @@ type CLIAdapter interface {
 	// IsSessionAlive checks if the session is still alive
 	IsSessionAlive(sessionName string) bool
 
-	// CreateSession creates a new session and starts the CLI with the specified command
-	// The startCmd parameter allows sessions to use different commands than the adapter default
-	// The transportURL parameter is for ACP adapter (e.g., "stdio://", "tcp://host:port", "unix:///path")
-	// Other adapters should ignore this parameter
-	// The env parameter sets session-level environment variables (merged with adapter-level env)
-	// The yolo parameter enables auto-approve mode (each CLI appends its own flag)
-	CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string, yolo bool) error
+	// CreateSession creates a new session and starts the CLI.
+	// Use WithWorkDir, WithStartCmd, WithTransportURL, WithEnv, WithYolo options.
+	CreateSession(sessionName string, opts ...SessionOption) error
 }

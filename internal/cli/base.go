@@ -32,8 +32,9 @@ func (b *BaseAdapter) IsSessionAlive(sessionName string) bool {
 // CreateSession creates a new tmux session and starts the CLI
 // This method is idempotent: if the session already exists, it returns successfully
 // The transportURL parameter is ignored by base adapters (only used by ACP)
-func (b *BaseAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string, yolo bool) error {
-	if yolo {
+func (b *BaseAdapter) CreateSession(sessionName string, opts ...SessionOption) error {
+	o := ApplySessionOptions(opts)
+	if o.Yolo {
 		logger.WithField("adapter", b.cliName).Warn("yolo mode is not supported by this adapter type, ignoring")
 	}
 	// Idempotency check: if session already exists, return success
@@ -46,8 +47,8 @@ func (b *BaseAdapter) CreateSession(sessionName, workDir, startCmd, transportURL
 	args := []string{"new-session", "-d", "-s", sessionName}
 
 	// Set working directory if specified
-	if workDir != "" {
-		expandedDir, err := expandHome(workDir)
+	if o.WorkDir != "" {
+		expandedDir, err := expandHome(o.WorkDir)
 		if err != nil {
 			return fmt.Errorf("session %s: invalid work_dir: %w", sessionName, err)
 		}
@@ -66,7 +67,7 @@ func (b *BaseAdapter) CreateSession(sessionName, workDir, startCmd, transportURL
 	}
 
 	// Set session-level environment variables (inherited by CLI process)
-	for k, v := range env {
+	for k, v := range o.Env {
 		setEnvCmd := exec.Command("tmux", "set-environment", "-t", sessionName, k, v)
 		if output, err := setEnvCmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("session %s: failed to set env %s: %w (output: %s)", sessionName, k, err, string(output))
@@ -74,7 +75,7 @@ func (b *BaseAdapter) CreateSession(sessionName, workDir, startCmd, transportURL
 	}
 
 	// Start the CLI in the session with the specified command
-	if err := b.Start(sessionName, startCmd); err != nil {
+	if err := b.Start(sessionName, o.StartCmd); err != nil {
 		return fmt.Errorf("session %s: failed to start %s: %w", sessionName, b.cliName, err)
 	}
 

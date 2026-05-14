@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/keepmind9/clibot/internal/cli"
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/sirupsen/logrus"
 )
@@ -88,7 +89,8 @@ func (a *StdioAdapter) SetEngine(engine Engine) {
 }
 
 // CreateSession creates a new session and starts the CLI process.
-func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string, yolo bool) error {
+func (a *StdioAdapter) CreateSession(sessionName string, opts ...cli.SessionOption) error {
+	o := cli.ApplySessionOptions(opts)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -102,20 +104,20 @@ func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportUR
 	for k, v := range a.config.Env {
 		mergedEnv[k] = v
 	}
-	for k, v := range env {
+	for k, v := range o.Env {
 		mergedEnv[k] = v
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	opts := StartOptions{
-		WorkDir: workDir,
+	startOpts := StartOptions{
+		WorkDir: o.WorkDir,
 		Env:     mergedEnv,
 		Context: ctx,
-		Yolo:    yolo,
+		Yolo:    o.Yolo,
 	}
 
-	proc, err := NewStdioProcess(ctx, a.spec, opts)
+	proc, err := NewStdioProcess(ctx, a.spec, startOpts)
 	if err != nil {
 		cancel()
 		return fmt.Errorf("failed to start %s: %w", a.spec.Name(), err)
@@ -124,9 +126,9 @@ func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportUR
 	sess := &stdioSession{
 		name:      sessionName,
 		process:   proc,
-		workDir:   workDir,
+		workDir:   o.WorkDir,
 		env:       mergedEnv,
-		yolo:      yolo,
+		yolo:      o.Yolo,
 		cancelCtx: cancel,
 	}
 	a.sessions[sessionName] = sess
@@ -137,7 +139,7 @@ func (a *StdioAdapter) CreateSession(sessionName, workDir, startCmd, transportUR
 	logger.WithFields(logrus.Fields{
 		"cli":     a.spec.Name(),
 		"session": sessionName,
-		"workdir": workDir,
+		"workdir": o.WorkDir,
 		"pid":     proc.Pid(),
 	}).Info("stdio-session-created")
 

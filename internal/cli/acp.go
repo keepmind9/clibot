@@ -167,8 +167,9 @@ func ensureGeminiChatsDir(workDir string) error {
 }
 
 // CreateSession creates a new ACP session and starts connection
-func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL string, env map[string]string, yolo bool) error {
-	if yolo {
+func (a *ACPAdapter) CreateSession(sessionName string, opts ...SessionOption) error {
+	o := ApplySessionOptions(opts)
+	if o.Yolo {
 		logger.WithField("adapter", "acp").Warn("yolo mode is not supported by ACP adapter, ignoring")
 	}
 	a.mu.Lock()
@@ -179,29 +180,29 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 	}
 
 	// Create Gemini chats directory if using gemini CLI
-	if strings.Contains(strings.ToLower(startCmd), "gemini") {
-		if err := ensureGeminiChatsDir(workDir); err != nil {
+	if strings.Contains(strings.ToLower(o.StartCmd), "gemini") {
+		if err := ensureGeminiChatsDir(o.WorkDir); err != nil {
 			logger.WithField("error", err).Warn("failed-to-create-gemini-chats-directory")
 		}
 	}
 
 	// Parse transport URL
-	transportType, address := parseTransportURL(transportURL)
+	transportType, address := parseTransportURL(o.TransportURL)
 
 	// Merge adapter-level env with session-level env (session takes precedence)
 	mergedEnv := make(map[string]string)
 	for k, v := range a.config.Env {
 		mergedEnv[k] = v
 	}
-	for k, v := range env {
+	for k, v := range o.Env {
 		mergedEnv[k] = v
 	}
 
 	logger.WithFields(logrus.Fields{
 		"session":   sessionName,
-		"work_dir":  workDir,
-		"command":   startCmd,
-		"transport": transportURL,
+		"work_dir":  o.WorkDir,
+		"command":   o.StartCmd,
+		"transport": o.TransportURL,
 		"type":      transportType,
 		"address":   address,
 		"env_keys":  mergedEnv,
@@ -218,16 +219,16 @@ func (a *ACPAdapter) CreateSession(sessionName, workDir, startCmd, transportURL 
 		clientImpl = &acpClient{
 			adapter:      a,
 			sessionName:  sessionName,
-			activityChan: make(chan time.Time, 10), // Buffered channel to avoid blocking
+			activityChan: make(chan time.Time, 10),
 		}
-		err = a.startStdioServer(sessionName, workDir, startCmd, mergedEnv, clientImpl, connReady)
+		err = a.startStdioServer(sessionName, o.WorkDir, o.StartCmd, mergedEnv, clientImpl, connReady)
 	case ACPTransportTCP, ACPTransportUnix:
 		clientImpl = &acpClient{
 			adapter:      a,
 			sessionName:  sessionName,
-			activityChan: make(chan time.Time, 10), // Buffered channel to avoid blocking
+			activityChan: make(chan time.Time, 10),
 		}
-		err = a.connectRemoteServer(sessionName, workDir, transportType, address, clientImpl, connReady)
+		err = a.connectRemoteServer(sessionName, o.WorkDir, transportType, address, clientImpl, connReady)
 	default:
 		err = fmt.Errorf("unsupported transport type: %s", transportType)
 	}

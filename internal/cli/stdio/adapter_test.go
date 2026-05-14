@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/keepmind9/clibot/internal/cli"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -187,7 +188,7 @@ func TestStdioAdapter_CreateSession_WithCatProcess(t *testing.T) {
 	eng := &mockEngine{}
 	adapter.SetEngine(eng)
 
-	err := adapter.CreateSession("test-session", "", "", "", nil, false)
+	err := adapter.CreateSession("test-session")
 	require.NoError(t, err)
 
 	assert.True(t, adapter.IsSessionAlive("test-session"))
@@ -201,11 +202,11 @@ func TestStdioAdapter_CreateSession_Idempotent(t *testing.T) {
 	adapter := NewStdioAdapter(&mockSpec{mode: PersistentMode}, StdioAdapterConfig{})
 	defer adapter.Close()
 
-	err := adapter.CreateSession("sess1", "", "", "", nil, false)
+	err := adapter.CreateSession("sess1")
 	require.NoError(t, err)
 
 	// Second call should be idempotent
-	err = adapter.CreateSession("sess1", "", "", "", nil, false)
+	err = adapter.CreateSession("sess1")
 	assert.NoError(t, err)
 }
 
@@ -217,7 +218,7 @@ func TestStdioAdapter_CreateSession_MergesEnv(t *testing.T) {
 	defer adapter.Close()
 
 	sessionEnv := map[string]string{"SESSION_KEY": "session_val"}
-	err := adapter.CreateSession("env-test", "", "", "", sessionEnv, false)
+	err := adapter.CreateSession("env-test", cli.WithEnv(sessionEnv))
 	require.NoError(t, err)
 
 	sess := adapter.sessions["env-test"]
@@ -229,7 +230,7 @@ func TestStdioAdapter_RespondPermission_NoPendingPerm(t *testing.T) {
 	adapter := NewStdioAdapter(&mockSpec{mode: PersistentMode}, StdioAdapterConfig{})
 	defer adapter.Close()
 
-	err := adapter.CreateSession("perm-test", "", "", "", nil, false)
+	err := adapter.CreateSession("perm-test")
 	require.NoError(t, err)
 
 	// No pending permission set
@@ -247,9 +248,9 @@ func TestStdioAdapter_Close_MultipleSessions(t *testing.T) {
 	adapter := NewStdioAdapter(&mockSpec{mode: PersistentMode}, StdioAdapterConfig{})
 	defer adapter.Close()
 
-	err := adapter.CreateSession("s1", "", "", "", nil, false)
+	err := adapter.CreateSession("s1")
 	require.NoError(t, err)
-	err = adapter.CreateSession("s2", "", "", "", nil, false)
+	err = adapter.CreateSession("s2")
 	require.NoError(t, err)
 
 	assert.True(t, adapter.IsSessionAlive("s1"))
@@ -467,7 +468,7 @@ func TestStdioAdapter_SendInput_Persistent(t *testing.T) {
 	eng := &mockEngine{}
 	adapter.SetEngine(eng)
 
-	err := adapter.CreateSession("send-test", "", "", "", nil, false)
+	err := adapter.CreateSession("send-test")
 	require.NoError(t, err)
 
 	err = adapter.SendInput("send-test", "hello")
@@ -489,7 +490,7 @@ func TestStdioAdapter_SendInput_PerTurnMode(t *testing.T) {
 	eng := &mockEngine{}
 	adapter.SetEngine(eng)
 
-	err := adapter.CreateSession("perturn-test", "", "", "", nil, false)
+	err := adapter.CreateSession("perturn-test")
 	require.NoError(t, err)
 
 	err = adapter.SendInput("perturn-test", "hello per-turn")
@@ -511,7 +512,7 @@ func TestStdioAdapter_SendInput_PerTurnMode_NoEngine(t *testing.T) {
 	adapter := NewStdioAdapter(spec, StdioAdapterConfig{})
 	// No engine set
 
-	err := adapter.CreateSession("perturn-noeng", "", "", "", nil, false)
+	err := adapter.CreateSession("perturn-noeng")
 	require.NoError(t, err)
 
 	// Should not panic even without engine
@@ -528,7 +529,7 @@ func TestStdioAdapter_SendInput_UnknownMode(t *testing.T) {
 	eng := &mockEngine{}
 	adapter.SetEngine(eng)
 
-	err := adapter.CreateSession("badmode", "", "", "", nil, false)
+	err := adapter.CreateSession("badmode")
 	require.NoError(t, err)
 
 	err = adapter.SendInput("badmode", "test")
@@ -543,7 +544,7 @@ func TestStdioAdapter_Close_WithError(t *testing.T) {
 	eng := &mockEngine{}
 	adapter.SetEngine(eng)
 
-	err := adapter.CreateSession("close-err", "", "", "", nil, false)
+	err := adapter.CreateSession("close-err")
 	require.NoError(t, err)
 
 	// Close stdin early to cause potential error in process.Close()
@@ -560,7 +561,7 @@ func TestStdioAdapter_CreateSession_StartFailure(t *testing.T) {
 	spec := &mockSpec{mode: PersistentMode, binary: "nonexistent_binary_xyz"}
 	adapter := NewStdioAdapter(spec, StdioAdapterConfig{})
 
-	err := adapter.CreateSession("fail-session", "", "", "", nil, false)
+	err := adapter.CreateSession("fail-session")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to start")
 }

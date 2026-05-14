@@ -232,7 +232,12 @@ func (e *Engine) ensureSessionStarted(session *Session, sessionConfig SessionCon
 	}
 
 	// Start the session
-	if err := adapter.CreateSession(session.Name, session.WorkDir, startCmd, sessionConfig.Transport, sessionConfig.Env, false); err != nil {
+	if err := adapter.CreateSession(session.Name,
+		cli.WithWorkDir(session.WorkDir),
+		cli.WithStartCmd(startCmd),
+		cli.WithTransportURL(sessionConfig.Transport),
+		cli.WithEnv(sessionConfig.Env),
+	); err != nil {
 		return false, fmt.Errorf("failed to create session: %w", err)
 	}
 
@@ -973,7 +978,12 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 		CreatedBy: fmt.Sprintf("%s:%s", msg.Platform, msg.UserID),
 	}
 
-	if err := adapter.CreateSession(name, expandedDir, p.startCmd, "", mergedEnv, p.yolo); err != nil {
+	if err := adapter.CreateSession(name,
+		cli.WithWorkDir(expandedDir),
+		cli.WithStartCmd(p.startCmd),
+		cli.WithEnv(mergedEnv),
+		cli.WithYolo(p.yolo),
+	); err != nil {
 		logger.WithField("error", err).Error("failed-to-create-dynamic-session")
 		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to create session: %v", err))
 		return
