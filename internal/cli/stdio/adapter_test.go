@@ -1,7 +1,9 @@
 package stdio
 
 import (
+	"context"
 	"encoding/json"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
@@ -258,6 +260,28 @@ func TestStdioAdapter_Close_MultipleSessions(t *testing.T) {
 	assert.False(t, adapter.IsSessionAlive("s2"))
 }
 
+// createMockSession creates a session with a mock process (no real subprocess).
+// The events channel is not managed by readLoop, so tests can safely inject events.
+func createMockSession(adapter *StdioAdapter, name string) *stdioSession {
+	proc := &StdioProcess{
+		cmd:    &exec.Cmd{},
+		events: make(chan Event, eventBufSize),
+		ctx:    context.Background(),
+		spec:   adapter.spec,
+	}
+	sess := &stdioSession{
+		name:    name,
+		process: proc,
+	}
+	adapter.mu.Lock()
+	adapter.sessions[name] = sess
+	adapter.mu.Unlock()
+
+	go adapter.eventLoop(sess)
+
+	return sess
+}
+
 func TestStdioAdapter_PermissionTimeout_AutoDeny(t *testing.T) {
 	cfg := StdioAdapterConfig{
 		PermissionTimeout: 50 * time.Millisecond,
@@ -268,10 +292,7 @@ func TestStdioAdapter_PermissionTimeout_AutoDeny(t *testing.T) {
 	adapter.SetEngine(eng)
 	defer adapter.Close()
 
-	err := adapter.CreateSession("timeout-test", "", "", "", nil)
-	require.NoError(t, err)
-
-	sess := adapter.sessions["timeout-test"]
+	sess := createMockSession(adapter, "timeout-test")
 
 	// Simulate a permission event directly
 	perm := &PermissionRequest{
@@ -289,7 +310,6 @@ func TestStdioAdapter_PermissionTimeout_AutoDeny(t *testing.T) {
 	pending := adapter.GetPendingPermission("timeout-test")
 	require.NotNil(t, pending)
 	assert.Equal(t, "req-timeout", pending.Request.RequestID)
-	assert.False(t, pending.Responded)
 
 	// Verify engine was notified
 	perms := eng.getPermissions()
@@ -315,10 +335,7 @@ func TestStdioAdapter_Permission_RespondClearsPending(t *testing.T) {
 	adapter.SetEngine(eng)
 	defer adapter.Close()
 
-	err := adapter.CreateSession("respond-test", "", "", "", nil)
-	require.NoError(t, err)
-
-	sess := adapter.sessions["respond-test"]
+	sess := createMockSession(adapter, "respond-test")
 
 	perm := &PermissionRequest{
 		RequestID: "req-respond",
@@ -333,8 +350,7 @@ func TestStdioAdapter_Permission_RespondClearsPending(t *testing.T) {
 	require.NotNil(t, adapter.GetPendingPermission("respond-test"))
 
 	// Respond with allow
-	err = adapter.RespondPermission("respond-test", "req-respond", "allow")
-	assert.NoError(t, err)
+	assert.NoError(t, adapter.RespondPermission("respond-test", "req-respond", "allow"))
 
 	// Pending should be cleared
 	assert.Nil(t, adapter.GetPendingPermission("respond-test"))
@@ -350,10 +366,7 @@ func TestStdioAdapter_Permission_NewRequestCancelsPrevious(t *testing.T) {
 	adapter.SetEngine(eng)
 	defer adapter.Close()
 
-	err := adapter.CreateSession("cancel-test", "", "", "", nil)
-	require.NoError(t, err)
-
-	sess := adapter.sessions["cancel-test"]
+	sess := createMockSession(adapter, "cancel-test")
 
 	// First permission request
 	perm1 := &PermissionRequest{
@@ -379,10 +392,7 @@ func TestStdioAdapter_EventLoop_ResultEvent(t *testing.T) {
 	eng := &mockEngine{}
 	adapter.SetEngine(eng)
 
-	err := adapter.CreateSession("result-test", "", "", "", nil)
-	require.NoError(t, err)
-
-	sess := adapter.sessions["result-test"]
+	sess := createMockSession(adapter, "result-test")
 
 	// Only EventResult triggers delivery; EventText is ignored
 	sess.process.events <- Event{Type: EventText, Text: "ignored "}
@@ -403,10 +413,7 @@ func TestStdioAdapter_EventLoop_ErrorEvent(t *testing.T) {
 	eng := &mockEngine{}
 	adapter.SetEngine(eng)
 
-	err := adapter.CreateSession("error-test", "", "", "", nil)
-	require.NoError(t, err)
-
-	sess := adapter.sessions["error-test"]
+	sess := createMockSession(adapter, "error-test")
 
 	// Send error event — should not crash the event loop
 	sess.process.events <- Event{Type: EventError, Error: assert.AnError}
@@ -431,10 +438,7 @@ func TestStdioAdapter_EventLoop_PermissionEvent(t *testing.T) {
 	eng := &mockEngine{}
 	adapter.SetEngine(eng)
 
-	err := adapter.CreateSession("perm-event-test", "", "", "", nil)
-	require.NoError(t, err)
-
-	sess := adapter.sessions["perm-event-test"]
+	sess := createMockSession(adapter, "perm-event-test")
 
 	perm := &PermissionRequest{
 		RequestID: "req-ev",

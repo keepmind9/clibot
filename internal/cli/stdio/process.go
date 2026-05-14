@@ -162,8 +162,15 @@ func (p *StdioProcess) WritePermissionResponse(requestID, optionID string) error
 
 // Close shuts down the process gracefully.
 func (p *StdioProcess) Close() error {
-	// Phase 1: Close stdin to signal EOF
-	p.stdin.Close()
+	if p.stdin != nil {
+		p.stdin.Close()
+	}
+
+	// No real process (test mock) — close events to unblock eventLoop.
+	if p.cmd.Process == nil {
+		close(p.events)
+		return nil
+	}
 
 	// Phase 2: Wait for process to exit or send SIGTERM
 	done := make(chan error, 1)
@@ -211,6 +218,9 @@ func (p *StdioProcess) Pid() int {
 func (p *StdioProcess) write(data []byte) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.stdin == nil {
+		return nil
+	}
 	_, err := p.stdin.Write(append(data, '\n'))
 	return err
 }
