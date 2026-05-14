@@ -68,6 +68,10 @@ const (
 	// - For hook mode: 1 hour (maximum time to wait for response after hook triggers)
 	// - For ACP mode: 5 minutes (idle timeout)
 	DefaultTimeout = "1h"
+
+	// DefaultIdleTimeout is the default idle timeout for auto-cleaning dynamic sessions.
+	// Set to "0" to disable.
+	DefaultIdleTimeout = "1h"
 )
 
 // LoadConfig loads configuration from file and expands environment variables

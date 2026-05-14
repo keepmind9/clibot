@@ -125,6 +125,9 @@ func NewEngine(config *Config) *Engine {
 	if config.Session.MaxDynamicSessions == 0 {
 		config.Session.MaxDynamicSessions = 50
 	}
+	if config.Session.IdleTimeout == "" {
+		config.Session.IdleTimeout = DefaultIdleTimeout
+	}
 
 	engine := &Engine{
 		config:          config,
@@ -176,14 +179,15 @@ func (e *Engine) initializeSessions() error {
 
 		// Create new session
 		session := &Session{
-			Name:      sessionConfig.Name,
-			CLIType:   sessionConfig.CLIType,
-			WorkDir:   sessionConfig.WorkDir,
-			StartCmd:  startCmd,
-			State:     StateIdle,
-			CreatedAt: time.Now().Format(time.RFC3339),
-			IsDynamic: false, // Configured sessions are not dynamic
-			CreatedBy: "",
+			Name:         sessionConfig.Name,
+			CLIType:      sessionConfig.CLIType,
+			WorkDir:      sessionConfig.WorkDir,
+			StartCmd:     startCmd,
+			State:        StateIdle,
+			CreatedAt:    time.Now().Format(time.RFC3339),
+			LastActiveAt: time.Now(),
+			IsDynamic:    false, // Configured sessions are not dynamic
+			CreatedBy:    "",
 		}
 
 		// Check if CLI adapter exists
@@ -303,6 +307,9 @@ func (e *Engine) Run(ctx context.Context) error {
 			}
 		}(botType, botAdapter)
 	}
+
+	// Start idle session cleaner
+	go e.startIdleSessionCleaner()
 
 	// Start main event loop
 	e.runEventLoop(ctx)
@@ -604,6 +611,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send input: %v", err))
 		return
 	}
+	e.touchSession(session.Name)
 
 	// Step 6: Update session state to processing
 	e.updateSessionState(session.Name, StateProcessing)
@@ -968,14 +976,15 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 	}
 
 	session := &Session{
-		Name:      name,
-		CLIType:   p.cliType,
-		WorkDir:   expandedDir,
-		StartCmd:  p.startCmd,
-		State:     StateIdle,
-		CreatedAt: time.Now().Format(time.RFC3339),
-		IsDynamic: true,
-		CreatedBy: fmt.Sprintf("%s:%s", msg.Platform, msg.UserID),
+		Name:         name,
+		CLIType:      p.cliType,
+		WorkDir:      expandedDir,
+		StartCmd:     p.startCmd,
+		State:        StateIdle,
+		CreatedAt:    time.Now().Format(time.RFC3339),
+		LastActiveAt: time.Now(),
+		IsDynamic:    true,
+		CreatedBy:    fmt.Sprintf("%s:%s", msg.Platform, msg.UserID),
 	}
 
 	if err := adapter.CreateSession(name,
@@ -1345,6 +1354,7 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 
 	// 6. Remove from sessions map
 	delete(e.sessions, name)
+	delete(e.sessionChannels, name)
 
 	// 7. Clean up user sessions that reference this deleted session
 	cleanedUsers := 0
@@ -1866,6 +1876,116 @@ func (e *Engine) updateSessionState(sessionName string, newState SessionState) {
 	}
 }
 
+// touchSession updates the LastActiveAt timestamp for a session.
+func (e *Engine) touchSession(sessionName string) {
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+	if s, exists := e.sessions[sessionName]; exists {
+		s.LastActiveAt = time.Now()
+	}
+}
+
+// startIdleSessionCleaner periodically checks for idle dynamic sessions and cleans them up.
+func (e *Engine) startIdleSessionCleaner() {
+	if e.config.Session.IdleTimeout == "0" {
+		logger.Info("idle-session-cleaner-disabled")
+		return
+	}
+
+	idleTimeout, err := time.ParseDuration(e.config.Session.IdleTimeout)
+	if err != nil {
+		logger.WithField("idle_timeout", e.config.Session.IdleTimeout).Warn("invalid-idle-timeout-cleaner-disabled")
+		return
+	}
+
+	// Check interval: idleTimeout / 4, minimum 1 minute
+	checkInterval := idleTimeout / 4
+	if checkInterval < time.Minute {
+		checkInterval = time.Minute
+	}
+
+	logger.WithFields(logrus.Fields{
+		"idle_timeout":   idleTimeout,
+		"check_interval": checkInterval,
+	}).Info("idle-session-cleaner-started")
+
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-e.ctx.Done():
+			logger.Info("idle-session-cleaner-stopped")
+			return
+		case <-ticker.C:
+			e.cleanIdleSessions(idleTimeout)
+		}
+	}
+}
+
+// cleanIdleSessions removes dynamic sessions that have been idle beyond the timeout.
+func (e *Engine) cleanIdleSessions(idleTimeout time.Duration) {
+	// Phase 1: collect idle session names under lock
+	e.sessionMu.Lock()
+	var toClean []string
+	for name, s := range e.sessions {
+		if !s.IsDynamic {
+			continue
+		}
+		if s.LastActiveAt.IsZero() {
+			continue
+		}
+		if time.Since(s.LastActiveAt) > idleTimeout {
+			toClean = append(toClean, name)
+		}
+	}
+	e.sessionMu.Unlock()
+
+	if len(toClean) == 0 {
+		return
+	}
+
+	// Phase 2: stop sessions without holding the lock
+	for _, name := range toClean {
+		e.sessionMu.RLock()
+		session := e.sessions[name]
+		e.sessionMu.RUnlock()
+
+		if session == nil {
+			continue
+		}
+
+		if err := e.stopSession(session); err != nil {
+			logger.WithFields(logrus.Fields{
+				"session": name,
+				"error":   err,
+			}).Error("failed-to-stop-idle-session")
+		}
+	}
+
+	// Phase 3: remove from all maps under lock
+	e.sessionMu.Lock()
+	for _, name := range toClean {
+		session := e.sessions[name]
+		if session == nil {
+			continue
+		}
+		delete(e.sessions, name)
+		delete(e.sessionChannels, name)
+		for userKey, sessionName := range e.userSessions {
+			if sessionName == name {
+				delete(e.userSessions, userKey)
+			}
+		}
+		logger.WithFields(logrus.Fields{
+			"session":    name,
+			"idle_for":   time.Since(session.LastActiveAt).Round(time.Second),
+			"created_by": session.CreatedBy,
+		}).Info("idle-session-cleaned-up")
+	}
+	e.sessionMu.Unlock()
+}
+
 // startNewWatchdogForSession cancels any existing watchdog and creates a new context.
 // This prevents goroutine leaks when multiple messages are sent rapidly.
 //
@@ -1963,6 +2083,8 @@ func (e *Engine) removeTypingIndicatorAsync(platform, messageID string) {
 // SendResponseToSession sends a message to the bot channel associated with a session
 // This is used by CLI adapters to send responses back to users
 func (e *Engine) SendResponseToSession(sessionName, message string) {
+	e.touchSession(sessionName)
+
 	e.sessionMu.RLock()
 	botChannel, exists := e.sessionChannels[sessionName]
 	e.sessionMu.RUnlock()
@@ -2051,6 +2173,7 @@ func (e *Engine) handlePermissionResponse(session *Session, input string, msg bo
 		return true
 	}
 
+	e.touchSession(session.Name)
 	e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("Permission response sent: %s", opt.Text))
 	return true
 }

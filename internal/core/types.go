@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/keepmind9/clibot/internal/cli/stdio"
 )
@@ -18,15 +19,16 @@ const (
 
 // Session represents a tmux session with its metadata
 type Session struct {
-	Name      string             // tmux session name
-	CLIType   string             // claude/gemini/opencode
-	WorkDir   string             // Working directory
-	StartCmd  string             // Command to start the CLI (default: same as CLIType)
-	State     SessionState       // Current state
-	CreatedAt string             // Creation timestamp
-	IsDynamic bool               // true if session was created dynamically via IM
-	CreatedBy string             // creator identity (format: "platform:userID")
-	cancelCtx context.CancelFunc // Cancel function for active watchdog goroutine
+	Name         string             // tmux session name
+	CLIType      string             // claude/gemini/opencode
+	WorkDir      string             // Working directory
+	StartCmd     string             // Command to start the CLI (default: same as CLIType)
+	State        SessionState       // Current state
+	CreatedAt    string             // Creation timestamp
+	LastActiveAt time.Time          // Last activity timestamp (input sent or response received)
+	IsDynamic    bool               // true if session was created dynamically via IM
+	CreatedBy    string             // creator identity (format: "platform:userID")
+	cancelCtx    context.CancelFunc // Cancel function for active watchdog goroutine
 }
 
 // NeedsWatchdog returns true if session requires watchdog monitoring
@@ -81,7 +83,8 @@ type WatchdogConfig struct {
 
 // SessionGlobalConfig represents global session configuration
 type SessionGlobalConfig struct {
-	MaxDynamicSessions int `yaml:"max_dynamic_sessions"` // Maximum number of dynamic sessions allowed (default: 50)
+	MaxDynamicSessions int    `yaml:"max_dynamic_sessions"` // Maximum number of dynamic sessions allowed (default: 50)
+	IdleTimeout        string `yaml:"idle_timeout"`         // Auto-cleanup idle dynamic sessions (default: 1h, "0" to disable)
 }
 
 // SessionConfig represents a session configuration

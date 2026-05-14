@@ -255,6 +255,7 @@ session_templates:
 # Global session settings
 session:
   max_dynamic_sessions: 50
+  # idle_timeout: "1h"   # Auto-cleanup idle dynamic sessions (default: 1h, "0" to disable)
 
 # ==============================================================================
 # Bot Configuration
