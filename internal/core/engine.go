@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,10 +10,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/cli"
@@ -50,6 +53,7 @@ var specialCommands = map[string]struct{}{
 	"sdel":    {},
 	"suse":    {},
 	"sclose":  {},
+	"snlist":  {},
 }
 
 // isSpecialCommand checks if input is a special command.
@@ -127,6 +131,12 @@ func NewEngine(config *Config) *Engine {
 	}
 	if config.Session.IdleTimeout == "" {
 		config.Session.IdleTimeout = DefaultIdleTimeout
+	}
+	for name, botCfg := range config.Bots {
+		if botCfg.MaxMessageLength == 0 && botCfg.Enabled {
+			botCfg.MaxMessageLength = DefaultMaxMessageLength
+			config.Bots[name] = botCfg
+		}
 	}
 
 	engine := &Engine{
@@ -269,6 +279,9 @@ func (e *Engine) Run(ctx context.Context) error {
 	if err := e.initializeSessions(); err != nil {
 		return fmt.Errorf("failed to initialize sessions: %w", err)
 	}
+
+	// Restore dynamic sessions from previous run
+	e.loadPersistedSessions()
 
 	// Start HTTP hook server only if needed
 	if e.needsHookServer() {
@@ -680,6 +693,8 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		e.handleEcho(msg)
 	case "sn":
 		e.handleNewFromTemplate(args, msg)
+	case "snlist":
+		e.listTemplates(msg)
 	case "snew":
 		e.handleNewSession(args, msg)
 	case "sdel":
@@ -843,6 +858,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   echo         - Echo your IM user info (for whitelist config)
   snew <name> <cli_type> <work_dir> [cmd] - Create new session (admin only)
   sn <template> <work_dir> [name] - Create session from template (admin only)
+  snlist       - List all available templates
   sdel <name>  - Delete dynamic session (admin only)
 
 **Special Keywords** (exact match, case-insensitive):
@@ -934,9 +950,13 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 	}
 
 	e.sessionMu.Lock()
-	defer e.sessionMu.Unlock()
-
-	// Resolve name conflicts (only for template-based sessions)
+	var shouldPersist bool
+	defer func() {
+		e.sessionMu.Unlock()
+		if shouldPersist {
+			go e.persistSessions()
+		}
+	}()
 	name := p.name
 	if p.autoName {
 		name = e.resolveNameConflict(name)
@@ -985,6 +1005,7 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 		LastActiveAt: time.Now(),
 		IsDynamic:    true,
 		CreatedBy:    fmt.Sprintf("%s:%s", msg.Platform, msg.UserID),
+		Env:          mergedEnv,
 	}
 
 	if err := adapter.CreateSession(name,
@@ -1014,7 +1035,7 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 		logFields["yolo"] = p.yolo
 	}
 	logger.WithFields(logFields).Info("admin-created-dynamic-session")
-
+	shouldPersist = true
 	yoloStr := ""
 	if p.yolo {
 		yoloStr = " [yolo]"
@@ -1074,6 +1095,47 @@ func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
 		workDir:  workDir,
 		startCmd: startCmd,
 	}, msg)
+}
+
+// listTemplates lists all available session templates (custom + built-in).
+func (e *Engine) listTemplates(msg bot.BotMessage) {
+	builtins := defaultBuiltinTemplates()
+
+	type tplEntry struct {
+		name   string
+		tpl    SessionTemplate
+		source string
+	}
+
+	entries := make(map[string]tplEntry)
+	for name, tpl := range builtins {
+		entries[name] = tplEntry{name: name, tpl: tpl, source: "built-in"}
+	}
+	for name, tpl := range e.config.SessionTemplates {
+		entries[name] = tplEntry{name: name, tpl: tpl, source: "custom"}
+	}
+
+	if len(entries) == 0 {
+		e.SendToBot(msg.Platform, msg.Channel, "📋 No templates available")
+		return
+	}
+
+	resp := "📋 Available Templates:\n\n"
+	names := make([]string, 0, len(entries))
+	for name := range entries {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		entry := entries[name]
+		yolo := ""
+		if entry.tpl.Yolo {
+			yolo = " [yolo]"
+		}
+		resp += fmt.Sprintf("  **%s** — `%s`%s (%s)\n", name, entry.tpl.CLIType, yolo, entry.source)
+	}
+	resp += "\nUsage: `sn <template> <work_dir> [name]`"
+	e.SendToBot(msg.Platform, msg.Channel, resp)
 }
 
 // handleNewFromTemplate creates a dynamic session from a template (admin only).
@@ -1325,7 +1387,13 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	name := args[0]
 
 	e.sessionMu.Lock()
-	defer e.sessionMu.Unlock()
+	var shouldPersist bool
+	defer func() {
+		e.sessionMu.Unlock()
+		if shouldPersist {
+			go e.persistSessions()
+		}
+	}()
 
 	// 3. Check if session exists
 	session, exists := e.sessions[name]
@@ -1378,6 +1446,7 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 		"platform": msg.Platform,
 		"user_id":  msg.UserID,
 	}).Info("admin-deleted-dynamic-session")
+	shouldPersist = true
 
 	// 8. Success response
 	response := fmt.Sprintf("✅ Session '%s' deleted successfully", name)
@@ -1876,6 +1945,122 @@ func (e *Engine) updateSessionState(sessionName string, newState SessionState) {
 	}
 }
 
+// sessionStateFile returns the path to the persistent session state file.
+func (e *Engine) sessionStateFile() string {
+	dir := e.config.DataDir
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			logger.WithField("error", err).Warn("failed-to-determine-home-dir")
+			home = "/tmp"
+		}
+		dir = filepath.Join(home, ".clibot")
+	}
+	return filepath.Join(dir, "sessions.json")
+}
+
+// persistSessions saves all dynamic sessions to disk using atomic write.
+func (e *Engine) persistSessions() {
+	e.sessionMu.RLock()
+	var dynamic []*Session
+	for _, s := range e.sessions {
+		if s.IsDynamic {
+			dynamic = append(dynamic, s)
+		}
+	}
+	e.sessionMu.RUnlock()
+
+	path := e.sessionStateFile()
+
+	if len(dynamic) == 0 {
+		os.Remove(path)
+		return
+	}
+
+	data, err := json.Marshal(dynamic)
+	if err != nil {
+		logger.WithField("error", err).Error("failed-to-marshal-sessions")
+		return
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		logger.WithField("error", err).Error("failed-to-create-data-dir")
+		return
+	}
+
+	// Atomic write: write to temp file then rename
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		logger.WithField("error", err).Error("failed-to-write-sessions-tmp")
+		return
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		logger.WithField("error", err).Error("failed-to-rename-sessions-file")
+		os.Remove(tmpPath)
+		return
+	}
+
+	logger.WithField("count", len(dynamic)).Debug("sessions-persisted")
+}
+
+// loadPersistedSessions loads dynamic sessions from disk and restores alive ones.
+func (e *Engine) loadPersistedSessions() {
+	path := e.sessionStateFile()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.WithField("error", err).Warn("failed-to-read-sessions-file")
+		}
+		return
+	}
+
+	var sessions []*Session
+	if err := json.Unmarshal(data, &sessions); err != nil {
+		logger.WithField("error", err).Warn("failed-to-parse-sessions-file")
+		return
+	}
+
+	if len(sessions) == 0 {
+		return
+	}
+
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+
+	restored := 0
+	for _, s := range sessions {
+		// Skip if already configured as static session
+		if _, exists := e.sessions[s.Name]; exists {
+			continue
+		}
+
+		adapter, exists := e.cliAdapters[s.CLIType]
+		if !exists {
+			logger.WithFields(logrus.Fields{
+				"session":  s.Name,
+				"cli_type": s.CLIType,
+			}).Warn("skipping-persisted-session-adapter-not-found")
+			continue
+		}
+
+		if !adapter.IsSessionAlive(s.Name) {
+			logger.WithField("session", s.Name).Info("skipping-persisted-session-not-alive")
+			continue
+		}
+
+		s.State = StateIdle
+		s.cancelCtx = nil
+		e.sessions[s.Name] = s
+		restored++
+	}
+
+	logger.WithFields(logrus.Fields{
+		"total":    len(sessions),
+		"restored": restored,
+	}).Info("persisted-sessions-loaded")
+}
+
 // touchSession updates the LastActiveAt timestamp for a session.
 func (e *Engine) touchSession(sessionName string) {
 	e.sessionMu.Lock()
@@ -1984,6 +2169,7 @@ func (e *Engine) cleanIdleSessions(idleTimeout time.Duration) {
 		}).Info("idle-session-cleaned-up")
 	}
 	e.sessionMu.Unlock()
+	go e.persistSessions()
 }
 
 // startNewWatchdogForSession cancels any existing watchdog and creates a new context.
@@ -2039,20 +2225,74 @@ func (e *Engine) startNewWatchdogForSession(sessionName string) (context.Context
 // SendToBot sends a message to a specific bot
 func (e *Engine) SendToBot(platform, channel, message string) {
 	if botAdapter, exists := e.activeBots[platform]; exists {
-		if err := botAdapter.SendMessage(channel, message); err != nil {
-			logger.WithFields(logrus.Fields{
-				"platform": platform,
-				"channel":  channel,
-				"error":    err,
-			}).Error("failed-to-send-message-to-bot")
-		} else {
-			logger.WithFields(logrus.Fields{
-				"platform": platform,
-				"channel":  channel,
-				"length":   len(message),
-			}).Info("message-sent-to-bot")
+		maxLen := 0
+		if botCfg, ok := e.config.Bots[platform]; ok {
+			maxLen = botCfg.MaxMessageLength
 		}
+
+		chunks := splitMessageByLines(message, maxLen)
+		for i, chunk := range chunks {
+			if err := botAdapter.SendMessage(channel, chunk); err != nil {
+				logger.WithFields(logrus.Fields{
+					"platform": platform,
+					"channel":  channel,
+					"chunk":    i + 1,
+					"error":    err,
+				}).Error("failed-to-send-message-to-bot")
+				return
+			}
+		}
+		logger.WithFields(logrus.Fields{
+			"platform": platform,
+			"channel":  channel,
+			"length":   len(message),
+			"chunks":   len(chunks),
+		}).Info("message-sent-to-bot")
 	}
+}
+
+// splitMessageByLines splits a message into chunks by lines.
+// If maxLen <= 0, returns the message as a single chunk.
+// Each chunk respects maxLen; lines are never split mid-line.
+// If a single line exceeds maxLen, it becomes its own chunk.
+func splitMessageByLines(message string, maxLen int) []string {
+	if maxLen <= 0 || utf8.RuneCountInString(message) <= maxLen {
+		return []string{message}
+	}
+
+	lines := strings.Split(message, "\n")
+	var chunks []string
+	var current strings.Builder
+	currentRunes := 0
+
+	for _, line := range lines {
+		lineRunes := utf8.RuneCountInString(line) + 1 // +1 for newline
+		if current.Len() > 0 && currentRunes+lineRunes > maxLen {
+			chunks = append(chunks, current.String())
+			current.Reset()
+			currentRunes = 0
+		}
+		// Single line exceeding maxLen goes as its own chunk
+		if current.Len() == 0 && utf8.RuneCountInString(line) > maxLen {
+			chunks = append(chunks, line)
+			continue
+		}
+		if current.Len() > 0 {
+			current.WriteByte('\n')
+			currentRunes++
+		}
+		current.WriteString(line)
+		currentRunes += utf8.RuneCountInString(line)
+	}
+
+	if current.Len() > 0 {
+		chunks = append(chunks, current.String())
+	}
+
+	if len(chunks) == 0 {
+		return []string{message}
+	}
+	return chunks
 }
 
 // removeTypingIndicatorAsync removes typing indicator after a delay

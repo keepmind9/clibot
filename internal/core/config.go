@@ -72,6 +72,10 @@ const (
 	// DefaultIdleTimeout is the default idle timeout for auto-cleaning dynamic sessions.
 	// Set to "0" to disable.
 	DefaultIdleTimeout = "1h"
+
+	// DefaultMaxMessageLength is the default maximum message length before splitting.
+	// Messages exceeding this length are split by lines.
+	DefaultMaxMessageLength = 4000
 )
 
 // LoadConfig loads configuration from file and expands environment variables

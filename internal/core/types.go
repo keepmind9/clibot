@@ -19,16 +19,17 @@ const (
 
 // Session represents a tmux session with its metadata
 type Session struct {
-	Name         string             // tmux session name
-	CLIType      string             // claude/gemini/opencode
-	WorkDir      string             // Working directory
-	StartCmd     string             // Command to start the CLI (default: same as CLIType)
-	State        SessionState       // Current state
-	CreatedAt    string             // Creation timestamp
-	LastActiveAt time.Time          // Last activity timestamp (input sent or response received)
-	IsDynamic    bool               // true if session was created dynamically via IM
-	CreatedBy    string             // creator identity (format: "platform:userID")
-	cancelCtx    context.CancelFunc // Cancel function for active watchdog goroutine
+	Name         string             `json:"name"`           // tmux session name
+	CLIType      string             `json:"cli_type"`       // claude/gemini/opencode
+	WorkDir      string             `json:"work_dir"`       // Working directory
+	StartCmd     string             `json:"start_cmd"`      // Command to start the CLI (default: same as CLIType)
+	State        SessionState       `json:"-"`              // Current state (not persisted)
+	CreatedAt    string             `json:"created_at"`     // Creation timestamp
+	LastActiveAt time.Time          `json:"last_active_at"` // Last activity timestamp (input sent or response received)
+	IsDynamic    bool               `json:"is_dynamic"`     // true if session was created dynamically via IM
+	CreatedBy    string             `json:"created_by"`     // creator identity (format: "platform:userID")
+	Env          map[string]string  `json:"env,omitempty"`  // Environment variables for the session
+	cancelCtx    context.CancelFunc `json:"-"`              // Cancel function for active watchdog goroutine
 }
 
 // NeedsWatchdog returns true if session requires watchdog monitoring
@@ -57,6 +58,7 @@ type Config struct {
 	CLIAdapters      map[string]CLIAdapterConfig `yaml:"cli_adapters"`
 	Logging          LoggingConfig               `yaml:"logging"`
 	Proxy            ProxyConfig                 `yaml:"proxy"`
+	DataDir          string                      `yaml:"data_dir"` // Directory for persistent state (default: ~/.clibot)
 }
 
 // HookServerConfig represents HTTP Hook server configuration
@@ -110,6 +112,7 @@ type BotConfig struct {
 	BaseURL           string       `yaml:"base_url"`           // WeChat iLink: API base URL (optional)
 	CredentialsPath   string       `yaml:"credentials_path"`   // WeChat iLink: credentials file path (optional)
 	Proxy             *ProxyConfig `yaml:"proxy"`              // Optional bot-level proxy override
+	MaxMessageLength  int          `yaml:"max_message_length"` // Max chars per message before splitting by lines (0 = no limit)
 }
 
 // CLIAdapterConfig represents CLI adapter configuration

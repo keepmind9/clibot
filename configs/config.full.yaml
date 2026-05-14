@@ -266,6 +266,7 @@ bots:
     enabled: false
     token: "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.GhIjKl..."
     channel_id: "123456789012345678"
+    max_message_length: 2000 # Discord limit: 2000 chars
     # proxy:
     #   enabled: true
     #   url: "http://127.0.0.1:7890"
@@ -274,11 +275,13 @@ bots:
     enabled: false
     app_id: "cli_a...."
     app_secret: "HTCoxSDE3...."
+    max_message_length: 4000
 
   # Telegram Bot
   telegram:
     enabled: false
     token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+    max_message_length: 4096 # Telegram limit: 4096 chars
     # proxy:
     #   enabled: true
     #   url: "socks5://127.0.0.1:1080"
@@ -288,6 +291,7 @@ bots:
     enabled: false
     app_id: "ding_1234567890abcd"
     app_secret: "abc123def456..."
+    max_message_length: 50000 # DingTalk has a high limit
 
   # WeChat iLink Bot (QR code login, no static token)
   weixin:

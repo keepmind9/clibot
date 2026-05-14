@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/keepmind9/clibot/internal/bot"
@@ -310,4 +311,54 @@ func TestHandleNewFromTemplate_WithEnv(t *testing.T) {
 		opt(&opts)
 	}
 	assert.Equal(t, "bar", opts.Env["FOO"])
+}
+
+// --- listTemplates / snlist ---
+
+func TestListTemplates_BuiltInOnly(t *testing.T) {
+	engine := newTestEngine()
+	mockBot := &mockBotAdapter{}
+	engine.RegisterBotAdapter("testbot", mockBot)
+
+	engine.listTemplates(bot.BotMessage{Platform: "testbot", Channel: "ch1"})
+
+	assert.Equal(t, 1, mockBot.messageCount)
+	assert.Contains(t, mockBot.lastMessage, "codex")
+	assert.Contains(t, mockBot.lastMessage, "claude")
+	assert.Contains(t, mockBot.lastMessage, "gemini")
+	assert.Contains(t, mockBot.lastMessage, "opencode")
+	assert.Contains(t, mockBot.lastMessage, "built-in")
+}
+
+func TestListTemplates_CustomOverridesBuiltIn(t *testing.T) {
+	engine := newTestEngine()
+	engine.config.SessionTemplates = map[string]SessionTemplate{
+		"codex": {CLIType: "codex-stdio", Yolo: true},
+	}
+	mockBot := &mockBotAdapter{}
+	engine.RegisterBotAdapter("testbot", mockBot)
+
+	engine.listTemplates(bot.BotMessage{Platform: "testbot", Channel: "ch1"})
+
+	assert.Equal(t, 1, mockBot.messageCount)
+	assert.Contains(t, mockBot.lastMessage, "[yolo]")
+	assert.Contains(t, mockBot.lastMessage, "custom")
+	assert.Equal(t, 1, strings.Count(mockBot.lastMessage, "**codex**"))
+}
+
+func TestListTemplates_SortedOutput(t *testing.T) {
+	engine := newTestEngine()
+	engine.config.SessionTemplates = map[string]SessionTemplate{
+		"zebra":  {CLIType: "test-stdio"},
+		"alpha":  {CLIType: "test-stdio"},
+		"middle": {CLIType: "test-stdio"},
+	}
+	mockBot := &mockBotAdapter{}
+	engine.RegisterBotAdapter("testbot", mockBot)
+
+	engine.listTemplates(bot.BotMessage{Platform: "testbot", Channel: "ch1"})
+
+	msg := mockBot.lastMessage
+	assert.True(t, strings.Index(msg, "alpha") < strings.Index(msg, "middle"))
+	assert.True(t, strings.Index(msg, "middle") < strings.Index(msg, "zebra"))
 }
