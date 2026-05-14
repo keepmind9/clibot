@@ -208,9 +208,34 @@ See [CLI Hook Configuration Guide](./docs/en/setup/cli-hooks.md) for detailed se
 
 ### Mode Selection
 
-**Priority: ACP > Hook**
+**Priority: ACP > Hook > Stdio**
 
 ACP Mode provides better user experience and should be preferred when available.
+
+### Stdio Mode (Zero Config)
+
+**Best for:** Codex, Gemini, OpenCode, Claude Code — when you want zero setup
+
+**Advantages:**
+- ✅ No tmux required
+- ✅ No hook configuration required
+- ✅ Works with any CLI that supports JSON output
+
+**How it works:** Per-turn CLIs (Codex, Gemini, OpenCode) spawn a new process for each message. Claude-stdio keeps a long-lived process with bidirectional JSON communication. Session resume is supported via session IDs.
+
+**Configuration:**
+```yaml
+sessions:
+  - name: "codex"
+    cli_type: "codex-stdio"
+    work_dir: "/path/to/project"
+
+cli_adapters:
+  codex-stdio:
+    timeout: "5m"
+```
+
+**Supported CLI types:** `codex-stdio`, `gemini-stdio`, `opencode-stdio` (per-turn), `claude-stdio` (persistent)
 
 ## 📱 Setup Bot
 

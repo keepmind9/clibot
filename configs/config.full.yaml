@@ -124,9 +124,10 @@ session:
 # ==============================================================================
 # Configure which CLI sessions clibot should manage
 #
-# Mode Priority: ACP > Hook
+# Mode Priority: ACP > Hook > Stdio
 #   - ACP: Best experience, streaming, no tmux needed
 #   - Hook: Real-time, requires CLI hook configuration
+#   - Stdio: Zero-config, each message spawns a new process (per-turn)
 # ==============================================================================
 # Sessions Configuration
 # ==============================================================================
@@ -202,6 +203,39 @@ sessions:
   #   cli_type: "opencode"
   #   work_dir: "/path/to/workdir"
   #   auto_start: true
+
+  # ============================================================================
+  # Stdio Mode Sessions (Per-Turn)
+  # ============================================================================
+  # Each message spawns a new CLI process, collects output, and delivers response.
+  # No tmux or hook configuration required. Session resume is supported.
+  #
+  # Supported CLI types:
+  #   claude-stdio  - Claude Code (stream-json mode)
+  #   codex-stdio   - OpenAI Codex CLI
+  #   gemini-stdio  - Google Gemini CLI
+  #   opencode-stdio - OpenCode CLI
+  # ============================================================================
+
+  # Example 8: Claude Code stdio mode
+  # - name: "claude-stdio"
+  #   cli_type: "claude-stdio"
+  #   work_dir: "/home/user/projects/my-project"
+
+  # Example 9: Codex CLI stdio mode
+  # - name: "codex-stdio"
+  #   cli_type: "codex-stdio"
+  #   work_dir: "/home/user/projects/my-project"
+
+  # Example 10: Gemini CLI stdio mode
+  # - name: "gemini-stdio"
+  #   cli_type: "gemini-stdio"
+  #   work_dir: "/home/user/projects/my-project"
+
+  # Example 11: OpenCode CLI stdio mode
+  # - name: "opencode-stdio"
+  #   cli_type: "opencode-stdio"
+  #   work_dir: "/home/user/projects/my-project"
 
 # ==============================================================================
 # Bot Configuration
@@ -284,6 +318,31 @@ cli_adapters:
   opencode:
     # Hook mode configuration
     # Requires: OpenCode CLI with hook configuration
+
+  # ============================================================================
+  # Stdio Adapter Configuration
+  # ============================================================================
+  # For per-turn mode CLIs (codex-stdio, gemini-stdio, opencode-stdio, claude-stdio)
+  # Each adapter controls timeout and environment for its CLI processes.
+  # ============================================================================
+
+  codex-stdio:
+    timeout: "5m"
+    # env:
+    #   OPENAI_API_KEY: "sk-..."  # Required if not set in shell environment
+
+  gemini-stdio:
+    timeout: "5m"
+    # env:
+    #   GEMINI_API_KEY: "your-key"
+
+  opencode-stdio:
+    timeout: "5m"
+
+  claude-stdio:
+    timeout: "5m"
+    # env:
+    #   ANTHROPIC_API_KEY: "sk-ant-..."
 
   # ACP Adapter (Agent Client Protocol) - Recommended
   acp:

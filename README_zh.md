@@ -208,9 +208,34 @@ sessions:
 
 ### 模式选择
 
-**优先级：ACP > Hook**
+**优先级：ACP > Hook > Stdio**
 
 ACP 模式提供更好的用户体验，在可用时应优先选择。
+
+### Stdio 模式（零配置）
+
+**适用于：** Codex、Gemini、OpenCode、Claude Code — 无需额外配置
+
+**优势：**
+- ✅ 无需 tmux
+- ✅ 无需 hook 配置
+- ✅ 支持任何支持 JSON 输出的 CLI
+
+**工作原理：** Per-turn 模式的 CLI（Codex、Gemini、OpenCode）每条消息启动新进程。Claude-stdio 保持长连接进程，通过双向 JSON 通信。支持通过 session ID 恢复会话。
+
+**配置：**
+```yaml
+sessions:
+  - name: "codex"
+    cli_type: "codex-stdio"
+    work_dir: "/path/to/project"
+
+cli_adapters:
+  codex-stdio:
+    timeout: "5m"
+```
+
+**支持的 CLI 类型：** `codex-stdio`、`gemini-stdio`、`opencode-stdio`（per-turn 模式）、`claude-stdio`（persistent 模式）
 
 ## 📱 配置机器人
 
