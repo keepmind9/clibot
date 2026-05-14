@@ -41,11 +41,11 @@ type StdioProcess struct {
 	stdout io.ReadCloser
 	events chan Event
 
-	spec     CLISpec
-	wg       sync.WaitGroup
-	ctx      context.Context
-	mu       sync.Mutex // protects stdin writes
-	inputClosed bool    // tracks whether stdin has been closed
+	spec        CLISpec
+	wg          sync.WaitGroup
+	ctx         context.Context
+	mu          sync.Mutex // protects stdin writes
+	inputClosed bool       // tracks whether stdin has been closed
 }
 
 // NewStdioProcess spawns a new CLI process and starts reading stdout.
