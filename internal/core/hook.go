@@ -160,11 +160,8 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	e.touchSession(session.Name)
 
 	// Get the bot channel for this session
-	e.sessionMu.RLock()
-	channels, exists := e.sessionChannels[session.Name]
-	e.sessionMu.RUnlock()
-
-	if !exists || len(channels) == 0 {
+	channels := e.snapshotSessionChannels(session.Name)
+	if len(channels) == 0 {
 		// No active channel - user might be operating CLI directly
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,

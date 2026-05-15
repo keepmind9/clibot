@@ -2535,11 +2535,8 @@ func (e *Engine) removeTypingIndicatorAsync(platform, messageID string) {
 func (e *Engine) SendResponseToSession(sessionName, message string) {
 	e.touchSession(sessionName)
 
-	e.sessionMu.RLock()
-	channels, exists := e.sessionChannels[sessionName]
-	e.sessionMu.RUnlock()
-
-	if !exists || len(channels) == 0 {
+	channels := e.snapshotSessionChannels(sessionName)
+	if len(channels) == 0 {
 		logger.WithField("session", sessionName).Warn("no-bot-channel-found")
 		return
 	}
@@ -2559,7 +2556,7 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 		"response_length": len(message),
 	}).Info("sending-response-to-session")
 
-	for _, botChannel := range channels {
+	for _, botChannel := range e.snapshotSessionChannels(sessionName) {
 		e.SendToBot(botChannel.Platform, botChannel.Channel, message)
 		if botChannel.MessageID != "" {
 			e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
@@ -2567,13 +2564,26 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 	}
 }
 
+// snapshotSessionChannels returns a snapshot of all channels for a session.
+// The snapshot is safe to iterate without holding the lock.
+func (e *Engine) snapshotSessionChannels(sessionName string) []BotChannel {
+	e.sessionMu.RLock()
+	defer e.sessionMu.RUnlock()
+	channels := e.sessionChannels[sessionName]
+	if len(channels) == 0 {
+		return nil
+	}
+	snapshot := make([]BotChannel, 0, len(channels))
+	for _, ch := range channels {
+		snapshot = append(snapshot, ch)
+	}
+	return snapshot
+}
+
 // SendPermissionPrompt sends a permission request notification to the user.
 func (e *Engine) SendPermissionPrompt(sessionName, message string) {
-	e.sessionMu.RLock()
-	channels, exists := e.sessionChannels[sessionName]
-	e.sessionMu.RUnlock()
-
-	if !exists || len(channels) == 0 {
+	channels := e.snapshotSessionChannels(sessionName)
+	if len(channels) == 0 {
 		logger.WithField("session", sessionName).Warn("no-bot-channel-for-permission-prompt")
 		return
 	}
@@ -2663,12 +2673,8 @@ func (e *Engine) startWatchdogWithContext(ctx context.Context, session *Session,
 
 // sendResponseToUser sends the CLI response to the user via bot
 func (e *Engine) sendResponseToUser(sessionName string, content string) {
-	// Get the channel for this session
-	e.sessionMu.RLock()
-	channels, exists := e.sessionChannels[sessionName]
-	e.sessionMu.RUnlock()
-
-	if !exists || len(channels) == 0 {
+	channels := e.snapshotSessionChannels(sessionName)
+	if len(channels) == 0 {
 		logger.WithField("session", sessionName).Warn("no-bot-channel-found-for-session")
 		return
 	}
