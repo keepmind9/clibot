@@ -101,19 +101,19 @@ func isSpecialCommand(input string) (string, bool, []string) {
 // Engine is the core scheduling engine that manages CLI sessions and bot connections
 type Engine struct {
 	config          *Config
-	cliAdapters     map[string]cli.CLIAdapter // CLI type -> adapter
-	activeBots      map[string]bot.BotAdapter // Bot type -> adapter
-	sessions        map[string]*Session       // Session name -> Session
-	sessionMu       sync.RWMutex              // Mutex for session access
-	messageChan     chan bot.BotMessage       // Bot message channel
-	hookServer      *http.Server              // HTTP server for hooks
+	cliAdapters     map[string]cli.CLIAdapter        // CLI type -> adapter
+	activeBots      map[string]bot.BotAdapter        // Bot type -> adapter
+	sessions        map[string]*Session              // Session name -> Session
+	sessionMu       sync.RWMutex                     // Mutex for session access
+	messageChan     chan bot.BotMessage              // Bot message channel
+	hookServer      *http.Server                     // HTTP server for hooks
 	sessionChannels map[string]map[string]BotChannel // Session name -> userKey -> channel
-	userSessions    map[string]string         // User key (platform:userID) -> current session name
-	cmdLocksMu      sync.RWMutex              // Protects sessionCmdLocks map
-	sessionCmdLocks map[string]*sync.Mutex    // Per-session command locks (prevents concurrent commands on same session)
-	proxyMgr        *proxy.ProxyManager       // Proxy manager for HTTP clients
-	ctx             context.Context           // Context for cancellation
-	cancel          context.CancelFunc        // Cancel function for graceful shutdown
+	userSessions    map[string]string                // User key (platform:userID) -> current session name
+	cmdLocksMu      sync.RWMutex                     // Protects sessionCmdLocks map
+	sessionCmdLocks map[string]*sync.Mutex           // Per-session command locks (prevents concurrent commands on same session)
+	proxyMgr        *proxy.ProxyManager              // Proxy manager for HTTP clients
+	ctx             context.Context                  // Context for cancellation
+	cancel          context.CancelFunc               // Cancel function for graceful shutdown
 }
 
 // BotChannel represents a bot channel for sending responses
@@ -2069,23 +2069,6 @@ func (e *Engine) sendSessionStatus(msg bot.BotMessage, status *SessionStatus) {
 	}
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
-}
-
-// GetActiveSession gets the active session for a channel
-// Currently returns the default session. Per-channel session mapping is not yet implemented.
-//
-// Future enhancement: Map each bot channel to a specific session for multi-tenancy support.
-// See: https://github.com/keepmind9/clibot/issues/124
-func (e *Engine) GetActiveSession(channel string) *Session {
-	e.sessionMu.RLock()
-	defer e.sessionMu.RUnlock()
-
-	// Return first available session as fallback
-	for _, session := range e.sessions {
-		return session
-	}
-
-	return nil
 }
 
 // getUserKey generates a unique key for a user across platforms

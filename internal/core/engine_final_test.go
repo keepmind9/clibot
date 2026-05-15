@@ -42,33 +42,6 @@ func TestEngine_UpdateSessionState_MultipleUpdates(t *testing.T) {
 	}
 }
 
-// TestEngine_GetActiveSession_MultipleSessions tests GetActiveSession with multiple sessions
-func TestEngine_GetActiveSession_MultipleSessions(t *testing.T) {
-	config := &Config{
-		Sessions: []SessionConfig{
-			{Name: "session1", CLIType: "claude", WorkDir: "/tmp"},
-			{Name: "session2", CLIType: "gemini", WorkDir: "/tmp"},
-			{Name: "session3", CLIType: "opencode", WorkDir: "/tmp"},
-		},
-	}
-	engine := NewEngine(config)
-
-	// Create sessions
-	for _, cfg := range config.Sessions {
-		engine.sessions[cfg.Name] = &Session{
-			Name:    cfg.Name,
-			CLIType: cfg.CLIType,
-			State:   StateIdle,
-		}
-	}
-
-	// GetActiveSession should return one of the sessions
-	// Note: map iteration order is non-deterministic in Go
-	session := engine.GetActiveSession("test-channel")
-	assert.NotNil(t, session)
-	assert.Contains(t, []string{"session1", "session2", "session3"}, session.Name)
-}
-
 // TestEngine_SendToBot_MultipleMessages tests sending multiple messages
 func TestEngine_SendToBot_MultipleMessages(t *testing.T) {
 	config := &Config{

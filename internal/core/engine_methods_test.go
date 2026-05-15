@@ -6,32 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestEngine_GetActiveSession_NoSessions tests GetActiveSession with no sessions
-func TestEngine_GetActiveSession_NoSessions(t *testing.T) {
-	config := &Config{
-		Sessions: []SessionConfig{},
-	}
-	engine := NewEngine(config)
-
-	session := engine.GetActiveSession("test-channel")
-	assert.Nil(t, session)
-}
-
-// TestEngine_GetActiveSession_WithSessions tests GetActiveSession with configured sessions
-func TestEngine_GetActiveSession_WithSessions(t *testing.T) {
-	config := &Config{
-		Sessions: []SessionConfig{
-			{Name: "session1", CLIType: "claude", WorkDir: "/tmp"},
-		},
-	}
-	engine := NewEngine(config)
-
-	// GetActiveSession should not panic
-	_ = engine.GetActiveSession("test-channel")
-	// Verify the sessions map exists
-	assert.NotNil(t, engine.sessions)
-}
-
 // TestEngine_UpdateSessionState_NonExistentSession tests updateSessionState with non-existent session
 func TestEngine_UpdateSessionState_NonExistentSession(t *testing.T) {
 	config := &Config{
