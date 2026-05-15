@@ -15,6 +15,12 @@ clibot is a lightweight middleware that bridges ACP-compatible AI CLI tools (Cla
 - **🎯 Unified Entry Point**: Manage multiple AI tools through a single bot
 - **🔌 Flexible Extension**: Add new CLI or Bot by implementing interfaces
 - **⚡ ACP Support**: Streaming responses, no tmux required (for compatible CLIs)
+- **🔄 Session Switch**: Switch session CLI type on-the-fly (e.g. claude ↔ codex) with conversation resume
+- **📋 Session Templates**: Create sessions instantly with `sn claude|codex|gemini <dir>` — zero config
+- **💾 Session Persistence**: Dynamic sessions survive restarts with automatic state restore
+- **✂️ Auto Message Split**: Long responses auto-split by line with rune-aware counting
+- **🔒 Idle Auto-Cleanup**: Inactive dynamic sessions are automatically cleaned up
+- **🤖 Yolo Mode**: Skip permission prompts for trusted sessions
 
 ## ✨ Claude Code Skill
 
@@ -322,7 +328,10 @@ bots:
 
 ```
 slist                              # List all sessions
+sn <template> <dir> [name]         # Create session from template (e.g. sn claude ~/project)
+snlist                             # List available templates
 suse <session>                     # Switch to session
+sswitch <session> <cli_type>       # Switch session CLI type with resume (admin only)
 snew <name> <type> <dir> [cmd]     # Create new session (admin only)
 sdel <name>                        # Delete session (admin only)
 sclose [name]                      # Close session

@@ -15,6 +15,12 @@ clibot 是一个轻量级中间件，将 ACP 兼容的 AI CLI 工具（Claude Co
 - **🎯 统一入口**：通过单个机器人管理多个 AI 工具
 - **🔌 灵活扩展**：通过实现接口添加新的 CLI 或 Bot
 - **⚡ ACP 支持**：流式响应，无需 tmux（兼容的 CLI）
+- **🔄 会话切换**：即时切换会话 CLI 类型（如 claude ↔ codex），自动恢复对话历史
+- **📋 会话模板**：通过 `sn claude|codex|gemini <目录>` 即时创建会话，零配置
+- **💾 会话持久化**：动态会话重启后自动恢复状态
+- **✂️ 消息自动拆分**：长响应按行自动拆分，rune 精确计数
+- **🔒 空闲自动清理**：不活跃的动态会话自动回收
+- **🤖 Yolo 模式**：跳过权限提示，适用于可信会话
 
 ## ✨ Claude Code 技能
 
@@ -322,7 +328,10 @@ bots:
 
 ```
 slist                              # 列出所有会话
+sn <template> <dir> [name]         # 从模板创建会话（如 sn claude ~/project）
+snlist                             # 列出可用模板
 suse <session>                     # 切换到指定会话
+sswitch <session> <cli_type>       # 切换会话 CLI 类型并恢复对话（仅管理员）
 snew <name> <type> <dir> [cmd]     # 创建新会话（仅管理员）
 sdel <name>                        # 删除会话（仅管理员）
 sclose [name]                      # 关闭会话
