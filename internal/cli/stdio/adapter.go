@@ -130,6 +130,7 @@ func (a *StdioAdapter) CreateSession(sessionName string, opts ...cli.SessionOpti
 		env:       mergedEnv,
 		yolo:      o.Yolo,
 		cancelCtx: cancel,
+		completed: o.Resume,
 	}
 	a.sessions[sessionName] = sess
 
@@ -264,6 +265,25 @@ func (a *StdioAdapter) Close() error {
 	if len(errs) > 0 {
 		return fmt.Errorf("close errors: %s", strings.Join(errs, "; "))
 	}
+	return nil
+}
+
+// StopSession stops a single session and removes it from the adapter.
+func (a *StdioAdapter) StopSession(sessionName string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	sess, ok := a.sessions[sessionName]
+	if !ok {
+		return nil
+	}
+	if sess.process != nil {
+		sess.process.Close()
+	}
+	if sess.cancelCtx != nil {
+		sess.cancelCtx()
+	}
+	delete(a.sessions, sessionName)
 	return nil
 }
 

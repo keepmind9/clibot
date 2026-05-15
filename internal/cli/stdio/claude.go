@@ -30,6 +30,13 @@ func (ClaudeSpec) BuildArgs(opts StartOptions) []string {
 	if opts.Yolo {
 		args = append(args, "--dangerously-skip-permissions")
 	}
+	if opts.Resume {
+		if opts.SessionID != "" {
+			args = append(args, "--resume", opts.SessionID)
+		} else {
+			args = append(args, "--continue")
+		}
+	}
 	return args
 }
 

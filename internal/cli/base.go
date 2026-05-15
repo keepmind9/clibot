@@ -115,3 +115,8 @@ func (b *BaseAdapter) SendInput(sessionName, input string) error {
 	}
 	return nil
 }
+
+// StopSession kills the tmux session.
+func (b *BaseAdapter) StopSession(sessionName string) error {
+	return exec.Command("tmux", "kill-session", "-t", sessionName).Run()
+}

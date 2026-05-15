@@ -51,6 +51,7 @@ var specialCommands = map[string]struct{}{
 	"snew":    {},
 	"sn":      {},
 	"sdel":    {},
+	"sswitch": {},
 	"suse":    {},
 	"sclose":  {},
 	"snlist":  {},
@@ -86,7 +87,7 @@ func isSpecialCommand(input string) (string, bool, []string) {
 	if len(fields) > 1 {
 		cmd := fields[0]
 		// Only check known commands that accept string arguments
-		if cmd == "suse" || cmd == "snew" || cmd == "sn" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" {
+		if cmd == "suse" || cmd == "snew" || cmd == "sn" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" || cmd == "sswitch" {
 			if _, exists := specialCommands[cmd]; exists {
 				return cmd, true, fields[1:]
 			}
@@ -703,6 +704,8 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		e.handleNewSession(args, msg)
 	case "sdel":
 		e.handleDeleteSession(args, msg)
+	case "sswitch":
+		e.handleSwitchSession(args, msg)
 	case "sclose":
 		e.handleCloseSession(args, msg)
 	case "sstatus":
@@ -864,6 +867,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   sn <template> <work_dir> [name] - Create session from template (admin only)
   snlist       - List all available templates
   sdel <name>  - Delete dynamic session (admin only)
+  sswitch <session> <cli_type> - Switch session CLI type with resume (admin only)
 
 **Special Keywords** (exact match, case-insensitive):
   ⚠️ These keywords only work in Hook mode with tmux input
@@ -1368,6 +1372,108 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 
 // handleDeleteSession deletes a dynamic session (admin only)
 // Usage: sdel <name>
+
+func (e *Engine) handleSwitchSession(args []string, msg bot.BotMessage) {
+	logger.WithFields(logrus.Fields{
+		"platform": msg.Platform,
+		"user_id":  msg.UserID,
+		"args":     args,
+	}).Info("handle-switch-session-command")
+
+	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
+		e.SendToBot(msg.Platform, msg.Channel, "\u274c Permission denied: admin only")
+		return
+	}
+
+	if len(args) < 2 {
+		e.SendToBot(msg.Platform, msg.Channel,
+			"\u274c Invalid arguments\nUsage: sswitch <session> <new_cli_type>")
+		return
+	}
+
+	name := args[0]
+	newCLIType := args[1]
+
+	newAdapter, exists := e.cliAdapters[newCLIType]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("\u274c CLI adapter '%s' not found", newCLIType))
+		return
+	}
+
+	e.sessionMu.Lock()
+	var shouldPersist bool
+	defer func() {
+		e.sessionMu.Unlock()
+		if shouldPersist {
+			go e.persistSessions()
+		}
+	}()
+
+	session, exists := e.sessions[name]
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("\u274c Session '%s' not found", name))
+		return
+	}
+
+	if !session.IsDynamic {
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("\u274c Cannot switch configured session '%s'", name))
+		return
+	}
+
+	oldCLIType := session.CLIType
+
+	// Stop old session first, then create new. Rollback on failure.
+	if err := e.stopSession(session); err != nil {
+		logger.WithField("error", err).Warn("switch-stop-old-session-failed")
+	}
+	oldChannel := e.sessionChannels[name]
+	delete(e.sessions, name)
+	delete(e.sessionChannels, name)
+
+	opts := []cli.SessionOption{
+		cli.WithWorkDir(session.WorkDir),
+		cli.WithEnv(session.Env),
+		cli.WithResume(true),
+	}
+	if session.StartCmd != "" {
+		opts = append(opts, cli.WithStartCmd(session.StartCmd))
+	}
+
+	if err := newAdapter.CreateSession(name, opts...); err != nil {
+		// Rollback: restore old session metadata
+		session.State = StateIdle
+		e.sessions[name] = session
+		e.sessionChannels[name] = oldChannel
+		logger.WithFields(logrus.Fields{
+			"session": name,
+			"old_cli": oldCLIType,
+			"error":   err,
+		}).Error("switch-create-failed-rollback")
+		e.SendToBot(msg.Platform, msg.Channel,
+			fmt.Sprintf("\u274c Failed to create session with '%s': %v (old session metadata preserved)", newCLIType, err))
+		return
+	}
+
+	session.CLIType = newCLIType
+	session.State = StateIdle
+	session.cancelCtx = nil
+	e.sessions[name] = session
+	shouldPersist = true
+
+	logger.WithFields(logrus.Fields{
+		"session":  name,
+		"old_cli":  oldCLIType,
+		"new_cli":  newCLIType,
+		"platform": msg.Platform,
+		"user_id":  msg.UserID,
+	}).Info("session-switched")
+
+	e.SendToBot(msg.Platform, msg.Channel,
+		fmt.Sprintf("\u2705 Session '%s' switched: %s \u2192 %s (resume mode)", name, oldCLIType, newCLIType))
+}
 func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	logger.WithFields(logrus.Fields{
 		"platform": msg.Platform,
@@ -1545,43 +1651,23 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 		fmt.Sprintf("✅ Session '%s' closed successfully", sessionName))
 }
 
-// stopSession stops a running session and releases resources
-// This is a helper method used by both sclose and sdel commands
 func (e *Engine) stopSession(session *Session) error {
 	logger.WithFields(logrus.Fields{
 		"session": session.Name,
 		"cliType": session.CLIType,
 	}).Info("stopping-session")
 
-	// Get CLI adapter
 	adapter, exists := e.cliAdapters[session.CLIType]
 	if !exists {
 		return fmt.Errorf("CLI adapter '%s' not found", session.CLIType)
 	}
 
-	// Different cleanup strategies based on CLI type
-	var err error
-	if session.CLIType == "acp" {
-		// ACP adapter: call DeleteSession to cleanup connection and process
-		if acpAdapter, ok := adapter.(*cli.ACPAdapter); ok {
-			err = acpAdapter.DeleteSession(session.Name)
-		} else {
-			err = fmt.Errorf("adapter is not ACPAdapter")
-		}
-	} else {
-		// Tmux-based adapters: kill tmux session
-		cmd := exec.Command("tmux", "kill-session", "-t", session.Name)
-		err = cmd.Run()
-	}
-
-	if err != nil {
+	if err := adapter.StopSession(session.Name); err != nil {
 		return err
 	}
 
-	// Update session state
 	session.State = StateIdle
 
-	// Cancel any running watchdog goroutine
 	if session.cancelCtx != nil {
 		session.cancelCtx()
 		session.cancelCtx = nil

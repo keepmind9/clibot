@@ -46,6 +46,7 @@ type SessionOptions struct {
 	TransportURL string
 	Env          map[string]string
 	Yolo         bool
+	Resume       bool // Resume previous conversation on first turn
 }
 
 // SessionOption configures a SessionOptions value.
@@ -85,6 +86,11 @@ func WithYolo(yolo bool) SessionOption {
 	return func(o *SessionOptions) { o.Yolo = yolo }
 }
 
+// WithResume marks the session as having prior history so the first turn uses resume mode.
+func WithResume(resume bool) SessionOption {
+	return func(o *SessionOptions) { o.Resume = resume }
+}
+
 // CLIAdapter defines the interface for CLI adapters
 type CLIAdapter interface {
 	// SendInput sends input to the CLI (via tmux send-keys)
@@ -112,6 +118,9 @@ type CLIAdapter interface {
 	IsSessionAlive(sessionName string) bool
 
 	// CreateSession creates a new session and starts the CLI.
-	// Use WithWorkDir, WithStartCmd, WithTransportURL, WithEnv, WithYolo options.
+	// Use WithWorkDir, WithStartCmd, WithTransportURL, WithEnv, WithYolo, WithResume options.
 	CreateSession(sessionName string, opts ...SessionOption) error
+
+	// StopSession stops and cleans up a running session.
+	StopSession(sessionName string) error
 }

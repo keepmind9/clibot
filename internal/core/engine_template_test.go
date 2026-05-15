@@ -30,6 +30,7 @@ func (m *mockCLIAdapter) CreateSession(sessionName string, opts ...cli.SessionOp
 	m.lastOpts = opts
 	return m.createSessionErr
 }
+func (m *mockCLIAdapter) StopSession(sessionName string) error { return nil }
 
 // newTestEngine creates a minimal Engine for sn command tests.
 func newTestEngine() *Engine {

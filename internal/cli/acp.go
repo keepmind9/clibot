@@ -884,3 +884,8 @@ func (c *acpClient) ReleaseTerminal(ctx context.Context, params acp.ReleaseTermi
 func (c *acpClient) WaitForTerminalExit(ctx context.Context, params acp.WaitForTerminalExitRequest) (acp.WaitForTerminalExitResponse, error) {
 	return acp.WaitForTerminalExitResponse{}, fmt.Errorf("terminal operations not implemented")
 }
+
+// StopSession delegates to DeleteSession for ACP sessions.
+func (a *ACPAdapter) StopSession(sessionName string) error {
+	return a.DeleteSession(sessionName)
+}
