@@ -64,15 +64,15 @@ func TestGenerateSessionName(t *testing.T) {
 		workDir  string
 		expected string
 	}{
-		{"normal path", "codex", "/home/user/my-project", "codex-my-project"},
-		{"dot base", "claude", "/tmp/.", "claude-session"},
-		{"slash only", "gemini", "/", "gemini-session"},
-		{"empty base after clean", "codex", "/tmp/...", "codex-session"},
-		{"special chars sanitized", "codex", "/tmp/hello world!", "codex-hello-world"},
-		{"multiple hyphens collapsed", "claude", "/tmp/a---b", "claude-a-b"},
-		{"dot segment", "codex", "/tmp/..", "codex-session"},
-		{"unicode replaced", "gemini", "/tmp/项目目录", "gemini-session"},
-		{"simple name", "opencode", "/tmp/app", "opencode-app"},
+		{"normal path", "codex-stdio", "/home/user/my-project", "codex-stdio-my-project"},
+		{"dot base", "claude-stdio", "/tmp/.", "claude-stdio-session"},
+		{"slash only", "gemini-stdio", "/", "gemini-stdio-session"},
+		{"empty base after clean", "codex-stdio", "/tmp/...", "codex-stdio-session"},
+		{"special chars sanitized", "codex-stdio", "/tmp/hello world!", "codex-stdio-hello-world"},
+		{"multiple hyphens collapsed", "claude-stdio", "/tmp/a---b", "claude-stdio-a-b"},
+		{"dot segment", "codex-stdio", "/tmp/..", "codex-stdio-session"},
+		{"unicode replaced", "gemini-stdio", "/tmp/项目目录", "gemini-stdio-session"},
+		{"simple name", "opencode-stdio", "/tmp/app", "opencode-stdio-app"},
 	}
 
 	for _, tt := range tests {
@@ -121,7 +121,7 @@ func TestResolveNameConflict_Exhausted(t *testing.T) {
 
 func TestResolveTemplate_Builtin(t *testing.T) {
 	engine := newTestEngine()
-	for _, name := range []string{"codex", "claude", "gemini", "opencode"} {
+	for _, name := range []string{"claude-stdio", "codex-stdio", "gemini-stdio", "opencode-stdio", "claude", "gemini", "opencode"} {
 		tpl := engine.resolveTemplate(name)
 		require.NotNil(t, tpl, "builtin template '%s' should resolve", name)
 		assert.NotEmpty(t, tpl.CLIType, "builtin '%s' should have CLIType", name)
@@ -137,9 +137,9 @@ func TestResolveTemplate_Unknown(t *testing.T) {
 func TestResolveTemplate_CustomOverridesBuiltin(t *testing.T) {
 	engine := newTestEngine()
 	engine.cfg().SessionTemplates = map[string]SessionTemplate{
-		"codex": {CLIType: "custom-stdio", Yolo: true},
+		"codex-stdio": {CLIType: "custom-stdio", Yolo: true},
 	}
-	tpl := engine.resolveTemplate("codex")
+	tpl := engine.resolveTemplate("codex-stdio")
 	require.NotNil(t, tpl)
 	assert.Equal(t, "custom-stdio", tpl.CLIType)
 	assert.True(t, tpl.Yolo)
@@ -161,17 +161,22 @@ func TestResolveTemplate_CustomOnly(t *testing.T) {
 func TestDefaultBuiltinTemplates_ReturnsNewMap(t *testing.T) {
 	m1 := defaultBuiltinTemplates()
 	m2 := defaultBuiltinTemplates()
-	m1["codex"] = SessionTemplate{CLIType: "mutated"}
-	assert.NotEqual(t, m1["codex"], m2["codex"], "mutation of returned map should not affect future calls")
+	m1["codex-stdio"] = SessionTemplate{CLIType: "mutated"}
+	assert.NotEqual(t, m1["codex-stdio"], m2["codex-stdio"], "mutation of returned map should not affect future calls")
 }
 
 func TestDefaultBuiltinTemplates_ContainsAll(t *testing.T) {
 	templates := defaultBuiltinTemplates()
 	expected := map[string]string{
-		"codex":    "codex-stdio",
-		"claude":   "claude-stdio",
-		"gemini":   "gemini-stdio",
-		"opencode": "opencode-stdio",
+		"claude-stdio":   "claude-stdio",
+		"codex-stdio":    "codex-stdio",
+		"gemini-stdio":   "gemini-stdio",
+		"opencode-stdio": "opencode-stdio",
+		"claude":         "claude",
+		"gemini":         "gemini",
+		"opencode":       "opencode",
+		"claude-acp":     "acp",
+		"gemini-acp":     "acp",
 	}
 	for name, cliType := range expected {
 		tpl, ok := templates[name]
@@ -186,14 +191,14 @@ func TestDefaultBuiltinTemplates_ContainsAll(t *testing.T) {
 func TestHandleNewFromTemplate_NonAdmin(t *testing.T) {
 	engine := newTestEngine()
 	msg := bot.BotMessage{Platform: "testbot", Channel: "ch1", UserID: "stranger"}
-	engine.handleNewFromTemplate([]string{"codex", "/tmp"}, msg)
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/tmp"}, msg)
 	assert.Contains(t, getMockBot(engine).lastMessage, "Permission denied")
 }
 
 func TestHandleNewFromTemplate_TooFewArgs(t *testing.T) {
 	engine := newTestEngine()
 	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
-	engine.handleNewFromTemplate([]string{"codex"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio"}, adminMsg())
 	assert.Contains(t, getMockBot(engine).lastMessage, "Invalid arguments")
 }
 
@@ -224,7 +229,7 @@ func TestHandleNewFromTemplate_EmptyCLIType(t *testing.T) {
 func TestHandleNewFromTemplate_AdapterNotRegistered(t *testing.T) {
 	engine := newTestEngine()
 	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
-	engine.handleNewFromTemplate([]string{"codex", "/tmp", "test-session"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/tmp", "test-session"}, adminMsg())
 	assert.Contains(t, getMockBot(engine).lastMessage, "not registered")
 }
 
@@ -232,7 +237,7 @@ func TestHandleNewFromTemplate_WorkDirNotExist(t *testing.T) {
 	engine := newTestEngine()
 	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
-	engine.handleNewFromTemplate([]string{"codex", "/nonexistent/path/xyz", "test-session"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/nonexistent/path/xyz", "test-session"}, adminMsg())
 	assert.Contains(t, getMockBot(engine).lastMessage, "does not exist")
 }
 
@@ -241,7 +246,7 @@ func TestHandleNewFromTemplate_CustomName(t *testing.T) {
 	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 
-	engine.handleNewFromTemplate([]string{"codex", "/tmp", "my-custom-name"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/tmp", "my-custom-name"}, adminMsg())
 	assert.Contains(t, getMockBot(engine).lastMessage, "my-custom-name")
 	assert.Contains(t, getMockBot(engine).lastMessage, "created")
 }
@@ -251,9 +256,9 @@ func TestHandleNewFromTemplate_AutoName(t *testing.T) {
 	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 
-	engine.handleNewFromTemplate([]string{"codex", "/tmp"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/tmp"}, adminMsg())
 	botMsg := getMockBot(engine).lastMessage
-	assert.Contains(t, botMsg, "codex-")
+	assert.Contains(t, botMsg, "codex-stdio-")
 	assert.Contains(t, botMsg, "created")
 }
 
@@ -261,12 +266,12 @@ func TestHandleNewFromTemplate_WithYolo(t *testing.T) {
 	engine := newTestEngine()
 	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
 	engine.cfg().SessionTemplates = map[string]SessionTemplate{
-		"codex": {CLIType: "codex-stdio", Yolo: true},
+		"codex-stdio": {CLIType: "codex-stdio", Yolo: true},
 	}
 	mockCli := &mockCLIAdapter{}
 	engine.RegisterCLIAdapter("codex-stdio", mockCli)
 
-	engine.handleNewFromTemplate([]string{"codex", "/tmp", "yolo-session"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/tmp", "yolo-session"}, adminMsg())
 	assert.Contains(t, getMockBot(engine).lastMessage, "[yolo]")
 	assert.True(t, mockCli.createSessionCalled)
 }
@@ -276,12 +281,12 @@ func TestHandleNewFromTemplate_NameConflictAutoResolved(t *testing.T) {
 	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 
-	autoName := generateSessionName("codex", "/tmp")
+	autoName := generateSessionName("codex-stdio", "/tmp")
 	engine.sessionMu.Lock()
 	engine.sessions[autoName] = &Session{Name: autoName}
 	engine.sessionMu.Unlock()
 
-	engine.handleNewFromTemplate([]string{"codex", "/tmp"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/tmp"}, adminMsg())
 	assert.Contains(t, getMockBot(engine).lastMessage, "created")
 }
 
@@ -290,7 +295,7 @@ func TestHandleNewFromTemplate_InvalidSessionName(t *testing.T) {
 	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 
-	engine.handleNewFromTemplate([]string{"codex", "/tmp", "bad name!"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/tmp", "bad name!"}, adminMsg())
 	assert.Contains(t, getMockBot(engine).lastMessage, "Invalid session name")
 }
 
@@ -298,12 +303,12 @@ func TestHandleNewFromTemplate_WithEnv(t *testing.T) {
 	engine := newTestEngine()
 	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
 	engine.cfg().SessionTemplates = map[string]SessionTemplate{
-		"codex": {CLIType: "codex-stdio", Env: map[string]string{"FOO": "bar"}},
+		"codex-stdio": {CLIType: "codex-stdio", Env: map[string]string{"FOO": "bar"}},
 	}
 	mockCli := &mockCLIAdapter{}
 	engine.RegisterCLIAdapter("codex-stdio", mockCli)
 
-	engine.handleNewFromTemplate([]string{"codex", "/tmp", "env-test"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/tmp", "env-test"}, adminMsg())
 	assert.True(t, mockCli.createSessionCalled)
 
 	// Verify env was passed through SessionOptions
@@ -324,17 +329,17 @@ func TestListTemplates_BuiltInOnly(t *testing.T) {
 	engine.listTemplates(bot.BotMessage{Platform: "testbot", Channel: "ch1"})
 
 	assert.Equal(t, 1, mockBot.messageCount)
-	assert.Contains(t, mockBot.lastMessage, "codex")
-	assert.Contains(t, mockBot.lastMessage, "claude")
-	assert.Contains(t, mockBot.lastMessage, "gemini")
-	assert.Contains(t, mockBot.lastMessage, "opencode")
+	assert.Contains(t, mockBot.lastMessage, "codex-stdio")
+	assert.Contains(t, mockBot.lastMessage, "claude-stdio")
+	assert.Contains(t, mockBot.lastMessage, "gemini-stdio")
+	assert.Contains(t, mockBot.lastMessage, "opencode-stdio")
 	assert.Contains(t, mockBot.lastMessage, "built-in")
 }
 
 func TestListTemplates_CustomOverridesBuiltIn(t *testing.T) {
 	engine := newTestEngine()
 	engine.cfg().SessionTemplates = map[string]SessionTemplate{
-		"codex": {CLIType: "codex-stdio", Yolo: true},
+		"codex-stdio": {CLIType: "codex-stdio", Yolo: true},
 	}
 	mockBot := &mockBotAdapter{}
 	engine.RegisterBotAdapter("testbot", mockBot)
@@ -344,7 +349,7 @@ func TestListTemplates_CustomOverridesBuiltIn(t *testing.T) {
 	assert.Equal(t, 1, mockBot.messageCount)
 	assert.Contains(t, mockBot.lastMessage, "[yolo]")
 	assert.Contains(t, mockBot.lastMessage, "custom")
-	assert.Equal(t, 1, strings.Count(mockBot.lastMessage, "**codex**"))
+	assert.Equal(t, 1, strings.Count(mockBot.lastMessage, "**codex-stdio**"))
 }
 
 func TestListTemplates_SortedOutput(t *testing.T) {

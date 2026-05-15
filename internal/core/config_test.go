@@ -393,7 +393,7 @@ cli_adapters:
 	assert.Contains(t, err.Error(), "at least one bot must be configured")
 }
 
-func TestValidateConfig_MissingSession_ReturnsError(t *testing.T) {
+func TestValidateConfig_NoSession_ShouldPass(t *testing.T) {
 	configContent := `
 hook_server:
   port: 8080
@@ -425,12 +425,10 @@ cli_adapters:
 	}
 	tmpFile.Close()
 
-	// Load config
+	// Load config - should succeed since sessions can be created dynamically
 	_, err = LoadConfig(tmpFile.Name())
 
-	// Assert
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "at least one session must be configured")
+	assert.NoError(t, err)
 }
 
 func TestExpandEnv_UndefinedVariable_ReturnsError(t *testing.T) {

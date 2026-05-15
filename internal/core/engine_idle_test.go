@@ -200,7 +200,7 @@ func TestHandleNewFromTemplate_SetsLastActiveAt(t *testing.T) {
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 	before := time.Now()
 
-	engine.handleNewFromTemplate([]string{"codex", "/tmp", "last-active-test"}, adminMsg())
+	engine.handleNewFromTemplate([]string{"codex-stdio", "/tmp", "last-active-test"}, adminMsg())
 
 	engine.sessionMu.RLock()
 	s := engine.sessions["last-active-test"]

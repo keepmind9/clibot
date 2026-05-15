@@ -231,3 +231,8 @@ type NeedsStdioAdapter interface {
 func IsStdioCLIType(cliType string) bool {
 	return strings.HasSuffix(cliType, "-stdio")
 }
+
+// KnownStdioTypes returns all built-in stdio adapter types.
+func KnownStdioTypes() []string {
+	return []string{"claude-stdio", "codex-stdio", "gemini-stdio", "opencode-stdio"}
+}

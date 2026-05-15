@@ -137,9 +137,10 @@ type CLIAdapterConfig struct {
 // SessionTemplate defines a reusable blueprint for creating sessions via IM.
 // Built-in defaults: codex, claude, gemini, opencode (zero config needed).
 type SessionTemplate struct {
-	CLIType string            `yaml:"cli_type"` // Required: e.g., codex-stdio, claude-stdio
-	Yolo    bool              `yaml:"yolo"`     // Auto-approve all permission prompts
-	Env     map[string]string `yaml:"env"`      // Template-level env vars
+	CLIType  string            `yaml:"cli_type"`  // Required: e.g., codex-stdio, claude-stdio, acp
+	StartCmd string            `yaml:"start_cmd"` // Optional: override start command (e.g., "claude-agent-acp")
+	Yolo     bool              `yaml:"yolo"`      // Auto-approve all permission prompts
+	Env      map[string]string `yaml:"env"`       // Template-level env vars
 }
 
 // LoggingConfig represents logging configuration

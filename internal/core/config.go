@@ -222,9 +222,7 @@ func validateBotAndSessionConfig(config *Config) error {
 	if len(config.Bots) == 0 {
 		return fmt.Errorf("at least one bot must be configured")
 	}
-	if len(config.Sessions) == 0 {
-		return fmt.Errorf("at least one session must be configured")
-	}
+	// Sessions can be created dynamically via commands, so no minimum is required
 	return nil
 }
 

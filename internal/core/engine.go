@@ -1172,7 +1172,7 @@ func (e *Engine) listTemplates(msg bot.BotMessage) {
 
 // handleNewFromTemplate creates a dynamic session from a template (admin only).
 // Usage: sn <template> <work_dir> [name]
-// Built-in templates: codex, claude, gemini, opencode
+// Built-in templates match adapter names: claude-stdio, codex-stdio, gemini-stdio, opencode-stdio, claude, gemini, opencode
 func (e *Engine) handleNewFromTemplate(args []string, msg bot.BotMessage) {
 	logger.WithFields(logrus.Fields{
 		"platform": msg.Platform,
@@ -1187,7 +1187,7 @@ func (e *Engine) handleNewFromTemplate(args []string, msg bot.BotMessage) {
 
 	if len(args) < 2 {
 		e.SendToBot(msg.Platform, msg.Channel,
-			"❌ Invalid arguments\nUsage: sn <template> <work_dir> [name]\nTemplates: codex, claude, gemini, opencode")
+			"❌ Invalid arguments\nUsage: sn <template> <work_dir> [name]\nTemplates: " + builtinTemplateNames())
 		return
 	}
 
@@ -1197,7 +1197,7 @@ func (e *Engine) handleNewFromTemplate(args []string, msg bot.BotMessage) {
 	tpl := e.resolveTemplate(templateName)
 	if tpl == nil {
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Unknown template: '%s'\nBuilt-in: codex, claude, gemini, opencode", templateName))
+			fmt.Sprintf("❌ Unknown template: '%s'\nBuilt-in: "+builtinTemplateNames(), templateName))
 		return
 	}
 
@@ -1214,11 +1214,15 @@ func (e *Engine) handleNewFromTemplate(args []string, msg bot.BotMessage) {
 		name = generateSessionName(templateName, workDir)
 	}
 
+	startCmd := tpl.CLIType
+	if tpl.StartCmd != "" {
+		startCmd = tpl.StartCmd
+	}
 	e.createDynamicSession(dynamicSessionParams{
 		name:         name,
 		cliType:      tpl.CLIType,
 		workDir:      workDir,
-		startCmd:     tpl.CLIType,
+		startCmd:     startCmd,
 		env:          tpl.Env,
 		yolo:         tpl.Yolo,
 		templateName: templateName,
@@ -1273,13 +1277,30 @@ func generateSessionName(template, workDir string) string {
 }
 
 // defaultBuiltinTemplates returns the built-in session templates.
+// Template names match CLI adapter names 1:1 for clarity.
+// ACP templates are special: they use the "acp" adapter but have tool-specific start_cmd.
 func defaultBuiltinTemplates() map[string]SessionTemplate {
 	return map[string]SessionTemplate{
-		"codex":    {CLIType: "codex-stdio"},
-		"claude":   {CLIType: "claude-stdio"},
-		"gemini":   {CLIType: "gemini-stdio"},
-		"opencode": {CLIType: "opencode-stdio"},
+		"claude-stdio":   {CLIType: "claude-stdio"},
+		"codex-stdio":    {CLIType: "codex-stdio"},
+		"gemini-stdio":   {CLIType: "gemini-stdio"},
+		"opencode-stdio": {CLIType: "opencode-stdio"},
+		"claude":         {CLIType: "claude"},
+		"gemini":         {CLIType: "gemini"},
+		"opencode":       {CLIType: "opencode"},
+		"claude-acp":     {CLIType: "acp", StartCmd: "claude-agent-acp"},
+		"gemini-acp":     {CLIType: "acp", StartCmd: "gemini --experimental-acp"},
 	}
+}
+
+// builtinTemplateNames returns a comma-separated list of built-in template names.
+func builtinTemplateNames() string {
+	names := make([]string, 0, len(defaultBuiltinTemplates()))
+	for name := range defaultBuiltinTemplates() {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 // isValidSessionName checks if session name is valid

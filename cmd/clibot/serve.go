@@ -139,126 +139,107 @@ func init() {
 	serveCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "Configuration file path")
 }
 
-// registerCLIAdapters registers all configured CLI adapters using factory pattern
+// registerCLIAdapters registers all CLI adapters. Every known type is registered
+// with defaults so dynamic sessions (sn/snew) always work. Config overrides are
+// applied when the corresponding entry exists in cli_adapters.
 func registerCLIAdapters(engine *core.Engine, config *core.Config) error {
-	// Register ACP adapter (uses session-level config)
-	// Check if any session uses ACP transport
-	for _, session := range config.Sessions {
-		if session.CLIType == "acp" && session.Transport != "" {
-			// Get ACP configuration from global config
-			acpConfig, ok := config.CLIAdapters["acp"]
+	// --- ACP adapter ---
+	acpAdapter, err := cli.NewACPAdapter(cli.ACPAdapterConfig{})
+	if err != nil {
+		return fmt.Errorf("failed to create ACP adapter: %w", err)
+	}
+	acpAdapter.SetEngine(engine)
+	engine.RegisterCLIAdapter("acp", acpAdapter)
+
+	// --- Stdio adapters ---
+	for _, cliType := range stdio.KnownStdioTypes() {
+		spec := newStdioSpec(cliType)
+		if spec == nil {
+			continue
+		}
+		adapter := stdio.NewStdioAdapter(spec, stdio.StdioAdapterConfig{})
+		adapter.SetEngine(engine)
+		engine.RegisterCLIAdapter(cliType, adapter)
+	}
+
+	// --- Hook-mode adapters ---
+	for _, name := range []string{"claude", "gemini", "opencode"} {
+		var adapter cli.CLIAdapter
+		var err error
+		switch name {
+		case "claude":
+			adapter, err = cli.NewClaudeAdapter(cli.ClaudeAdapterConfig{})
+		case "gemini":
+			adapter, err = cli.NewGeminiAdapter(cli.GeminiAdapterConfig{})
+		case "opencode":
+			adapter, err = cli.NewOpenCodeAdapter(cli.OpenCodeAdapterConfig{})
+		}
+		if err != nil {
+			return fmt.Errorf("failed to create %s adapter: %w", name, err)
+		}
+		engine.RegisterCLIAdapter(name, adapter)
+	}
+
+	// --- Apply config overrides ---
+	// Config entries override the default adapters registered above.
+	for cliType, cliConfig := range config.CLIAdapters {
+		switch {
+		case cliType == "acp":
 			var idleTimeout time.Duration
-			var err error
-
-			// Get environment variables (nil if not configured)
-			var env map[string]string
-			if ok {
-				env = acpConfig.Env
-			}
-
-			if ok && acpConfig.Timeout != "" {
-				// Parse timeout if specified
-				idleTimeout, err = time.ParseDuration(acpConfig.Timeout)
-				if err != nil {
-					return fmt.Errorf("failed to parse acp timeout: %w", err)
+			if cliConfig.Timeout != "" {
+				if d, err := time.ParseDuration(cliConfig.Timeout); err == nil {
+					idleTimeout = d
 				}
 			}
-			// Use default max total timeout (1 hour)
-
-			// Create ACP adapter with parsed configuration
 			acpAdapter, err := cli.NewACPAdapter(cli.ACPAdapterConfig{
-				IdleTimeout:     idleTimeout, // 0 = use default (5 min)
-				MaxTotalTimeout: 0,           // 0 = use default (1 hour)
-				Env:             env,         // Environment variables
+				IdleTimeout:     idleTimeout,
+				MaxTotalTimeout: 0,
+				Env:             cliConfig.Env,
 			})
 			if err != nil {
 				return fmt.Errorf("failed to create ACP adapter: %w", err)
 			}
-			// Set engine reference for sending responses
 			acpAdapter.SetEngine(engine)
 			engine.RegisterCLIAdapter("acp", acpAdapter)
 
-			// Only register once for all ACP sessions
-			break
-		}
-	}
-
-	// Register stdio adapters (e.g., claude-stdio)
-	// Collect unique stdio cli_types from sessions
-	stdioTypes := map[string]bool{}
-	for _, session := range config.Sessions {
-		if stdio.IsStdioCLIType(session.CLIType) {
-			stdioTypes[session.CLIType] = true
-		}
-	}
-	for cliType := range stdioTypes {
-		spec := newStdioSpec(cliType)
-		if spec == nil {
-			log.Printf("Warning: stdio adapter type '%s' not implemented yet", cliType)
-			continue
-		}
-
-		var permTimeout time.Duration
-		var idleTimeout time.Duration
-		var env map[string]string
-
-		if adapterCfg, ok := config.CLIAdapters[cliType]; ok {
-			env = adapterCfg.Env
-			if adapterCfg.Timeout != "" {
-				if d, err := time.ParseDuration(adapterCfg.Timeout); err == nil {
+		case stdio.IsStdioCLIType(cliType):
+			spec := newStdioSpec(cliType)
+			if spec == nil {
+				continue
+			}
+			var permTimeout time.Duration
+			if cliConfig.Timeout != "" {
+				if d, err := time.ParseDuration(cliConfig.Timeout); err == nil {
 					permTimeout = d
 				}
 			}
-		}
-
-		adapter := stdio.NewStdioAdapter(spec, stdio.StdioAdapterConfig{
-			PermissionTimeout: permTimeout,
-			IdleTimeout:       idleTimeout,
-			Env:               env,
-		})
-		adapter.SetEngine(engine)
-		engine.RegisterCLIAdapter(cliType, adapter)
-		log.Printf("Registered %s CLI adapter (mode: stdio)", cliType)
-	}
-
-	// Register hook adapters
-	for cliType, cliConfig := range config.CLIAdapters {
-		var adapter cli.CLIAdapter
-		var err error
-
-		// Skip ACP adapter (already registered above)
-		if cliType == "acp" {
-			continue
-		}
-		// Skip stdio adapters (already registered above)
-		if stdio.IsStdioCLIType(cliType) {
-			continue
-		}
-
-		switch cliType {
-		case "claude":
-			adapter, err = cli.NewClaudeAdapter(cli.ClaudeAdapterConfig{
-				Env: cliConfig.Env,
+			adapter := stdio.NewStdioAdapter(spec, stdio.StdioAdapterConfig{
+				PermissionTimeout: permTimeout,
+				Env:               cliConfig.Env,
 			})
-		case "gemini":
-			adapter, err = cli.NewGeminiAdapter(cli.GeminiAdapterConfig{
-				Env: cliConfig.Env,
-			})
-		case "opencode":
-			adapter, err = cli.NewOpenCodeAdapter(cli.OpenCodeAdapterConfig{
-				Env: cliConfig.Env,
-			})
+			adapter.SetEngine(engine)
+			engine.RegisterCLIAdapter(cliType, adapter)
+
 		default:
-			log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
-			continue
+			// Hook-mode override
+			var adapter cli.CLIAdapter
+			var err error
+			switch cliType {
+			case "claude":
+				adapter, err = cli.NewClaudeAdapter(cli.ClaudeAdapterConfig{Env: cliConfig.Env})
+			case "gemini":
+				adapter, err = cli.NewGeminiAdapter(cli.GeminiAdapterConfig{Env: cliConfig.Env})
+			case "opencode":
+				adapter, err = cli.NewOpenCodeAdapter(cli.OpenCodeAdapterConfig{Env: cliConfig.Env})
+			default:
+				log.Printf("Warning: CLI adapter type '%s' not implemented yet", cliType)
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("failed to create %s adapter: %w", cliType, err)
+			}
+			engine.RegisterCLIAdapter(cliType, adapter)
 		}
-
-		if err != nil {
-			return fmt.Errorf("failed to create %s CLI adapter: %w", cliType, err)
-		}
-
-		engine.RegisterCLIAdapter(cliType, adapter)
-		log.Printf("Registered %s CLI adapter (mode: hook)", cliType)
 	}
 
 	return nil
