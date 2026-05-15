@@ -310,3 +310,45 @@ func TestHandleExitSession_WithSessionNameArg(t *testing.T) {
 	assert.Equal(t, 1, len(msgs))
 	assert.Contains(t, msgs[0].message, "Exited session 'my-session'")
 }
+
+func TestHandleUseSession_CleansUpOldSessionChannels(t *testing.T) {
+	config := &Config{
+		Sessions: []SessionConfig{
+			{Name: "session1", CLIType: "claude", WorkDir: "/tmp"},
+			{Name: "session2", CLIType: "claude", WorkDir: "/tmp"},
+		},
+		Security: SecurityConfig{
+			WhitelistEnabled: true,
+			AllowedUsers:     map[string][]string{"testbot": {"user1"}},
+		},
+	}
+	engine := NewEngine(config)
+
+	mockBot := &trackingMockBot{}
+	engine.RegisterBotAdapter("testbot", mockBot)
+	engine.RegisterCLIAdapter("claude", &mockCLIAdapter{})
+
+	// Set up sessions in engine
+	engine.sessions["session1"] = &Session{Name: "session1", CLIType: "claude", State: StateIdle, WorkDir: "/tmp"}
+	engine.sessions["session2"] = &Session{Name: "session2", CLIType: "claude", State: StateIdle, WorkDir: "/tmp"}
+
+	// User1 in session1
+	engine.sessionMu.Lock()
+	engine.userSessions["testbot:user1"] = "session1"
+	engine.sessionChannels["session1"] = map[string]BotChannel{
+		"testbot:user1": {Platform: "testbot", Channel: "ch1"},
+	}
+	engine.sessionChannels["session2"] = map[string]BotChannel{}
+	engine.sessionMu.Unlock()
+
+	// User1 switches to session2
+	engine.HandleSpecialCommandWithArgs("suse", []string{"session2"}, bot.BotMessage{
+		Platform: "testbot", UserID: "user1", Channel: "ch1",
+	})
+
+	engine.sessionMu.RLock()
+	_, oldExists := engine.sessionChannels["session1"]["testbot:user1"]
+	engine.sessionMu.RUnlock()
+
+	assert.False(t, oldExists, "user1 should be removed from session1 channels")
+}

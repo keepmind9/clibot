@@ -1348,6 +1348,17 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	}
 
 	// 4. Update user's current session
+	// Clean up old session's channel set
+	oldSessionName := e.userSessions[userKey]
+	if oldSessionName != "" && oldSessionName != sessionName {
+		if oldChannels, ok := e.sessionChannels[oldSessionName]; ok {
+			delete(oldChannels, userKey)
+			if len(oldChannels) == 0 {
+				delete(e.sessionChannels, oldSessionName)
+			}
+		}
+	}
+
 	wasSwitched := e.userSessions[userKey] != sessionName
 	e.userSessions[userKey] = sessionName
 
