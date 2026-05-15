@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/keepmind9/clibot/internal/logger"
@@ -56,9 +55,7 @@ func NewStdioProcess(ctx context.Context, spec CLISpec, opts StartOptions) (*Std
 	cmd := exec.CommandContext(ctx, binary, args...)
 
 	// Process group management
-	attrs := &syscall.SysProcAttr{}
-	attrs.Setpgid = true
-	cmd.SysProcAttr = attrs
+	cmd.SysProcAttr = newSysProcAttr()
 
 	// Working directory
 	if opts.WorkDir != "" {
@@ -187,7 +184,7 @@ func (p *StdioProcess) Close() error {
 			"cli": p.spec.Name(),
 			"pid": p.cmd.Process.Pid,
 		}).Warn("stdio-process-shutdown-timeout-sending-term")
-		p.cmd.Process.Signal(syscall.SIGTERM)
+		p.cmd.Process.Signal(terminateSignal())
 	}
 
 	select {
