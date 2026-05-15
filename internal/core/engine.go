@@ -55,6 +55,7 @@ var specialCommands = map[string]struct{}{
 	"suse":    {},
 	"sclose":  {},
 	"snlist":  {},
+	"sexit":   {},
 }
 
 // isSpecialCommand checks if input is a special command.
@@ -87,7 +88,7 @@ func isSpecialCommand(input string) (string, bool, []string) {
 	if len(fields) > 1 {
 		cmd := fields[0]
 		// Only check known commands that accept string arguments
-		if cmd == "suse" || cmd == "snew" || cmd == "sn" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" || cmd == "sswitch" {
+		if cmd == "suse" || cmd == "snew" || cmd == "sn" || cmd == "sdel" || cmd == "sclose" || cmd == "sstatus" || cmd == "sswitch" || cmd == "sexit" {
 			if _, exists := specialCommands[cmd]; exists {
 				return cmd, true, fields[1:]
 			}
@@ -391,7 +392,7 @@ func (e *Engine) getSessionCmdLock(sessionName string) *sync.Mutex {
 // Global commands like slist, whoami, help do not require locking
 func requiresSessionLock(command string) bool {
 	switch command {
-	case "suse", "sclose", "sdel", "sstatus":
+	case "suse", "sclose", "sdel", "sstatus", "sexit":
 		return true
 	default:
 		return false
@@ -713,6 +714,8 @@ func (e *Engine) HandleSpecialCommandWithArgs(command string, args []string, msg
 		e.handleCloseSession(args, msg)
 	case "sstatus":
 		e.handleSessionStatus(args, msg)
+	case "sexit":
+		e.handleExitSession(args, msg)
 	default:
 		e.SendToBot(msg.Platform, msg.Channel,
 			fmt.Sprintf("❌ Unknown command: %s\nUse 'help' to see available commands", command))
@@ -871,6 +874,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   snlist       - List all available templates
   sdel <name>  - Delete dynamic session (admin only)
   sswitch <session> <cli_type> - Switch session CLI type with resume (admin only)
+  sexit [name] - Exit current session (or specified session)
 
 **Special Keywords** (exact match, case-insensitive):
   ⚠️ These keywords only work in Hook mode with tmux input
@@ -1654,6 +1658,60 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 	}).Info("session-closed-successfully")
 
 	response = fmt.Sprintf("✅ Session '%s' closed successfully", sessionName)
+}
+
+// handleExitSession removes the calling user from their current session (or a named session).
+// The session itself is not stopped; only the user's binding is removed.
+// Usage: sexit [session_name]
+func (e *Engine) handleExitSession(args []string, msg bot.BotMessage) {
+	userKey := getUserKey(msg.Platform, msg.UserID)
+
+	e.sessionMu.Lock()
+	var response string
+	defer func() {
+		e.sessionMu.Unlock()
+		e.SendToBot(msg.Platform, msg.Channel, response)
+	}()
+
+	// Resolve session name
+	sessionName := ""
+	if len(args) > 0 {
+		sessionName = args[0]
+	} else {
+		var ok bool
+		sessionName, ok = e.userSessions[userKey]
+		if !ok {
+			response = "❌ You are not in any session"
+			return
+		}
+	}
+
+	// Verify session exists
+	session, exists := e.sessions[sessionName]
+	if !exists {
+		response = fmt.Sprintf("❌ Session '%s' not found", sessionName)
+		return
+	}
+
+	// Verify user is in this session
+	if e.userSessions[userKey] != sessionName {
+		response = fmt.Sprintf("❌ You are not in session '%s'", sessionName)
+		return
+	}
+
+	// Remove from userSessions
+	delete(e.userSessions, userKey)
+
+	// Remove from sessionChannels
+	if channels, ok := e.sessionChannels[sessionName]; ok {
+		delete(channels, userKey)
+		if len(channels) == 0 {
+			delete(e.sessionChannels, sessionName)
+		}
+	}
+
+	response = fmt.Sprintf("✅ Exited session '%s' (%s)", session.Name, session.CLIType)
+	go e.persistSessions()
 }
 
 func (e *Engine) stopSession(session *Session) error {
