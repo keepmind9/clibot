@@ -45,6 +45,7 @@ Thumbs.db
 __debug_bin*
 tmp
 docs/tmp
+docs/superpowers
 
 # Bug analysis documentation (kept for reference but not committed)
 BUG_*.md

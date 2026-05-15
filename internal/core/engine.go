@@ -1722,7 +1722,11 @@ func (e *Engine) handleExitSession(args []string, msg bot.BotMessage) {
 	}
 
 	response = fmt.Sprintf("✅ Exited session '%s' (%s)", session.Name, session.CLIType)
-	go e.persistSessions()
+
+	// Persist after releasing lock
+	defer func() {
+		go e.persistSessions()
+	}()
 }
 
 func (e *Engine) stopSession(session *Session) error {
@@ -2556,7 +2560,7 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 		"response_length": len(message),
 	}).Info("sending-response-to-session")
 
-	for _, botChannel := range e.snapshotSessionChannels(sessionName) {
+	for _, botChannel := range channels {
 		e.SendToBot(botChannel.Platform, botChannel.Channel, message)
 		if botChannel.MessageID != "" {
 			e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)

@@ -352,3 +352,103 @@ func TestHandleUseSession_CleansUpOldSessionChannels(t *testing.T) {
 
 	assert.False(t, oldExists, "user1 should be removed from session1 channels")
 }
+
+// --- snapshotSessionChannels tests ---
+
+func TestSnapshotSessionChannels_Empty(t *testing.T) {
+	config := &Config{}
+	engine := NewEngine(config)
+
+	result := engine.snapshotSessionChannels("nonexistent")
+	assert.Nil(t, result)
+}
+
+func TestSnapshotSessionChannels_WithChannels(t *testing.T) {
+	config := &Config{}
+	engine := NewEngine(config)
+
+	engine.sessionMu.Lock()
+	engine.sessionChannels["s1"] = map[string]BotChannel{
+		"testbot:u1": {Platform: "testbot", Channel: "ch1"},
+		"testbot:u2": {Platform: "testbot", Channel: "ch2"},
+	}
+	engine.sessionMu.Unlock()
+
+	result := engine.snapshotSessionChannels("s1")
+	assert.Len(t, result, 2)
+
+	channels := map[string]bool{}
+	for _, ch := range result {
+		channels[ch.Channel] = true
+	}
+	assert.True(t, channels["ch1"])
+	assert.True(t, channels["ch2"])
+}
+
+// --- SendPermissionPrompt fan-out test ---
+
+func TestSendPermissionPrompt_FanOut(t *testing.T) {
+	config := &Config{
+		Sessions: []SessionConfig{
+			{Name: "perm-test", CLIType: "claude", WorkDir: "/tmp"},
+		},
+	}
+	engine := NewEngine(config)
+
+	mockBot := &trackingMockBot{}
+	engine.RegisterBotAdapter("testbot", mockBot)
+
+	engine.sessionMu.Lock()
+	engine.sessions["perm-test"] = &Session{Name: "perm-test", CLIType: "claude", State: StateIdle}
+	engine.sessionChannels["perm-test"] = map[string]BotChannel{
+		"testbot:user1": {Platform: "testbot", Channel: "ch1"},
+		"testbot:user2": {Platform: "testbot", Channel: "ch2"},
+	}
+	engine.sessionMu.Unlock()
+
+	engine.SendPermissionPrompt("perm-test", "permission required")
+
+	msgs := mockBot.getMessages()
+	assert.Len(t, msgs, 2)
+
+	channels := map[string]string{}
+	for _, m := range msgs {
+		channels[m.channel] = m.message
+	}
+	assert.Equal(t, "permission required", channels["ch1"])
+	assert.Equal(t, "permission required", channels["ch2"])
+}
+
+// --- sendResponseToUser fan-out test ---
+
+func TestSendResponseToUser_FanOut(t *testing.T) {
+	config := &Config{
+		Sessions: []SessionConfig{
+			{Name: "resp-test", CLIType: "claude", WorkDir: "/tmp"},
+		},
+	}
+	engine := NewEngine(config)
+
+	mockBot := &trackingMockBot{}
+	engine.RegisterBotAdapter("testbot", mockBot)
+
+	engine.sessionMu.Lock()
+	engine.sessions["resp-test"] = &Session{Name: "resp-test", CLIType: "claude", State: StateIdle}
+	engine.sessionChannels["resp-test"] = map[string]BotChannel{
+		"testbot:user1": {Platform: "testbot", Channel: "ch1"},
+		"testbot:user2": {Platform: "testbot", Channel: "ch2"},
+	}
+	engine.sessionMu.Unlock()
+
+	engine.sendResponseToUser("resp-test", "response data")
+
+	msgs := mockBot.getMessages()
+	assert.Len(t, msgs, 2)
+
+	channels := map[string]string{}
+	for _, m := range msgs {
+		channels[m.channel] = m.message
+	}
+	assert.Equal(t, "response data", channels["ch1"])
+	assert.Equal(t, "response data", channels["ch2"])
+}
