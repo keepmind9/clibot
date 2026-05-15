@@ -31,8 +31,8 @@ func newSyncBotAdapter() *syncBotAdapter {
 	}
 }
 
-func (s *syncBotAdapter) Start(func(bot.BotMessage)) error { return nil }
-func (s *syncBotAdapter) Stop() error                      { return nil }
+func (s *syncBotAdapter) Start(func(bot.BotMessage)) error       { return nil }
+func (s *syncBotAdapter) Stop() error                            { return nil }
 func (s *syncBotAdapter) SetMessageHandler(func(bot.BotMessage)) {}
 func (s *syncBotAdapter) GetMessageHandler() func(bot.BotMessage) {
 	return func(bot.BotMessage) {}

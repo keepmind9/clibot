@@ -959,23 +959,25 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 
 	e.sessionMu.Lock()
 	var shouldPersist bool
+	var response string
 	defer func() {
 		e.sessionMu.Unlock()
 		if shouldPersist {
 			go e.persistSessions()
+		}
+		if response != "" {
+			e.SendToBot(msg.Platform, msg.Channel, response)
 		}
 	}()
 	name := p.name
 	if p.autoName {
 		name = e.resolveNameConflict(name)
 		if name == "" {
-			e.SendToBot(msg.Platform, msg.Channel,
-				"❌ Too many sessions with similar names. Please specify a custom name.")
+			response = "❌ Too many sessions with similar names. Please specify a custom name."
 			return
 		}
 	} else if _, exists := e.sessions[name]; exists {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Session '%s' already exists", name))
+		response = fmt.Sprintf("❌ Session '%s' already exists", name)
 		return
 	}
 
@@ -987,8 +989,7 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 		}
 	}
 	if dynamicCount >= e.config.Session.MaxDynamicSessions {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Maximum dynamic session limit reached (%d)", e.config.Session.MaxDynamicSessions))
+		response = fmt.Sprintf("❌ Maximum dynamic session limit reached (%d)", e.config.Session.MaxDynamicSessions)
 		return
 	}
 
@@ -1023,7 +1024,7 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 		cli.WithYolo(p.yolo),
 	); err != nil {
 		logger.WithField("error", err).Error("failed-to-create-dynamic-session")
-		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to create session: %v", err))
+		response = fmt.Sprintf("❌ Failed to create session: %v", err)
 		return
 	}
 
@@ -1052,9 +1053,8 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 	if p.templateName != "" {
 		tplStr = fmt.Sprintf("\nTemplate: %s", p.templateName)
 	}
-	e.SendToBot(msg.Platform, msg.Channel,
-		fmt.Sprintf("✅ Session '%s' created%s%s\nCLI: %s\nWorkDir: %s",
-			name, yoloStr, tplStr, p.cliType, expandedDir))
+	response = fmt.Sprintf("✅ Session '%s' created%s%s\nCLI: %s\nWorkDir: %s",
+		name, yoloStr, tplStr, p.cliType, expandedDir)
 }
 
 // dynamicSessionParams holds parameters for dynamic session creation.
@@ -1305,13 +1305,18 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	userKey := getUserKey(msg.Platform, msg.UserID)
 
 	e.sessionMu.Lock()
-	defer e.sessionMu.Unlock()
+	var response string
+	defer func() {
+		e.sessionMu.Unlock()
+		if response != "" {
+			e.SendToBot(msg.Platform, msg.Channel, response)
+		}
+	}()
 
 	// 2. Check if session exists
 	session, exists := e.sessions[sessionName]
 	if !exists {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Session '%s' does not exist\nUse 'slist' to see available sessions", sessionName))
+		response = fmt.Sprintf("❌ Session '%s' does not exist\nUse 'slist' to see available sessions", sessionName)
 		return
 	}
 
@@ -1331,8 +1336,7 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 			"session": sessionName,
 			"error":   err,
 		}).Error("failed-to-ensure-session-started")
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Failed to start session '%s': %v", sessionName, err))
+		response = fmt.Sprintf("❌ Failed to start session '%s': %v", sessionName, err)
 		return
 	}
 
@@ -1347,7 +1351,7 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	}).Info("user-switched-session")
 
 	// 5. Success response
-	response := fmt.Sprintf("✅ Your current session is now: **%s**\n\n", sessionName)
+	response = fmt.Sprintf("✅ Your current session is now: **%s**\n\n", sessionName)
 
 	if !sessionWasRunning {
 		response += "🚀 Session was not running, started automatically\n\n"
@@ -1366,8 +1370,6 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	if !wasSwitched {
 		response += "\nℹ️  You were already using this session"
 	}
-
-	e.SendToBot(msg.Platform, msg.Channel, response)
 }
 
 // handleDeleteSession deletes a dynamic session (admin only)
@@ -1403,23 +1405,25 @@ func (e *Engine) handleSwitchSession(args []string, msg bot.BotMessage) {
 
 	e.sessionMu.Lock()
 	var shouldPersist bool
+	var response string
 	defer func() {
 		e.sessionMu.Unlock()
 		if shouldPersist {
 			go e.persistSessions()
 		}
+		if response != "" {
+			e.SendToBot(msg.Platform, msg.Channel, response)
+		}
 	}()
 
 	session, exists := e.sessions[name]
 	if !exists {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("\u274c Session '%s' not found", name))
+		response = fmt.Sprintf("\u274c Session '%s' not found", name)
 		return
 	}
 
 	if !session.IsDynamic {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("\u274c Cannot switch configured session '%s'", name))
+		response = fmt.Sprintf("\u274c Cannot switch configured session '%s'", name)
 		return
 	}
 
@@ -1452,8 +1456,7 @@ func (e *Engine) handleSwitchSession(args []string, msg bot.BotMessage) {
 			"old_cli": oldCLIType,
 			"error":   err,
 		}).Error("switch-create-failed-rollback")
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("\u274c Failed to create session with '%s': %v (old session metadata preserved)", newCLIType, err))
+		response = fmt.Sprintf("\u274c Failed to create session with '%s': %v (old session metadata preserved)", newCLIType, err)
 		return
 	}
 
@@ -1471,8 +1474,7 @@ func (e *Engine) handleSwitchSession(args []string, msg bot.BotMessage) {
 		"user_id":  msg.UserID,
 	}).Info("session-switched")
 
-	e.SendToBot(msg.Platform, msg.Channel,
-		fmt.Sprintf("\u2705 Session '%s' switched: %s \u2192 %s (resume mode)", name, oldCLIType, newCLIType))
+	response = fmt.Sprintf("\u2705 Session '%s' switched: %s \u2192 %s (resume mode)", name, oldCLIType, newCLIType)
 }
 func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	logger.WithFields(logrus.Fields{
@@ -1498,26 +1500,28 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 
 	e.sessionMu.Lock()
 	var shouldPersist bool
+	var response string
 	defer func() {
 		e.sessionMu.Unlock()
 		if shouldPersist {
 			go e.persistSessions()
+		}
+		if response != "" {
+			e.SendToBot(msg.Platform, msg.Channel, response)
 		}
 	}()
 
 	// 3. Check if session exists
 	session, exists := e.sessions[name]
 	if !exists {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Session '%s' not found", name))
+		response = fmt.Sprintf("❌ Session '%s' not found", name)
 		return
 	}
 
 	// 4. Only allow deleting dynamic sessions
 	if !session.IsDynamic {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Cannot delete configured session '%s'\n"+
-				"Please remove it from the config file manually", name))
+		response = fmt.Sprintf("❌ Cannot delete configured session '%s'\n"+
+			"Please remove it from the config file manually", name)
 		return
 	}
 
@@ -1559,11 +1563,10 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	shouldPersist = true
 
 	// 8. Success response
-	response := fmt.Sprintf("✅ Session '%s' deleted successfully", name)
+	response = fmt.Sprintf("✅ Session '%s' deleted successfully", name)
 	if cleanedUsers > 0 {
 		response += fmt.Sprintf("\n🔄 %d user(s) switched to default session", cleanedUsers)
 	}
-	e.SendToBot(msg.Platform, msg.Channel, response)
 }
 
 // handleCloseSession handles the sclose command
@@ -1576,7 +1579,13 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 	}).Info("handle-close-session-command")
 
 	e.sessionMu.Lock()
-	defer e.sessionMu.Unlock()
+	var response string
+	defer func() {
+		e.sessionMu.Unlock()
+		if response != "" {
+			e.SendToBot(msg.Platform, msg.Channel, response)
+		}
+	}()
 
 	var sessionName string
 	var session *Session
@@ -1588,14 +1597,12 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 		var exists bool
 		sessionName, exists = e.userSessions[userKey]
 		if !exists {
-			e.SendToBot(msg.Platform, msg.Channel,
-				"❌ You don't have an active session\nUsage: sclose <name>")
+			response = "❌ You don't have an active session\nUsage: sclose <name>"
 			return
 		}
 		session, exists = e.sessions[sessionName]
 		if !exists {
-			e.SendToBot(msg.Platform, msg.Channel,
-				fmt.Sprintf("❌ Session '%s' not found", sessionName))
+			response = fmt.Sprintf("❌ Session '%s' not found", sessionName)
 			return
 		}
 	} else {
@@ -1604,8 +1611,7 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 		var exists bool
 		session, exists = e.sessions[sessionName]
 		if !exists {
-			e.SendToBot(msg.Platform, msg.Channel,
-				fmt.Sprintf("❌ Session '%s' not found", sessionName))
+			response = fmt.Sprintf("❌ Session '%s' not found", sessionName)
 			return
 		}
 
@@ -1614,16 +1620,14 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 		isCreator := session.CreatedBy == getUserKey(msg.Platform, msg.UserID)
 
 		if !isAdmin && !isCreator {
-			e.SendToBot(msg.Platform, msg.Channel,
-				"❌ Permission denied: admin or session creator only")
+			response = "❌ Permission denied: admin or session creator only"
 			return
 		}
 	}
 
 	// Check if session is alive
 	if session.State != StateProcessing && session.State != StateIdle {
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("⚠️  Session '%s' is not running (state: %s)", sessionName, session.State))
+		response = fmt.Sprintf("⚠️  Session '%s' is not running (state: %s)", sessionName, session.State)
 		return
 	}
 
@@ -1635,8 +1639,7 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 			"platform": msg.Platform,
 			"user_id":  msg.UserID,
 		}).Error("failed-to-stop-session")
-		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Failed to stop session '%s': %v", sessionName, err))
+		response = fmt.Sprintf("❌ Failed to stop session '%s': %v", sessionName, err)
 		return
 	}
 
@@ -1647,8 +1650,7 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 		"user_id":  msg.UserID,
 	}).Info("session-closed-successfully")
 
-	e.SendToBot(msg.Platform, msg.Channel,
-		fmt.Sprintf("✅ Session '%s' closed successfully", sessionName))
+	response = fmt.Sprintf("✅ Session '%s' closed successfully", sessionName)
 }
 
 func (e *Engine) stopSession(session *Session) error {
