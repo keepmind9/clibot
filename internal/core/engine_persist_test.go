@@ -109,8 +109,8 @@ func TestLoadPersistedSessions_RestoresAlive(t *testing.T) {
 	// Verify sessionChannels restored from LastChannel
 	ch, ok := engine.sessionChannels["restored"]
 	assert.True(t, ok, "sessionChannels should be restored")
-	assert.Equal(t, "testbot", ch.Platform)
-	assert.Equal(t, "ch1", ch.Channel)
+	assert.Equal(t, "testbot", ch["testbot:user1"].Platform)
+	assert.Equal(t, "ch1", ch["testbot:user1"].Channel)
 
 	// Verify userSessions restored from persisted state
 	assert.Equal(t, "restored", engine.userSessions["testbot:user1"])

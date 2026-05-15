@@ -161,10 +161,10 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Get the bot channel for this session
 	e.sessionMu.RLock()
-	botChannel, exists := e.sessionChannels[session.Name]
+	channels, exists := e.sessionChannels[session.Name]
 	e.sessionMu.RUnlock()
 
-	if !exists {
+	if !exists || len(channels) == 0 {
 		// No active channel - user might be operating CLI directly
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
@@ -174,19 +174,17 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send to the specific bot channel that initiated the request
+	// Send to all bot channels for this session
 	logger.WithFields(logrus.Fields{
-		"platform": botChannel.Platform,
-		"channel":  botChannel.Channel,
-		"session":  session.Name,
+		"session":       session.Name,
+		"channel_count": len(channels),
 	}).Info("sending-hook-response-to-bot")
 
-	// Send the message
-	e.SendToBot(botChannel.Platform, botChannel.Channel, response)
-
-	// Remove typing indicator after a short delay if supported
-	if botChannel.MessageID != "" {
-		e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
+	for _, botChannel := range channels {
+		e.SendToBot(botChannel.Platform, botChannel.Channel, response)
+		if botChannel.MessageID != "" {
+			e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)

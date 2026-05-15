@@ -95,7 +95,7 @@ func TestCleanIdleSessions_CleansUserSessions(t *testing.T) {
 		CreatedBy:    "testbot:user1",
 	}
 	engine.userSessions["testbot:user1"] = "idle-s"
-	engine.sessionChannels["idle-s"] = BotChannel{Platform: "testbot", Channel: "ch1"}
+	engine.sessionChannels["idle-s"] = map[string]BotChannel{"testbot:user1": {Platform: "testbot", Channel: "ch1"}}
 	engine.sessionMu.Unlock()
 
 	engine.cleanIdleSessions(1 * time.Hour)
@@ -122,7 +122,7 @@ func TestCleanIdleSessions_CleansSessionChannels(t *testing.T) {
 		LastActiveAt: time.Now().Add(-2 * time.Hour),
 		CreatedBy:    "testbot:user1",
 	}
-	engine.sessionChannels["idle-ch"] = BotChannel{Platform: "testbot", Channel: "ch1"}
+	engine.sessionChannels["idle-ch"] = map[string]BotChannel{"testbot:user1": {Platform: "testbot", Channel: "ch1"}}
 	engine.sessionMu.Unlock()
 
 	engine.cleanIdleSessions(1 * time.Hour)

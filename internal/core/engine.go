@@ -106,7 +106,7 @@ type Engine struct {
 	sessionMu       sync.RWMutex              // Mutex for session access
 	messageChan     chan bot.BotMessage       // Bot message channel
 	hookServer      *http.Server              // HTTP server for hooks
-	sessionChannels map[string]BotChannel     // Session name -> active bot channel (for routing responses)
+	sessionChannels map[string]map[string]BotChannel // Session name -> userKey -> channel
 	userSessions    map[string]string         // User key (platform:userID) -> current session name
 	cmdLocksMu      sync.RWMutex              // Protects sessionCmdLocks map
 	sessionCmdLocks map[string]*sync.Mutex    // Per-session command locks (prevents concurrent commands on same session)
@@ -146,7 +146,7 @@ func NewEngine(config *Config) *Engine {
 		activeBots:      make(map[string]bot.BotAdapter),
 		sessions:        make(map[string]*Session),
 		messageChan:     make(chan bot.BotMessage, constants.MessageChannelBufferSize),
-		sessionChannels: make(map[string]BotChannel),
+		sessionChannels: make(map[string]map[string]BotChannel),
 		userSessions:    make(map[string]string),
 		sessionCmdLocks: make(map[string]*sync.Mutex),
 		proxyMgr:        proxy.NewProxyManager(NewCoreConfigAdapter(config)),
@@ -556,7 +556,10 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 
 	// Record the session → channel mapping for routing responses
 	e.sessionMu.Lock()
-	e.sessionChannels[session.Name] = BotChannel{
+	if e.sessionChannels[session.Name] == nil {
+		e.sessionChannels[session.Name] = make(map[string]BotChannel)
+	}
+	e.sessionChannels[session.Name][userKey] = BotChannel{
 		Platform:  msg.Platform,
 		Channel:   msg.Channel,
 		MessageID: msg.MessageID,
@@ -2172,14 +2175,6 @@ func (e *Engine) loadPersistedSessions() {
 		e.sessions[s.Name] = s
 		restored++
 
-		// Restore session -> channel mapping
-		if s.LastChannel != nil {
-			e.sessionChannels[s.Name] = BotChannel{
-				Platform: s.LastChannel.Platform,
-				Channel:  s.LastChannel.Channel,
-			}
-		}
-
 		// Collect tmux env injections for execution outside lock
 		if len(s.Env) > 0 && !stdio.IsStdioCLIType(s.CLIType) {
 			for k, v := range s.Env {
@@ -2190,8 +2185,17 @@ func (e *Engine) loadPersistedSessions() {
 
 	// Restore user -> session mappings from persisted state
 	for userKey, sessionName := range state.UserSessions {
-		if _, exists := e.sessions[sessionName]; exists {
+		if s, ok := e.sessions[sessionName]; ok {
 			e.userSessions[userKey] = sessionName
+			if s.LastChannel != nil {
+				if e.sessionChannels[sessionName] == nil {
+					e.sessionChannels[sessionName] = make(map[string]BotChannel)
+				}
+				e.sessionChannels[sessionName][userKey] = BotChannel{
+					Platform: s.LastChannel.Platform,
+					Channel:  s.LastChannel.Channel,
+				}
+			}
 		}
 	}
 	e.sessionMu.Unlock()
@@ -2480,11 +2484,11 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 	e.touchSession(sessionName)
 
 	e.sessionMu.RLock()
-	botChannel, exists := e.sessionChannels[sessionName]
+	channels, exists := e.sessionChannels[sessionName]
 	e.sessionMu.RUnlock()
 
-	if !exists {
-		logger.WithField("session", sessionName).Warn("no-bot-channel-found-for-session")
+	if !exists || len(channels) == 0 {
+		logger.WithField("session", sessionName).Warn("no-bot-channel-found")
 		return
 	}
 
@@ -2499,35 +2503,34 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 
 	logger.WithFields(logrus.Fields{
 		"session":         sessionName,
-		"platform":        botChannel.Platform,
-		"channel":         botChannel.Channel,
+		"channel_count":   len(channels),
 		"response_length": len(message),
-	}).Info("sending-response-to-user")
+	}).Info("sending-response-to-session")
 
-	// Send the message
-	e.SendToBot(botChannel.Platform, botChannel.Channel, message)
-
-	// Remove typing indicator after a short delay if supported
-	if botChannel.MessageID != "" {
-		e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
+	for _, botChannel := range channels {
+		e.SendToBot(botChannel.Platform, botChannel.Channel, message)
+		if botChannel.MessageID != "" {
+			e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
+		}
 	}
 }
 
 // SendPermissionPrompt sends a permission request notification to the user.
 func (e *Engine) SendPermissionPrompt(sessionName, message string) {
 	e.sessionMu.RLock()
-	botChannel, exists := e.sessionChannels[sessionName]
+	channels, exists := e.sessionChannels[sessionName]
 	e.sessionMu.RUnlock()
 
-	if !exists {
+	if !exists || len(channels) == 0 {
 		logger.WithField("session", sessionName).Warn("no-bot-channel-for-permission-prompt")
 		return
 	}
 
-	e.SendToBot(botChannel.Platform, botChannel.Channel, message)
-
-	if botChannel.MessageID != "" {
-		e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
+	for _, botChannel := range channels {
+		e.SendToBot(botChannel.Platform, botChannel.Channel, message)
+		if botChannel.MessageID != "" {
+			e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
+		}
 	}
 }
 
@@ -2610,10 +2613,10 @@ func (e *Engine) startWatchdogWithContext(ctx context.Context, session *Session,
 func (e *Engine) sendResponseToUser(sessionName string, content string) {
 	// Get the channel for this session
 	e.sessionMu.RLock()
-	botChannel, exists := e.sessionChannels[sessionName]
+	channels, exists := e.sessionChannels[sessionName]
 	e.sessionMu.RUnlock()
 
-	if !exists {
+	if !exists || len(channels) == 0 {
 		logger.WithField("session", sessionName).Warn("no-bot-channel-found-for-session")
 		return
 	}
@@ -2628,15 +2631,15 @@ func (e *Engine) sendResponseToUser(sessionName string, content string) {
 		return
 	}
 
-	// Send response
-	logger.WithFields(logrus.Fields{
-		"session":         sessionName,
-		"platform":        botChannel.Platform,
-		"channel":         botChannel.Channel,
-		"response_length": len(content),
-	}).Info("sending-response-to-user")
-
-	e.SendToBot(botChannel.Platform, botChannel.Channel, content)
+	for _, botChannel := range channels {
+		logger.WithFields(logrus.Fields{
+			"session":         sessionName,
+			"platform":        botChannel.Platform,
+			"channel":         botChannel.Channel,
+			"response_length": len(content),
+		}).Info("sending-response-to-user")
+		e.SendToBot(botChannel.Platform, botChannel.Channel, content)
+	}
 }
 
 // Stop gracefully stops the engine
