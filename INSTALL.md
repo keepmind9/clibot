@@ -6,7 +6,6 @@ This guide covers system requirements and installation instructions for clibot.
 
 - [Quick Install](#quick-install)
 - [System Requirements](#system-requirements)
-- [Manual Binary Download](#manual-binary-download)
 - [Install from Source](#install-from-source)
 - [Self-Update](#self-update)
 
@@ -52,52 +51,6 @@ clibot version
 | **ACP Mode** ⭐ | None | Recommended, streaming responses |
 | **Stdio Mode** | None | Zero config, per-turn CLIs |
 | **Hook Mode** | tmux | Not available on Windows native |
-
-## Manual Binary Download
-
-Download the binary for your platform from [GitHub Releases](https://github.com/keepmind9/clibot/releases/latest).
-
-**Linux (AMD64):**
-```bash
-curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-amd64
-chmod +x clibot-linux-amd64
-mkdir -p ~/.local/bin
-mv clibot-linux-amd64 ~/.local/bin/clibot
-```
-
-**Linux (ARM64):**
-```bash
-curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-arm64
-chmod +x clibot-linux-arm64
-mkdir -p ~/.local/bin
-mv clibot-linux-arm64 ~/.local/bin/clibot
-```
-
-**macOS (Apple Silicon):**
-```bash
-curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-darwin-arm64
-chmod +x clibot-darwin-arm64
-mkdir -p ~/.local/bin
-mv clibot-darwin-arm64 ~/.local/bin/clibot
-```
-
-**macOS (Intel):**
-```bash
-curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-darwin-amd64
-chmod +x clibot-darwin-amd64
-mkdir -p ~/.local/bin
-mv clibot-darwin-amd64 ~/.local/bin/clibot
-```
-
-**Windows (AMD64):**
-```powershell
-Invoke-WebRequest -Uri "https://github.com/keepmind9/clibot/releases/latest/download/clibot-windows-amd64.exe" -OutFile "clibot.exe"
-```
-
-Add `~/.local/bin` to PATH:
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
 
 ## Install from Source
 

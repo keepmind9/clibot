@@ -41,32 +41,59 @@ if (Get-Command $Binary -ErrorAction SilentlyContinue) {
     Write-Host "clibot not found. Installing $latestVersion..."
 }
 
-# Find matching asset for windows-amd64
+# Build archive name
+$versionNum = $latestVersion.TrimStart("v")
+$archiveName = "$Binary-$versionNum-windows-amd64.zip"
+
+# Find matching asset
 try {
-    $version = $releaseInfo.tag_name
-    $asset = $releaseInfo.assets | Where-Object { $_.name -like "*windows-amd64*" -and $_.name -notlike "*.sha256" } | Select-Object -First 1
+    $asset = $releaseInfo.assets | Where-Object { $_.name -eq $archiveName } | Select-Object -First 1
 
     if (-not $asset) {
-        Write-Host "No matching release found for windows-amd64." -ForegroundColor Red
+        Write-Host "No matching release found for $archiveName." -ForegroundColor Red
         Write-Host "Available assets:"
         $releaseInfo.assets | ForEach-Object { Write-Host "  $($_.name)" }
         exit 1
     }
 
-    Write-Host "Downloading clibot $version for Windows..."
+    Write-Host "Downloading clibot $latestVersion for Windows..."
 
     $tmpDir = [System.IO.Path]::GetTempPath() + "clibot-install"
     New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
 
-    $downloadPath = Join-Path $tmpDir "$Binary.exe"
+    $downloadPath = Join-Path $tmpDir $archiveName
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $downloadPath -TimeoutSec 120
+
+    # Extract archive
+    Write-Host "Extracting..."
+    Expand-Archive -Path $downloadPath -DestinationPath $tmpDir -Force
+
+    # Find the binary in the extracted directory
+    $binaryPath = Get-ChildItem -Path $tmpDir -Recurse -Filter "$Binary.exe" | Select-Object -First 1
+    if (-not $binaryPath) {
+        Write-Host "Failed to find clibot.exe in archive." -ForegroundColor Red
+        exit 1
+    }
+
+    # Validate binary is within tmpDir (prevent path traversal)
+    try {
+        $realBinPath = (Resolve-Path $binaryPath.FullName).Path
+        $realTmpDir = (Resolve-Path $tmpDir).Path
+        if (-not $realBinPath.StartsWith($realTmpDir + '\')) {
+            Write-Host "Binary path is outside expected directory. Aborting." -ForegroundColor Red
+            exit 1
+        }
+    } catch {
+        Write-Host "Failed to validate binary path. Aborting." -ForegroundColor Red
+        exit 1
+    }
 
     # Install
     if (-not (Test-Path $InstallDir)) {
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     }
 
-    Move-Item $downloadPath "$InstallDir\$Binary.exe" -Force
+    Copy-Item $binaryPath.FullName "$InstallDir\$Binary.exe" -Force
 
     # Clean up
     Remove-Item $tmpDir -Recurse -Force
@@ -81,7 +108,7 @@ try {
     }
 
     Write-Host ""
-    Write-Host "clibot $version installed successfully!"
+    Write-Host "clibot $latestVersion installed successfully!"
     Write-Host "  Location: $InstallDir\$Binary.exe"
     Write-Host ""
     Write-Host "Verify:"

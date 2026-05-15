@@ -31,8 +31,8 @@ async function ensureClibotInstalled() {
   } catch (err) {
     spinner.fail(chalk.red('✗ Installation failed: ' + err.message));
     console.log(chalk.yellow('\nTip: You can install manually with:'));
-    console.log(chalk.cyan('  curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-amd64'));
-    console.log(chalk.cyan('  chmod +x clibot-linux-amd64 && mv clibot-linux-amd64 ~/.local/bin/clibot\n'));
+    console.log(chalk.cyan('  curl -sL https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.sh | bash'));
+    console.log(chalk.cyan('  Or download manually from: https://github.com/keepmind9/clibot/releases\n'));
     process.exit(1);
   }
 }

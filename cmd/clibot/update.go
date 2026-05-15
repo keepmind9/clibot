@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,10 +34,11 @@ var (
 var errDelayedSwap = errors.New("delayed swap scheduled")
 
 type updateMeta struct {
-	Version string `json:"version"`
-	URL     string `json:"url"`
-	Size    int64  `json:"size"`
-	File    string `json:"file"`
+	Version    string `json:"version"`
+	URL        string `json:"url"`
+	Size       int64  `json:"size"`
+	Archive    string `json:"archive"`
+	BinaryName string `json:"binary_name"`
 }
 
 func newUpdateCmd() *cobra.Command {
@@ -74,37 +78,54 @@ func runUpdate() error {
 	}
 
 	metaPath := filepath.Join(updateDir, "meta.json")
-	binName := buildBinaryName(latest)
-	binURL := buildBinaryURL(latest, binName)
-	binPath := filepath.Join(updateDir, binName)
+	archiveName := buildArchiveName(latest)
+	archiveURL := buildArchiveURL(latest, archiveName)
 
 	// Check existing meta for resume or reset
 	var totalSize int64
-	if meta, err := loadMeta(metaPath); err == nil && meta.Version == latest {
+	if meta, err := loadMeta(metaPath); err == nil && meta.Version == latest && meta.Archive != "" {
 		fmt.Println("Resuming download...")
 		totalSize = meta.Size
 	} else {
 		cleanUpdateDir(updateDir)
-		totalSize, err = getRemoteSize(binURL)
+		totalSize, err = getRemoteSize(archiveURL)
 		if err != nil {
 			return fmt.Errorf("failed to get remote file size: %w", err)
 		}
+		binName := binaryName()
 		if err := saveMeta(metaPath, &updateMeta{
-			Version: latest,
-			URL:     binURL,
-			Size:    totalSize,
-			File:    binName,
+			Version:    latest,
+			URL:        archiveURL,
+			Size:       totalSize,
+			Archive:    archiveName,
+			BinaryName: binName,
 		}); err != nil {
 			return err
 		}
 	}
 
 	// Download with resume support
-	if err := downloadWithResume(binURL, binPath, totalSize); err != nil {
+	archivePath := filepath.Join(updateDir, archiveName)
+	if err := downloadWithResume(archiveURL, archivePath, totalSize); err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
 
-	fmt.Println("Download complete.")
+	fmt.Println("Download complete. Extracting...")
+
+	// Extract archive
+	if err := extractArchive(updateDir, archivePath); err != nil {
+		return fmt.Errorf("extraction failed: %w", err)
+	}
+
+	// Verify extraction before removing archive
+	binPath, err := findExtractedBinary(updateDir)
+	if err != nil {
+		return fmt.Errorf("extraction failed or binary not found: %w\nThe archive may be corrupted.", err)
+	}
+
+	// Remove archive after successful extraction
+	os.Remove(archivePath)
+	fmt.Printf("Binary extracted to: %s\n", binPath)
 
 	if !isProcessRunning() {
 		fmt.Println("Applying update...")
@@ -131,10 +152,15 @@ func runApply() error {
 		return nil
 	}
 
-	binPath := filepath.Join(updateDir, meta.File)
+	// Verify binary exists and is valid
+	binPath, err := findExtractedBinary(updateDir)
+	if err != nil {
+		fmt.Println("Downloaded file is incomplete or corrupted. Run 'clibot update' to re-download.")
+		return nil
+	}
 	info, err := os.Stat(binPath)
-	if err != nil || info.Size() != meta.Size {
-		fmt.Println("Downloaded file is incomplete. Run 'clibot update' to re-download.")
+	if err != nil || info.Size() == 0 {
+		fmt.Println("Downloaded binary is empty or corrupted. Run 'clibot update' to re-download.")
 		return nil
 	}
 
@@ -149,7 +175,11 @@ func doApply(updateDir string) error {
 		return err
 	}
 
-	srcBin := filepath.Join(updateDir, meta.File)
+	// Find the extracted binary
+	srcBin, err := findExtractedBinary(updateDir)
+	if err != nil {
+		return fmt.Errorf("binary not found: %w", err)
+	}
 
 	currentBin, err := os.Executable()
 	if err != nil {
@@ -241,18 +271,26 @@ func parseVersion(v string) [3]int {
 	return [3]int{major, minor, patch}
 }
 
-// --- Download ---
+// --- Archive ---
 
-func buildBinaryName(latest string) string {
-	name := fmt.Sprintf("clibot-%s-%s", runtime.GOOS, runtime.GOARCH)
+func buildArchiveName(latest string) string {
+	name := fmt.Sprintf("clibot-%s-%s-%s", latest, runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		return name + ".zip"
+	}
+	return name + ".tar.gz"
+}
+
+func buildArchiveURL(latest, archive string) string {
+	return fmt.Sprintf("https://github.com/%s/releases/download/v%s/%s", updateRepo, latest, archive)
+}
+
+func binaryName() string {
+	name := "clibot"
 	if runtime.GOOS == "windows" {
 		return name + ".exe"
 	}
 	return name
-}
-
-func buildBinaryURL(latest, binName string) string {
-	return fmt.Sprintf("https://github.com/%s/releases/download/v%s/%s", updateRepo, latest, binName)
 }
 
 func getRemoteSize(url string) (int64, error) {
@@ -337,6 +375,136 @@ func downloadWithResume(url, dest string, totalSize int64) error {
 
 	_, err = io.Copy(f, resp.Body)
 	return err
+}
+
+func extractArchive(dest, archive string) error {
+	if runtime.GOOS == "windows" {
+		return extractZip(dest, archive)
+	}
+	return extractTarGz(dest, archive)
+}
+
+func extractTarGz(dest, archive string) error {
+	f, err := os.Open(archive)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	gzReader, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gzReader.Close()
+
+	tarReader := tar.NewReader(gzReader)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		// Only extract regular files
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+
+		targetPath := filepath.Join(dest, header.Name)
+		// Path traversal check
+		cleanPath := filepath.Clean(targetPath)
+		if !strings.HasPrefix(cleanPath, filepath.Clean(dest)+string(filepath.Separator)) {
+			continue // skip malicious entries
+		}
+
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return err
+		}
+
+		outFile, err := os.Create(targetPath)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(outFile, tarReader); err != nil {
+			outFile.Close()
+			return err
+		}
+		outFile.Close()
+
+		// Preserve executable permission
+		os.Chmod(targetPath, os.FileMode(header.Mode))
+	}
+	return nil
+}
+
+func extractZip(dest, archive string) error {
+	reader, err := zip.OpenReader(archive)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	for _, file := range reader.File {
+		// Only extract regular files
+		if !file.Mode().IsRegular() {
+			continue
+		}
+
+		targetPath := filepath.Join(dest, file.Name)
+		// Path traversal check
+		cleanPath := filepath.Clean(targetPath)
+		if !strings.HasPrefix(cleanPath, filepath.Clean(dest)+string(filepath.Separator)) {
+			continue // skip malicious entries
+		}
+
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return err
+		}
+
+		outFile, err := os.Create(targetPath)
+		if err != nil {
+			return err
+		}
+
+		rc, err := file.Open()
+		if err != nil {
+			outFile.Close()
+			return err
+		}
+
+		if _, err := io.Copy(outFile, rc); err != nil {
+			rc.Close()
+			outFile.Close()
+			return err
+		}
+		rc.Close()
+		outFile.Close()
+	}
+	return nil
+}
+
+func findExtractedBinary(dir string) (string, error) {
+	name := binaryName()
+	prefix := "clibot-"
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		candidate := filepath.Join(dir, entry.Name(), name)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("binary not found in %s", dir)
 }
 
 // --- Meta ---

@@ -87,46 +87,11 @@ jobs:
           clibot update
           \`\`\`
 
-          ### Manual Download
-
-          **Linux (AMD64):**
-          \`\`\`bash
-          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-linux-amd64
-          chmod +x clibot-linux-amd64
-          mv clibot-linux-amd64 ~/.local/bin/clibot
-          \`\`\`
-
-          **Linux (ARM64):**
-          \`\`\`bash
-          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-linux-arm64
-          chmod +x clibot-linux-arm64
-          mv clibot-linux-arm64 ~/.local/bin/clibot
-          \`\`\`
-
-          **macOS (Intel):**
-          \`\`\`bash
-          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-darwin-amd64
-          chmod +x clibot-darwin-amd64
-          mv clibot-darwin-amd64 ~/.local/bin/clibot
-          \`\`\`
-
-          **macOS (Apple Silicon):**
-          \`\`\`bash
-          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-darwin-arm64
-          chmod +x clibot-darwin-arm64
-          mv clibot-darwin-arm64 ~/.local/bin/clibot
-          \`\`\`
-
-          **Windows (AMD64):**
-          \`\`\`powershell
-          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/${{ env.VERSION }}/clibot-windows-amd64.exe" -OutFile "clibot.exe"
-          \`\`\`
-
           ### Verify Checksum
 
           **Linux/macOS:**
           \`\`\`bash
-          sha256sum -c clibot-*.sha256
+          sha256sum -c checksums-sha256.txt
           \`\`\`
 
           **Windows (PowerShell):**
@@ -134,11 +99,8 @@ jobs:
           Get-FileHash clibot.exe -Algorithm SHA256
           \`\`\`
 
-          ### What's Changed
-
-          ${{ github.event.head_commit && github.event.head_commit.message != '' && github.event.head_commit.message || 'No description provided.' }}
-
           ---
+
           Full Changelog: https://github.com/${{ github.repository }}/compare/${{ env.VERSION }}
           EOF
 
@@ -151,15 +113,11 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            bin/clibot-linux-amd64
-            bin/clibot-linux-amd64.sha256
-            bin/clibot-linux-arm64
-            bin/clibot-linux-arm64.sha256
-            bin/clibot-darwin-amd64
-            bin/clibot-darwin-amd64.sha256
-            bin/clibot-darwin-arm64
-            bin/clibot-darwin-arm64.sha256
-            bin/clibot-windows-amd64.exe
-            bin/clibot-windows-amd64.exe.sha256
+            bin/clibot-${{ env.VERSION_DISPLAY }}-linux-amd64.tar.gz
+            bin/clibot-${{ env.VERSION_DISPLAY }}-linux-arm64.tar.gz
+            bin/clibot-${{ env.VERSION_DISPLAY }}-darwin-amd64.tar.gz
+            bin/clibot-${{ env.VERSION_DISPLAY }}-darwin-arm64.tar.gz
+            bin/clibot-${{ env.VERSION_DISPLAY }}-windows-amd64.zip
+            bin/checksums-sha256.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

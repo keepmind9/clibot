@@ -1,47 +1,58 @@
 /**
- * Binary downloader for clibot
+ * Binary downloader for clibot - archive format support
  */
 
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { getPlatform, getBinaryName, ensureDir } from './utils.js';
 
 const REPO = 'keepmind9/clibot';
 const BASE_URL = 'https://github.com';
 
 /**
- * Get download URL and binary name for clibot binary
- * @returns {{ url: string, binaryName: string }}
+ * Get download URL for clibot archive
+ * @returns {{ url: string, archiveName: string }}
  */
 export function getDownloadUrl(version = 'latest') {
   const { os, arch } = getPlatform();
   const binaryName = getBinaryName();
-  const filename = `${os}-${arch}-${binaryName}`;
+  const versionNum = version === 'latest' ? '' : version.replace(/^v/, '');
+  const archiveName = `${binaryName}-${versionNum}-${os}-${arch}.${os === 'windows' ? 'zip' : 'tar.gz'}`;
 
   const url = version === 'latest'
-    ? `${BASE_URL}/${REPO}/releases/latest/download/${filename}`
-    : `${BASE_URL}/${REPO}/releases/download/${version}/${filename}`;
+    ? `${BASE_URL}/${REPO}/releases/latest/download/${archiveName}`
+    : `${BASE_URL}/${REPO}/releases/download/${version}/${archiveName}`;
 
-  return { url, binaryName };
+  return { url, archiveName };
 }
 
 /**
- * Download clibot binary
+ * Download clibot archive
  */
 export async function downloadBinary(version = 'latest', onProgress) {
-  const { url, binaryName } = getDownloadUrl(version);
+  const { url, archiveName } = getDownloadUrl(version);
+
+  // For 'latest', resolve actual version from GitHub API to build correct filename
+  let resolvedUrl = url;
+  let resolvedName = archiveName;
+  if (version === 'latest') {
+    const tag = await getLatestVersion();
+    const ver = tag.replace(/^v/, '');
+    const { os, arch } = getPlatform();
+    resolvedName = `clibot-${ver}-${os}-${arch}.${os === 'windows' ? 'zip' : 'tar.gz'}`;
+    resolvedUrl = `${BASE_URL}/${REPO}/releases/latest/download/${resolvedName}`;
+  }
 
   const tempDir = path.join(process.env.TMP || process.env.TMPDIR || '/tmp', 'clibot');
   ensureDir(tempDir);
-  const tempFile = path.join(tempDir, binaryName);
-
-  console.log(`Downloading from: ${url}`);
+  const archivePath = path.join(tempDir, resolvedName);
 
   try {
     const response = await axios({
       method: 'GET',
-      url,
+      url: resolvedUrl,
       responseType: 'stream',
       onDownloadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {
@@ -53,16 +64,59 @@ export async function downloadBinary(version = 'latest', onProgress) {
       }
     });
 
-    const writer = fs.createWriteStream(tempFile);
+    const writer = fs.createWriteStream(archivePath);
     response.data.pipe(writer);
 
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve(tempFile));
+    await new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
       writer.on('error', reject);
     });
+
+    // Extract archive
+    console.log('Extracting archive...');
+    const extractDir = path.join(tempDir, 'extracted');
+    ensureDir(extractDir);
+
+    if (resolvedName.endsWith('.zip')) {
+      execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${extractDir}' -Force"`, { stdio: 'pipe' });
+    } else {
+      execSync(`tar -xzf "${archivePath}" -C "${extractDir}"`, { stdio: 'pipe' });
+    }
+
+    // Find the binary in extracted directory
+    const binaryName = getBinaryName();
+    const entries = fs.readdirSync(extractDir);
+    let binaryPath = null;
+
+    for (const entry of entries) {
+      // Validate entry name (prevent path traversal via malicious directory names)
+      if (entry.includes('..') || entry.includes('/') || entry.includes('\\')) {
+        continue;
+      }
+      const candidate = path.join(extractDir, entry, binaryName);
+      // Validate binary is within extractDir
+      const realCandidate = path.resolve(candidate);
+      const realExtractDir = path.resolve(extractDir);
+      if (!realCandidate.startsWith(realExtractDir + path.sep)) {
+        continue;
+      }
+      if (fs.existsSync(candidate)) {
+        binaryPath = candidate;
+        break;
+      }
+    }
+
+    if (!binaryPath) {
+      throw new Error(`Binary not found in extracted archive`);
+    }
+
+    // Clean up archive
+    fs.unlinkSync(archivePath);
+
+    return binaryPath;
   } catch (error) {
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
+    if (fs.existsSync(archivePath)) {
+      fs.unlinkSync(archivePath);
     }
     throw new Error(`Failed to download: ${error.message}`);
   }

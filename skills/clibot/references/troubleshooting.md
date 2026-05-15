@@ -40,10 +40,10 @@ ping -c 3 github.com
 uname -s   # Linux or Darwin
 uname -m   # x86_64 or arm64
 
-# Download (replace with correct filename)
-curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-amd64
-chmod +x clibot-linux-amd64
-mv clibot-linux-amd64 ~/.local/bin/clibot
+# Download (replace with correct filename, e.g., clibot-{VERSION}-linux-amd64.tar.gz)
+curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-{VERSION}-{OS}-{ARCH}.tar.gz
+tar -xzf clibot-{VERSION}-{OS}-{ARCH}.tar.gz
+mv clibot-{VERSION}-{OS}-{ARCH}/clibot ~/.local/bin/
 ```
 
 3. Use specific version:

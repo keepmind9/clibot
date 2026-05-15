@@ -6,7 +6,6 @@
 
 - [快速安装](#快速安装)
 - [系统要求](#系统要求)
-- [手动下载](#手动下载)
 - [从源码构建](#从源码构建)
 - [自更新](#自更新)
 
@@ -52,52 +51,6 @@ clibot version
 | **ACP 模式** ⭐ | 无 | 推荐，流式响应 |
 | **Stdio 模式** | 无 | 零配置，per-turn CLI |
 | **Hook 模式** | tmux | Windows 原生不支持 |
-
-## 手动下载
-
-从 [GitHub Releases](https://github.com/keepmind9/clibot/releases/latest) 下载对应平台的二进制文件。
-
-**Linux (AMD64):**
-```bash
-curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-amd64
-chmod +x clibot-linux-amd64
-mkdir -p ~/.local/bin
-mv clibot-linux-amd64 ~/.local/bin/clibot
-```
-
-**Linux (ARM64):**
-```bash
-curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-arm64
-chmod +x clibot-linux-arm64
-mkdir -p ~/.local/bin
-mv clibot-linux-arm64 ~/.local/bin/clibot
-```
-
-**macOS (Apple Silicon):**
-```bash
-curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-darwin-arm64
-chmod +x clibot-darwin-arm64
-mkdir -p ~/.local/bin
-mv clibot-darwin-arm64 ~/.local/bin/clibot
-```
-
-**macOS (Intel):**
-```bash
-curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-darwin-amd64
-chmod +x clibot-darwin-amd64
-mkdir -p ~/.local/bin
-mv clibot-darwin-amd64 ~/.local/bin/clibot
-```
-
-**Windows (AMD64):**
-```powershell
-Invoke-WebRequest -Uri "https://github.com/keepmind9/clibot/releases/latest/download/clibot-windows-amd64.exe" -OutFile "clibot.exe"
-```
-
-将 `~/.local/bin` 添加到 PATH：
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
 
 ## 从源码构建
 

@@ -51,33 +51,53 @@ case "$(uname -m)" in
     *)              echo "Unsupported architecture: $(uname -m)"; exit 1;;
 esac
 
-PATTERN="${OS}-${ARCH}"
+# Build archive name
+PKG_NAME="${BINARY}-${LATEST_VERSION#v}-${OS}-${ARCH}"
+ARCHIVE="${PKG_NAME}.tar.gz"
 
 # Find matching asset download URL
-DOWNLOAD_URL=$(echo "$RELEASE" | grep -o "\"browser_download_url\": \"[^\"]*${PATTERN}[^\"]*\"" | grep -v '\.sha256' | head -1 | sed 's/.*: "\(.*\)"/\1/')
+DOWNLOAD_URL=$(echo "$RELEASE" | grep -o "\"browser_download_url\": \"[^\"]*${ARCHIVE}[^\"]*\"" | head -1 | sed 's/.*: "\(.*\)"/\1/')
 
 if [ -z "$DOWNLOAD_URL" ]; then
-    echo "No matching release found for ${PATTERN}."
+    echo "No matching release found for ${PKG_NAME}."
     echo "Available assets:"
     echo "$RELEASE" | grep "browser_download_url" | sed 's/.*: "//;s/"//'
     exit 1
 fi
-
-FILENAME=$(basename "$DOWNLOAD_URL")
 
 echo "Downloading clibot ${LATEST_VERSION} for ${OS}/${ARCH}..."
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-if ! curl -fL --progress-bar "$DOWNLOAD_URL" -o "$TMPDIR/$FILENAME"; then
+if ! curl -fL --progress-bar "$DOWNLOAD_URL" -o "$TMPDIR/$ARCHIVE"; then
     echo "Download failed. Install manually:"
     echo "  https://github.com/${REPO}/releases"
     exit 1
 fi
 
+# Extract archive
+echo "Extracting..."
+tar -xzf "$TMPDIR/$ARCHIVE" -C "$TMPDIR"
+
+# Find the binary in the extracted directory
+BINARY_PATH=$(find "$TMPDIR" -name "$BINARY" -type f -executable | head -1)
+if [ -z "$BINARY_PATH" ]; then
+    echo "Failed to find clibot binary in archive."
+    exit 1
+fi
+
+# Validate binary is within TMPDIR (prevent path traversal)
+REAL_PATH=$(realpath "$BINARY_PATH")
+REAL_TMPDIR=$(realpath "$TMPDIR")
+if [[ "$REAL_PATH" != "$REAL_TMPDIR"/* ]]; then
+    echo "Binary path is outside expected directory. Aborting."
+    exit 1
+fi
+
+# Install
 mkdir -p "$INSTALL_DIR"
-mv "$TMPDIR/$FILENAME" "$INSTALL_DIR/$BINARY"
+cp "$BINARY_PATH" "$INSTALL_DIR/$BINARY"
 chmod +x "$INSTALL_DIR/$BINARY"
 
 # Add to PATH if needed

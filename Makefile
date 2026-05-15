@@ -1,9 +1,12 @@
 # clibot Makefile
 # A CLI bot that bridges chat platforms with CLI tools
 
+SHELL = /bin/bash
+
 # Project metadata
 BINARY_NAME=clibot
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+VERSION_NUM=$(shell echo $(VERSION) | sed 's/^v//')
 BUILD_TIME=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GIT_BRANCH=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 GIT_COMMIT=$(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -87,16 +90,31 @@ build-windows-amd64:
 build-all: build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-windows-amd64
 	@echo "$(GREEN)All builds complete!$(NC)"
 
-## build-release: Build release artifacts with checksums
+## build-release: Build release artifacts (tar.gz/zip) with checksums
 .PHONY: build-release
-build-release: build-all
+build-release:
+	@echo "$(BLUE)Building release artifacts...$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	@for target in "linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64" "windows/amd64"; do \
+		IFS="/" read -r GOOS GOARCH <<< "$$target"; \
+		BIN="$(BINARY_NAME)"; \
+		if [ "$$GOOS" = "windows" ]; then BIN="$(BINARY_NAME).exe"; fi; \
+		PKG_NAME="$(BINARY_NAME)-$(VERSION_NUM)-$$GOOS-$$GOARCH"; \
+		echo "$(BLUE)Building $$PKG_NAME...$(NC)"; \
+		mkdir -p "$(BUILD_DIR)/$$PKG_NAME"; \
+		CGO_ENABLED=0 GOOS=$$GOOS GOARCH=$$GOARCH \
+			$(GOBUILD) $(LDFLAGS_RELEASE) \
+			-o "$(BUILD_DIR)/$$PKG_NAME/$$BIN" $(CMD_DIR); \
+		cp LICENSE "$(BUILD_DIR)/$$PKG_NAME/"; \
+		if [ "$$GOOS" = "windows" ]; then \
+			(cd $(BUILD_DIR) && zip -r "$$PKG_NAME.zip" "$$PKG_NAME"); \
+		else \
+			tar -czf "$(BUILD_DIR)/$$PKG_NAME.tar.gz" -C $(BUILD_DIR) "$$PKG_NAME"; \
+		fi; \
+		rm -rf "$(BUILD_DIR)/$$PKG_NAME"; \
+	done
 	@echo "$(BLUE)Generating checksums...$(NC)"
-	@cd $(BUILD_DIR) && \
-		for file in $(BINARY_NAME)-*; do \
-			if [ -f "$$file" ]; then \
-				sha256sum "$$file" > "$$file.sha256"; \
-			fi; \
-		done
+	@cd $(BUILD_DIR) && sha256sum *.tar.gz *.zip > checksums-sha256.txt
 	@echo "$(GREEN)Release artifacts ready in $(BUILD_DIR)$(NC)"
 
 ## install: Install the application to $GOPATH/bin
