@@ -10,7 +10,7 @@ import (
 
 func TestCleanIdleSessions_RemovesExpired(t *testing.T) {
 	engine := newTestEngine()
-	engine.config.Security.Admins = map[string][]string{"testbot": {"admin1"}}
+	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 
 	// Create a dynamic session with old LastActiveAt
@@ -196,7 +196,7 @@ func TestIdleSessionCleaner_InvalidDuration(t *testing.T) {
 
 func TestHandleNewFromTemplate_SetsLastActiveAt(t *testing.T) {
 	engine := newTestEngine()
-	engine.config.Security.Admins = map[string][]string{"testbot": {"admin1"}}
+	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin1"}}
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 	before := time.Now()
 

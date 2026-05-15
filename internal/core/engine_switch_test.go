@@ -29,7 +29,7 @@ func TestHandleSwitchSession_Success(t *testing.T) {
 	engine.activeBots["testbot"] = mockBot
 
 	msg := bot.BotMessage{Platform: "testbot", Channel: "ch1", UserID: "admin"}
-	engine.config.Security.Admins = map[string][]string{"testbot": {"admin"}}
+	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin"}}
 
 	engine.handleSwitchSession([]string{"mysession", "claude-stdio"}, msg)
 
@@ -53,7 +53,7 @@ func TestHandleSwitchSession_NotFound(t *testing.T) {
 	engine.activeBots["testbot"] = mockBot
 
 	msg := bot.BotMessage{Platform: "testbot", Channel: "ch1", UserID: "admin"}
-	engine.config.Security.Admins = map[string][]string{"testbot": {"admin"}}
+	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin"}}
 
 	engine.handleSwitchSession([]string{"nonexistent", "claude-stdio"}, msg)
 	assert.Contains(t, mockBot.lastMessage, "not found")
@@ -75,7 +75,7 @@ func TestHandleSwitchSession_StaticSession(t *testing.T) {
 	engine.activeBots["testbot"] = mockBot
 
 	msg := bot.BotMessage{Platform: "testbot", Channel: "ch1", UserID: "admin"}
-	engine.config.Security.Admins = map[string][]string{"testbot": {"admin"}}
+	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin"}}
 
 	engine.handleSwitchSession([]string{"static", "claude-stdio"}, msg)
 	assert.Contains(t, mockBot.lastMessage, "Cannot switch configured session")
@@ -87,7 +87,7 @@ func TestHandleSwitchSession_InvalidArgs(t *testing.T) {
 	engine.activeBots["testbot"] = mockBot
 
 	msg := bot.BotMessage{Platform: "testbot", Channel: "ch1", UserID: "admin"}
-	engine.config.Security.Admins = map[string][]string{"testbot": {"admin"}}
+	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin"}}
 
 	engine.handleSwitchSession([]string{"onlyone"}, msg)
 	assert.Contains(t, mockBot.lastMessage, "Invalid arguments")
@@ -99,7 +99,7 @@ func TestHandleSwitchSession_AdapterNotFound(t *testing.T) {
 	engine.activeBots["testbot"] = mockBot
 
 	msg := bot.BotMessage{Platform: "testbot", Channel: "ch1", UserID: "admin"}
-	engine.config.Security.Admins = map[string][]string{"testbot": {"admin"}}
+	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin"}}
 
 	engine.handleSwitchSession([]string{"mysession", "unknown-type"}, msg)
 	assert.Contains(t, mockBot.lastMessage, "not found")
@@ -135,7 +135,7 @@ func TestHandleSwitchSession_ResumeOptionPassed(t *testing.T) {
 	engine.activeBots["testbot"] = mockBot
 
 	msg := bot.BotMessage{Platform: "testbot", Channel: "ch1", UserID: "admin"}
-	engine.config.Security.Admins = map[string][]string{"testbot": {"admin"}}
+	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin"}}
 
 	engine.handleSwitchSession([]string{"mysession", "claude-stdio"}, msg)
 
@@ -163,7 +163,7 @@ func TestHandleSwitchSession_SameType(t *testing.T) {
 	engine.activeBots["testbot"] = mockBot
 
 	msg := bot.BotMessage{Platform: "testbot", Channel: "ch1", UserID: "admin"}
-	engine.config.Security.Admins = map[string][]string{"testbot": {"admin"}}
+	engine.cfg().Security.Admins = map[string][]string{"testbot": {"admin"}}
 
 	engine.handleSwitchSession([]string{"mysession", "claude"}, msg)
 

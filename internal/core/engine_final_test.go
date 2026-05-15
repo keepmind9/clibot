@@ -16,7 +16,7 @@ func TestEngine_NewEngine_MinimalConfig(t *testing.T) {
 	assert.NotNil(t, engine.sessions)
 	assert.NotNil(t, engine.cliAdapters)
 	assert.NotNil(t, engine.activeBots)
-	assert.NotNil(t, engine.config)
+	assert.NotNil(t, engine.cfg())
 }
 
 // TestEngine_UpdateSessionState_MultipleUpdates tests updateSessionState with multiple updates

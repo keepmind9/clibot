@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -100,7 +101,9 @@ func isSpecialCommand(input string) (string, bool, []string) {
 
 // Engine is the core scheduling engine that manages CLI sessions and bot connections
 type Engine struct {
-	config          *Config
+	config          atomic.Pointer[Config]           // Hot-reloadable config, accessed via cfg()
+	configPath      string                           // Config file path for reload
+	configAdapter   *CoreConfigAdapter               // Reference for proxy adapter updates on reload
 	cliAdapters     map[string]cli.CLIAdapter        // CLI type -> adapter
 	activeBots      map[string]bot.BotAdapter        // Bot type -> adapter
 	sessions        map[string]*Session              // Session name -> Session
@@ -114,6 +117,18 @@ type Engine struct {
 	proxyMgr        *proxy.ProxyManager              // Proxy manager for HTTP clients
 	ctx             context.Context                  // Context for cancellation
 	cancel          context.CancelFunc               // Cancel function for graceful shutdown
+}
+
+// cfg returns the current config snapshot. Used throughout the Engine
+// to access config fields. The atomic load guarantees the returned
+// pointer is either the old or new config — never a torn value.
+func (e *Engine) cfg() *Config {
+	return e.config.Load()
+}
+
+// SetConfigPath stores the config file path for hot-reload.
+func (e *Engine) SetConfigPath(path string) {
+	e.configPath = path
 }
 
 // BotChannel represents a bot channel for sending responses
@@ -142,7 +157,6 @@ func NewEngine(config *Config) *Engine {
 	}
 
 	engine := &Engine{
-		config:          config,
 		cliAdapters:     make(map[string]cli.CLIAdapter),
 		activeBots:      make(map[string]bot.BotAdapter),
 		sessions:        make(map[string]*Session),
@@ -150,10 +164,13 @@ func NewEngine(config *Config) *Engine {
 		sessionChannels: make(map[string]map[string]BotChannel),
 		userSessions:    make(map[string]string),
 		sessionCmdLocks: make(map[string]*sync.Mutex),
-		proxyMgr:        proxy.NewProxyManager(NewCoreConfigAdapter(config)),
+		configAdapter:   NewCoreConfigAdapter(config),
+		proxyMgr:        nil,
 		ctx:             ctx,
 		cancel:          cancel,
 	}
+	engine.config.Store(config)
+	engine.proxyMgr = proxy.NewProxyManager(engine.configAdapter)
 	return engine
 }
 
@@ -177,7 +194,7 @@ func (e *Engine) initializeSessions() error {
 	e.sessionMu.Lock()
 	defer e.sessionMu.Unlock()
 
-	for _, sessionConfig := range e.config.Sessions {
+	for _, sessionConfig := range e.cfg().Sessions {
 		// Check if session already exists
 		if _, exists := e.sessions[sessionConfig.Name]; exists {
 			continue
@@ -265,7 +282,7 @@ func (e *Engine) ensureSessionStarted(session *Session, sessionConfig SessionCon
 // needsHookServer checks if any session requires hook server
 // Returns false if all sessions use callback-based adapters (ACP, stdio)
 func (e *Engine) needsHookServer() bool {
-	for _, sessionConfig := range e.config.Sessions {
+	for _, sessionConfig := range e.cfg().Sessions {
 		if sessionConfig.CLIType != "acp" && !stdio.IsStdioCLIType(sessionConfig.CLIType) {
 			return true
 		}
@@ -293,7 +310,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 
 	// Start all enabled bots
-	for botType, botConfig := range e.config.Bots {
+	for botType, botConfig := range e.cfg().Bots {
 		if !botConfig.Enabled {
 			continue
 		}
@@ -337,7 +354,7 @@ func (e *Engine) runEventLoop(ctx context.Context) {
 	logger.Info("engine-event-loop-started")
 	logger.WithFields(logrus.Fields{
 		"bots":     len(e.activeBots),
-		"sessions": len(e.config.Sessions),
+		"sessions": len(e.cfg().Sessions),
 	}).Info("clibot-service-started-successfully")
 
 	for {
@@ -407,7 +424,7 @@ func (e *Engine) handleSpecialCommandWithAuth(command string, args []string, msg
 	}
 
 	// Other commands require whitelist authorization
-	if !e.config.IsUserAuthorized(msg.Platform, msg.UserID) {
+	if !e.cfg().IsUserAuthorized(msg.Platform, msg.UserID) {
 		logger.WithFields(logrus.Fields{
 			"platform": msg.Platform,
 			"user":     msg.UserID,
@@ -468,7 +485,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 
 	// Step 1: Security check - verify user is in whitelist
 	// Applies to all commands except "help" and "echo", and all AI queries
-	if !e.config.IsUserAuthorized(msg.Platform, msg.UserID) {
+	if !e.cfg().IsUserAuthorized(msg.Platform, msg.UserID) {
 		logger.WithFields(logrus.Fields{
 			"platform": msg.Platform,
 			"user":     msg.UserID,
@@ -995,14 +1012,14 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 			dynamicCount++
 		}
 	}
-	if dynamicCount >= e.config.Session.MaxDynamicSessions {
-		response = fmt.Sprintf("❌ Maximum dynamic session limit reached (%d)", e.config.Session.MaxDynamicSessions)
+	if dynamicCount >= e.cfg().Session.MaxDynamicSessions {
+		response = fmt.Sprintf("❌ Maximum dynamic session limit reached (%d)", e.cfg().Session.MaxDynamicSessions)
 		return
 	}
 
 	// Build env: adapter-level merged with caller-provided env
 	mergedEnv := make(map[string]string)
-	if adapterCfg, ok := e.config.CLIAdapters[p.cliType]; ok {
+	if adapterCfg, ok := e.cfg().CLIAdapters[p.cliType]; ok {
 		for k, v := range adapterCfg.Env {
 			mergedEnv[k] = v
 		}
@@ -1085,7 +1102,7 @@ func (e *Engine) handleNewSession(args []string, msg bot.BotMessage) {
 		"args":     args,
 	}).Info("handle-new-session-command")
 
-	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
+	if !e.cfg().IsAdmin(msg.Platform, msg.UserID) {
 		e.SendToBot(msg.Platform, msg.Channel, "❌ Permission denied: admin only")
 		return
 	}
@@ -1126,7 +1143,7 @@ func (e *Engine) listTemplates(msg bot.BotMessage) {
 	for name, tpl := range builtins {
 		entries[name] = tplEntry{name: name, tpl: tpl, source: "built-in"}
 	}
-	for name, tpl := range e.config.SessionTemplates {
+	for name, tpl := range e.cfg().SessionTemplates {
 		entries[name] = tplEntry{name: name, tpl: tpl, source: "custom"}
 	}
 
@@ -1163,7 +1180,7 @@ func (e *Engine) handleNewFromTemplate(args []string, msg bot.BotMessage) {
 		"args":     args,
 	}).Info("handle-new-from-template-command")
 
-	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
+	if !e.cfg().IsAdmin(msg.Platform, msg.UserID) {
 		e.SendToBot(msg.Platform, msg.Channel, "❌ Permission denied: admin only")
 		return
 	}
@@ -1211,8 +1228,8 @@ func (e *Engine) handleNewFromTemplate(args []string, msg bot.BotMessage) {
 
 // resolveTemplate finds a session template by name.
 func (e *Engine) resolveTemplate(name string) *SessionTemplate {
-	if e.config.SessionTemplates != nil {
-		if tpl, ok := e.config.SessionTemplates[name]; ok {
+	if e.cfg().SessionTemplates != nil {
+		if tpl, ok := e.cfg().SessionTemplates[name]; ok {
 			return &tpl
 		}
 	}
@@ -1330,7 +1347,7 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	// 3. Ensure session is running (start if necessary)
 	// Get session config
 	var sessionConfig SessionConfig
-	for _, cfg := range e.config.Sessions {
+	for _, cfg := range e.cfg().Sessions {
 		if cfg.Name == sessionName {
 			sessionConfig = cfg
 			break
@@ -1400,7 +1417,7 @@ func (e *Engine) handleSwitchSession(args []string, msg bot.BotMessage) {
 		"args":     args,
 	}).Info("handle-switch-session-command")
 
-	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
+	if !e.cfg().IsAdmin(msg.Platform, msg.UserID) {
 		e.SendToBot(msg.Platform, msg.Channel, "\u274c Permission denied: admin only")
 		return
 	}
@@ -1502,7 +1519,7 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	}).Info("handle-delete-session-command")
 
 	// 1. Permission check
-	if !e.config.IsAdmin(msg.Platform, msg.UserID) {
+	if !e.cfg().IsAdmin(msg.Platform, msg.UserID) {
 		e.SendToBot(msg.Platform, msg.Channel, "❌ Permission denied: admin only")
 		return
 	}
@@ -1634,7 +1651,7 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 		}
 
 		// Permission check: admin or session creator
-		isAdmin := e.config.IsAdmin(msg.Platform, msg.UserID)
+		isAdmin := e.cfg().IsAdmin(msg.Platform, msg.UserID)
 		isCreator := session.CreatedBy == getUserKey(msg.Platform, msg.UserID)
 
 		if !isAdmin && !isCreator {
@@ -2098,7 +2115,7 @@ func (e *Engine) updateSessionState(sessionName string, newState SessionState) {
 
 // sessionStateFile returns the path to the persistent session state file.
 func (e *Engine) sessionStateFile() string {
-	dir := e.config.DataDir
+	dir := e.cfg().DataDir
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -2286,14 +2303,14 @@ func (e *Engine) touchSession(sessionName string) {
 
 // startIdleSessionCleaner periodically checks for idle dynamic sessions and cleans them up.
 func (e *Engine) startIdleSessionCleaner() {
-	if e.config.Session.IdleTimeout == "0" {
+	if e.cfg().Session.IdleTimeout == "0" {
 		logger.Info("idle-session-cleaner-disabled")
 		return
 	}
 
-	idleTimeout, err := time.ParseDuration(e.config.Session.IdleTimeout)
+	idleTimeout, err := time.ParseDuration(e.cfg().Session.IdleTimeout)
 	if err != nil {
-		logger.WithField("idle_timeout", e.config.Session.IdleTimeout).Warn("invalid-idle-timeout-cleaner-disabled")
+		logger.WithField("idle_timeout", e.cfg().Session.IdleTimeout).Warn("invalid-idle-timeout-cleaner-disabled")
 		return
 	}
 
@@ -2440,7 +2457,7 @@ func (e *Engine) startNewWatchdogForSession(sessionName string) (context.Context
 func (e *Engine) SendToBot(platform, channel, message string) {
 	if botAdapter, exists := e.activeBots[platform]; exists {
 		maxLen := 0
-		if botCfg, ok := e.config.Bots[platform]; ok {
+		if botCfg, ok := e.cfg().Bots[platform]; ok {
 			maxLen = botCfg.MaxMessageLength
 		}
 

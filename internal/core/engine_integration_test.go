@@ -90,7 +90,7 @@ func newIntegrationEngine(t *testing.T) (*Engine, *syncBotAdapter) {
 
 	testBot := newSyncBotAdapter()
 	engine.RegisterBotAdapter("itest", testBot)
-	engine.config.Security.Admins = map[string][]string{"itest": {"test-admin"}}
+	engine.cfg().Security.Admins = map[string][]string{"itest": {"test-admin"}}
 
 	claudeAdapter := stdio.NewStdioAdapter(stdio.ClaudeSpec{}, stdio.StdioAdapterConfig{
 		IdleTimeout: 5 * time.Minute,

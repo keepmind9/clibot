@@ -12,7 +12,7 @@ import (
 // startHookServer starts the HTTP hook server in a separate goroutine
 // This server listens for completion notifications from CLI tools
 func (e *Engine) startHookServer() {
-	addr := fmt.Sprintf(":%d", e.config.HookServer.Port)
+	addr := fmt.Sprintf(":%d", e.cfg().HookServer.Port)
 
 	// Create HTTP server instance
 	mux := http.NewServeMux()

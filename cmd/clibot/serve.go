@@ -69,13 +69,15 @@ var (
 				log.Fatalf("Failed to register bot adapters: %v", err)
 			}
 
-			// Setup signal handling for graceful shutdown
+			// Setup signal handling for graceful shutdown and config reload
 			sigChan := make(chan os.Signal, 1)
-			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
 			// Create context for cancellation
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+
+			engine.SetConfigPath(configFile)
 
 			// Start engine in a goroutine
 			engineErrChan := make(chan error, 1)
@@ -85,31 +87,47 @@ var (
 				engineErrChan <- engine.Run(ctx)
 			}()
 
-			// Wait for signal or engine error
-			select {
-			case sig := <-sigChan:
-				log.Printf("\nReceived signal: %v, shutting down gracefully...", sig)
-				cancel() // Cancel context to stop event loop
-				if err := engine.Stop(); err != nil {
-					log.Printf("Error during shutdown: %v", err)
-				}
-			case err := <-engineErrChan:
-				if err != nil {
-					log.Fatalf("Engine error: %v", err)
+			// Main signal loop: SIGHUP reloads config, SIGINT/SIGTERM shuts down
+		signalLoop:
+			for {
+				select {
+				case sig := <-sigChan:
+					if sig == syscall.SIGHUP {
+						log.Printf("Received SIGHUP, reloading config from %s...", configFile)
+						if err := engine.ReloadConfig(configFile); err != nil {
+							log.Printf("Config reload failed: %v", err)
+						} else {
+							log.Println("Config reloaded successfully")
+						}
+						continue
+					}
+					// SIGINT or SIGTERM
+					log.Printf("\nReceived signal: %v, shutting down gracefully...", sig)
+					cancel()
+					if err := engine.Stop(); err != nil {
+						log.Printf("Error during shutdown: %v", err)
+					}
+					break signalLoop
+				case err := <-engineErrChan:
+					if err != nil {
+						log.Fatalf("Engine error: %v", err)
+					}
+					break signalLoop
 				}
 			}
 
 			// Wait for engine to actually stop (with timeout via second Ctrl+C)
 			select {
 			case sig := <-sigChan:
-				log.Printf("\nReceived second signal: %v, forcing shutdown...", sig)
-				if err := engine.Stop(); err != nil {
-					log.Printf("Error during forced shutdown: %v", err)
+				if sig == syscall.SIGHUP {
+					log.Println("Ignoring SIGHUP during shutdown")
+				} else {
+					log.Printf("\nReceived second signal: %v, forcing shutdown...", sig)
+					if err := engine.Stop(); err != nil {
+						log.Printf("Error during forced shutdown: %v", err)
+					}
 				}
-			case err := <-engineErrChan:
-				if err != nil {
-					log.Fatalf("Engine error: %v", err)
-				}
+			case <-engineErrChan:
 			}
 
 			log.Println("Clibot stopped")

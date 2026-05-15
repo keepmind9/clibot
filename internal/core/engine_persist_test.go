@@ -16,7 +16,7 @@ func TestPersistSessions_WritesFile(t *testing.T) {
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 
 	tmpDir := t.TempDir()
-	engine.config.DataDir = tmpDir
+	engine.cfg().DataDir = tmpDir
 
 	engine.sessionMu.Lock()
 	engine.sessions["dyn1"] = &Session{
@@ -55,7 +55,7 @@ func TestPersistSessions_WritesFile(t *testing.T) {
 func TestPersistSessions_RemovesFileWhenEmpty(t *testing.T) {
 	engine := newTestEngine()
 	tmpDir := t.TempDir()
-	engine.config.DataDir = tmpDir
+	engine.cfg().DataDir = tmpDir
 
 	// Create file first
 	path := filepath.Join(tmpDir, "sessions.json")
@@ -76,7 +76,7 @@ func TestLoadPersistedSessions_RestoresAlive(t *testing.T) {
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 
 	tmpDir := t.TempDir()
-	engine.config.DataDir = tmpDir
+	engine.cfg().DataDir = tmpDir
 
 	state := sessionState{
 		Sessions: []*Session{
@@ -121,7 +121,7 @@ func TestLoadPersistedSessions_SkipsMissingAdapter(t *testing.T) {
 	// No adapter registered for "unknown-stdio"
 
 	tmpDir := t.TempDir()
-	engine.config.DataDir = tmpDir
+	engine.cfg().DataDir = tmpDir
 
 	state := sessionState{
 		Sessions: []*Session{
@@ -144,7 +144,7 @@ func TestLoadPersistedSessions_SkipsIfStaticExists(t *testing.T) {
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 
 	tmpDir := t.TempDir()
-	engine.config.DataDir = tmpDir
+	engine.cfg().DataDir = tmpDir
 
 	engine.sessionMu.Lock()
 	engine.sessions["conflict"] = &Session{Name: "conflict", CLIType: "codex-stdio", IsDynamic: false}
@@ -168,7 +168,7 @@ func TestLoadPersistedSessions_SkipsIfStaticExists(t *testing.T) {
 
 func TestLoadPersistedSessions_NoFile(t *testing.T) {
 	engine := newTestEngine()
-	engine.config.DataDir = t.TempDir()
+	engine.cfg().DataDir = t.TempDir()
 
 	// Should not panic
 	engine.loadPersistedSessions()
@@ -183,7 +183,7 @@ func TestLoadPersistedSessions_BackwardCompatOldFormat(t *testing.T) {
 	engine.RegisterCLIAdapter("codex-stdio", &mockCLIAdapter{})
 
 	tmpDir := t.TempDir()
-	engine.config.DataDir = tmpDir
+	engine.cfg().DataDir = tmpDir
 
 	// Write old format: bare array instead of sessionState object
 	oldFormat := []*Session{
