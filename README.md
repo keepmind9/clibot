@@ -38,7 +38,6 @@ See [`skills/clibot/`](skills/clibot/) for details.
 
 ### Prerequisites
 
-- **Go 1.24+**
 - [**Bot Account**](#setup-bot) (Feishu/Discord/Telegram)
 - [**ACP-Compatible CLI**](#acp-mode-recommended) (e.g., claude-agent-acp) OR **tmux** (for Hook Mode)
 
@@ -46,14 +45,26 @@ For detailed installation instructions, see [INSTALL.md](INSTALL.md).
 
 ### Install
 
+**Linux / macOS:**
+```bash
+curl -sL https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.ps1 | iex
+```
+
+**From source** (requires Go 1.24+):
 ```bash
 go install github.com/keepmind9/clibot@latest
 ```
 
-The binary will be installed at `~/go/bin/clibot`. Make sure it's in your PATH:
+### Update
 
 ```bash
-export PATH=$PATH:~/go/bin
+clibot update          # Download latest version
+clibot update --apply  # Apply the downloaded update
 ```
 
 ## 🌐 Network Proxy

@@ -1,15 +1,39 @@
 # 安装指南
 
-本指南涵盖 clibot 的系统要求、依赖项和平台特定设置说明。
+本指南涵盖 clibot 的系统要求和安装说明。
 
 ## 目录
 
+- [快速安装](#快速安装)
 - [系统要求](#系统要求)
-- [依赖项](#依赖项)
-- [平台特定设置](#平台特定设置)
-  - [Linux](#linux)
-  - [macOS](#macos)
-  - [Windows (WSL2)](#windows-wsl2)
+- [手动下载](#手动下载)
+- [从源码构建](#从源码构建)
+- [自更新](#自更新)
+
+## 快速安装
+
+最快的安装方式：
+
+**Linux / macOS:**
+```bash
+curl -sL https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.ps1 | iex
+```
+
+脚本会自动：
+- 检测操作系统和架构
+- 从 GitHub 下载最新版本
+- 安装到 `~/.local/bin/clibot`
+- 如有需要则添加到 PATH
+
+验证安装：
+```bash
+clibot version
+```
 
 ## 系统要求
 
@@ -17,111 +41,73 @@
 
 | 平台 | 状态 | 说明 |
 |----------|--------|-------|
-| **Linux** | ✅ 完全支持 | Ubuntu、Debian、Fedora、CentOS、Arch 等 |
-| **macOS** | ✅ 完全支持 | 10.15+ |
-| **Windows** | ⚠️ 仅 WSL2 | 需要Windows 子系统 for Linux 2 |
+| **Linux** | ✅ 完全支持 | 所有模式原生运行 |
+| **macOS** | ✅ 完全支持 | 所有模式原生运行 |
+| **Windows** | ✅ ACP/Stdio 模式 | 原生二进制，ACP 和 Stdio 模式无需 WSL |
 
-### 为什么不支持 Windows 原生？
+### 模式要求
 
-clibot 的 **Hook 模式**需要 `tmux` 进行会话管理，而 Windows 原生不支持 tmux。
+| 模式 | 要求 | 说明 |
+|------|------|------|
+| **ACP 模式** ⭐ | 无 | 推荐，流式响应 |
+| **Stdio 模式** | 无 | 零配置，per-turn CLI |
+| **Hook 模式** | tmux | Windows 原生不支持 |
 
-**解决方案：**
-1. **ACP 模式**（推荐）：无需 tmux，适用于所有平台
-2. **WSL2**：在 Windows 子系统 for Linux 中运行 clibot
+## 手动下载
 
-## 依赖项
+从 [GitHub Releases](https://github.com/keepmind9/clibot/releases/latest) 下载对应平台的二进制文件。
 
-### 必需软件
-
-| 软件 | 版本 | 用途 |
-|----------|---------|---------|
-| **Go** | 1.24+ | 构建和运行 clibot |
-| **Git** | 任意 | 克隆仓库（如果从源码安装） |
-| **tmux** | 任意 | 会话管理（仅 Hook 模式需要，ACP 模式不需要） |
-
-### 安装 Go
-
-**Linux (Ubuntu/Debian):**
+**Linux (AMD64):**
 ```bash
-# 方式 1：从仓库安装（可能是较旧版本）
-sudo apt install golang-go
-
-# 方式 2：最新版本（推荐）
-wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
+curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-amd64
+chmod +x clibot-linux-amd64
+mkdir -p ~/.local/bin
+mv clibot-linux-amd64 ~/.local/bin/clibot
 ```
 
-**macOS:**
+**Linux (ARM64):**
 ```bash
-brew install go
+curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-arm64
+chmod +x clibot-linux-arm64
+mkdir -p ~/.local/bin
+mv clibot-linux-arm64 ~/.local/bin/clibot
 ```
 
-**验证安装：**
+**macOS (Apple Silicon):**
 ```bash
-go version
-# 应输出: go version go1.24.0 ...
+curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-darwin-arm64
+chmod +x clibot-darwin-arm64
+mkdir -p ~/.local/bin
+mv clibot-darwin-arm64 ~/.local/bin/clibot
 ```
 
-### 安装 tmux（仅 Hook 模式）
-
-**ACP 模式不需要 tmux。如果使用 ACP 模式，请跳过本节。**
-
-**Linux (Ubuntu/Debian):**
+**macOS (Intel):**
 ```bash
-sudo apt-get install tmux
+curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-darwin-amd64
+chmod +x clibot-darwin-amd64
+mkdir -p ~/.local/bin
+mv clibot-darwin-amd64 ~/.local/bin/clibot
 ```
 
-**macOS:**
-```bash
-brew install tmux
+**Windows (AMD64):**
+```powershell
+Invoke-WebRequest -Uri "https://github.com/keepmind9/clibot/releases/latest/download/clibot-windows-amd64.exe" -OutFile "clibot.exe"
 ```
 
-**Fedora/CentOS/RHEL:**
+将 `~/.local/bin` 添加到 PATH：
 ```bash
-sudo dnf install tmux
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-**Arch Linux:**
-```bash
-sudo pacman -S tmux
-```
+## 从源码构建
 
-**验证安装：**
-```bash
-tmux -V
-# 应输出: tmux 3.x 或类似
-```
+需要 **Go 1.24+**。
 
-### 安装 Git
-
-**Linux:**
-```bash
-sudo apt-get install git  # Ubuntu/Debian
-sudo dnf install git      # Fedora/CentOS
-sudo pacman -S git        # Arch
-```
-
-**macOS:**
-```bash
-brew install git
-```
-
-## 平台特定设置
-
-### Linux
-
-clibot 在 Linux 上原生运行，具有完整功能支持。
-
-#### 安装 clibot
-
-**方式 1：从源码安装（推荐）：**
 ```bash
 go install github.com/keepmind9/clibot@latest
 ```
 
-**方式 2：从仓库构建：**
+或从仓库构建：
 ```bash
 git clone https://github.com/keepmind9/clibot.git
 cd clibot
@@ -129,154 +115,36 @@ make build
 sudo make install
 ```
 
-二进制文件将安装到 `~/go/bin/clibot`。确保它在你的 PATH 中：
+## 自更新
+
+clibot 支持自更新：
 
 ```bash
-export PATH=$PATH:~/go/bin
+# 检查并下载最新版本
+clibot update
+
+# 应用已下载的更新（替换二进制）
+clibot update --apply
 ```
 
-#### 配置 clibot
-
-```bash
-# 创建配置目录
-mkdir -p ~/.config/clibot
-
-# 复制配置模板
-cp configs/config.mini.yaml ~/.config/clibot/config.yaml
-
-# 编辑配置
-nano ~/.config/clibot/config.yaml
-```
-
-#### 运行 clibot
-
-```bash
-clibot serve --config ~/.config/clibot/config.yaml
-```
-
-### macOS
-
-clibot 在 macOS 上原生运行，具有完整功能支持。
-
-#### 安装 Homebrew（如果未安装）
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-#### 安装依赖项
-
-```bash
-brew install go tmux git
-```
-
-#### 安装 clibot
-
-```bash
-go install github.com/keepmind9/clibot@latest
-```
-
-#### 配置和运行
-
-与 Linux 说明相同。
-
-### Windows (WSL2)
-
-clibot 可以使用 WSL2（Windows 子系统 for Linux）在 Windows 上运行。
-
-#### 步骤 1：安装 WSL2
-
-以管理员身份打开 PowerShell 或命令提示符：
-
-```powershell
-# 启用 WSL
-wsl --install
-
-# 出现提示时重启计算机
-```
-
-#### 步骤 2：将 WSL2 设置为默认
-
-```powershell
-wsl --set-default-version 2
-```
-
-#### 步骤 3：安装 Ubuntu（推荐）
-
-```powershell
-# 查看可用的发行版
-wsl --list --online
-
-# 安装 Ubuntu
-wsl --install -d Ubuntu
-```
-
-#### 步骤 4：完成 Ubuntu 设置
-
-1. 从开始菜单启动 Ubuntu
-2. 创建用户名和密码
-3. 更新软件包：
-
-```bash
-# 在 WSL Ubuntu 终端中
-sudo apt update && sudo apt upgrade -y
-```
-
-#### 步骤 5：在 WSL 中安装所需工具
-
-```bash
-# 安装 Go
-wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-
-# 安装 tmux（用于 Hook 模式）
-sudo apt install tmux -y
-
-# 安装 Git
-sudo apt install git -y
-```
-
-#### 步骤 6：安装和运行 clibot
-
-```bash
-# 在 WSL Ubuntu 终端中
-go install github.com/keepmind9/clibot@latest
-
-# 配置
-mkdir -p ~/.config/clibot
-cp /mnt/c/path/to/clibot/configs/config.yaml ~/.config/clibot/config.yaml
-nano ~/.config/clibot/config.yaml
-
-# 运行 clibot
-clibot serve --config ~/.config/clibot/config.yaml
-```
-
-#### Windows + WSL2 提示
-
-- **从 WSL 访问 Windows 文件**：`/mnt/c/Users/你的名字/...`
-- **从 Windows 访问 WSL 文件**：`\\wsl$\Ubuntu\home\你的名字\...`
-- **作为后台服务运行**：在 WSL 内使用 systemd
-- **无需防火墙配置**：机器人使用长连接（仅出站）
-
-#### 限制
-
-- 剪贴板集成可能无法正常工作
-- 需要文件路径转换（WSL ↔ Windows）
-- 性能略低于原生 Linux
+特性：
+- 支持断点续传
+- 自动二进制替换（Unix: rename-old 方式，Windows: 延迟替换）
 
 ## 后续步骤
 
 安装完成后：
 
 1. **配置 clibot**：
-   - 编辑 `~/.config/clibot/config.yaml`
-   - 添加你的机器人凭据
-   - 将你的用户 ID 添加到白名单
+   ```bash
+   mkdir -p ~/.config/clibot
+   cp configs/config.mini.yaml ~/.config/clibot/config.yaml
+   nano ~/.config/clibot/config.yaml
+   ```
 
-2. **选择你的模式**：
+2. **选择运行模式**：
    - **ACP 模式**（推荐）：无需 tmux
+   - **Stdio 模式**：零配置，无需 tmux
    - **Hook 模式**：需要 tmux + CLI hook 配置
 
 3. **启动 clibot**：

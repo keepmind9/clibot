@@ -38,7 +38,6 @@ Claude Code 用户可以使用交互式技能，一键启动配置向导：
 
 ### 前置要求
 
-- **Go 1.24+**
 - [**机器人账号**](#配置机器人)（飞书/Discord/Telegram）
 - [**ACP 兼容的 CLI**](#acp-模式推荐)（如 claude-agent-acp）或 **tmux**（Hook 模式）
 
@@ -46,14 +45,26 @@ Claude Code 用户可以使用交互式技能，一键启动配置向导：
 
 ### 安装
 
+**Linux / macOS:**
+```bash
+curl -sL https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.ps1 | iex
+```
+
+**从源码构建**（需要 Go 1.24+）：
 ```bash
 go install github.com/keepmind9/clibot@latest
 ```
 
-二进制文件将安装到 `~/go/bin/clibot`。确保它在你的 PATH 中：
+### 更新
 
 ```bash
-export PATH=$PATH:~/go/bin
+clibot update          # 下载最新版本
+clibot update --apply  # 应用已下载的更新
 ```
 
 ## 🌐 网络代理

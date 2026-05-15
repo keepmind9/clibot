@@ -70,7 +70,24 @@ jobs:
           cat > release_notes.md << 'EOF'
           ## Clibot ${{ env.VERSION_DISPLAY }}
 
-          ### Installation
+          ### Quick Install
+
+          **Linux / macOS:**
+          \`\`\`bash
+          curl -sL https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.sh | bash
+          \`\`\`
+
+          **Windows (PowerShell):**
+          \`\`\`powershell
+          irm https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.ps1 | iex
+          \`\`\`
+
+          **Self-update (already installed):**
+          \`\`\`bash
+          clibot update
+          \`\`\`
+
+          ### Manual Download
 
           **Linux (AMD64):**
           \`\`\`bash

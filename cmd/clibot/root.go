@@ -29,4 +29,5 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(newUpdateCmd())
 }

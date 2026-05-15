@@ -1,15 +1,39 @@
 # Installation Guide
 
-This guide covers system requirements, dependencies, and platform-specific setup instructions for clibot.
+This guide covers system requirements and installation instructions for clibot.
 
 ## Table of Contents
 
+- [Quick Install](#quick-install)
 - [System Requirements](#system-requirements)
-- [Dependencies](#dependencies)
-- [Platform-Specific Setup](#platform-specific-setup)
-  - [Linux](#linux)
-  - [macOS](#macos)
-  - [Windows (WSL2)](#windows-wsl2)
+- [Manual Binary Download](#manual-binary-download)
+- [Install from Source](#install-from-source)
+- [Self-Update](#self-update)
+
+## Quick Install
+
+The fastest way to install clibot:
+
+**Linux / macOS:**
+```bash
+curl -sL https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/keepmind9/clibot/main/scripts/install.ps1 | iex
+```
+
+The script will:
+- Detect your OS and architecture
+- Download the latest release from GitHub
+- Install to `~/.local/bin/clibot`
+- Add to PATH if needed
+
+Verify the installation:
+```bash
+clibot version
+```
 
 ## System Requirements
 
@@ -17,111 +41,73 @@ This guide covers system requirements, dependencies, and platform-specific setup
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| **Linux** | ✅ Fully Supported | Ubuntu, Debian, Fedora, CentOS, Arch, etc. |
-| **macOS** | ✅ Fully Supported | 10.15+ |
-| **Windows** | ⚠️ WSL2 Only | Windows Subsystem for Linux 2 required |
+| **Linux** | ✅ Fully Supported | All modes work natively |
+| **macOS** | ✅ Fully Supported | All modes work natively |
+| **Windows** | ✅ ACP/Stdio Mode | Native binary, ACP and Stdio modes work without WSL |
 
-### Why Not Windows Native?
+### Mode Requirements
 
-clibot's **Hook Mode** requires `tmux` for session management, which is not available natively on Windows.
+| Mode | Requirements | Notes |
+|------|-------------|-------|
+| **ACP Mode** ⭐ | None | Recommended, streaming responses |
+| **Stdio Mode** | None | Zero config, per-turn CLIs |
+| **Hook Mode** | tmux | Not available on Windows native |
 
-**Workarounds:**
-1. **ACP Mode** (Recommended): No tmux required, works on all platforms
-2. **WSL2**: Run clibot in Windows Subsystem for Linux
+## Manual Binary Download
 
-## Dependencies
+Download the binary for your platform from [GitHub Releases](https://github.com/keepmind9/clibot/releases/latest).
 
-### Required Software
-
-| Software | Version | Purpose |
-|----------|---------|---------|
-| **Go** | 1.24+ | Build and run clibot |
-| **Git** | Any | Clone repository (if installing from source) |
-| **tmux** | Any | Session management (Hook Mode only, not required for ACP Mode) |
-
-### Installing Go
-
-**Linux (Ubuntu/Debian):**
+**Linux (AMD64):**
 ```bash
-# Option 1: From repository (may be older version)
-sudo apt install golang-go
-
-# Option 2: Latest version (recommended)
-wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
+curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-amd64
+chmod +x clibot-linux-amd64
+mkdir -p ~/.local/bin
+mv clibot-linux-amd64 ~/.local/bin/clibot
 ```
 
-**macOS:**
+**Linux (ARM64):**
 ```bash
-brew install go
+curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-linux-arm64
+chmod +x clibot-linux-arm64
+mkdir -p ~/.local/bin
+mv clibot-linux-arm64 ~/.local/bin/clibot
 ```
 
-**Verify installation:**
+**macOS (Apple Silicon):**
 ```bash
-go version
-# Should output: go version go1.24.0 ...
+curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-darwin-arm64
+chmod +x clibot-darwin-arm64
+mkdir -p ~/.local/bin
+mv clibot-darwin-arm64 ~/.local/bin/clibot
 ```
 
-### Installing tmux (Hook Mode Only)
-
-**ACP Mode does NOT require tmux. Skip this section if using ACP Mode.**
-
-**Linux (Ubuntu/Debian):**
+**macOS (Intel):**
 ```bash
-sudo apt-get install tmux
+curl -LO https://github.com/keepmind9/clibot/releases/latest/download/clibot-darwin-amd64
+chmod +x clibot-darwin-amd64
+mkdir -p ~/.local/bin
+mv clibot-darwin-amd64 ~/.local/bin/clibot
 ```
 
-**macOS:**
-```bash
-brew install tmux
+**Windows (AMD64):**
+```powershell
+Invoke-WebRequest -Uri "https://github.com/keepmind9/clibot/releases/latest/download/clibot-windows-amd64.exe" -OutFile "clibot.exe"
 ```
 
-**Fedora/CentOS/RHEL:**
+Add `~/.local/bin` to PATH:
 ```bash
-sudo dnf install tmux
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-**Arch Linux:**
-```bash
-sudo pacman -S tmux
-```
+## Install from Source
 
-**Verify installation:**
-```bash
-tmux -V
-# Should output: tmux 3.x or similar
-```
+Requires **Go 1.24+**.
 
-### Installing Git
-
-**Linux:**
-```bash
-sudo apt-get install git  # Ubuntu/Debian
-sudo dnf install git      # Fedora/CentOS
-sudo pacman -S git        # Arch
-```
-
-**macOS:**
-```bash
-brew install git
-```
-
-## Platform-Specific Setup
-
-### Linux
-
-clibot runs natively on Linux with full feature support.
-
-#### Install clibot
-
-**Option 1: Install from source (recommended):**
 ```bash
 go install github.com/keepmind9/clibot@latest
 ```
 
-**Option 2: Build from repository:**
+Or build from the repository:
 ```bash
 git clone https://github.com/keepmind9/clibot.git
 cd clibot
@@ -129,154 +115,36 @@ make build
 sudo make install
 ```
 
-The binary will be installed at `~/go/bin/clibot`. Make sure it's in your PATH:
+## Self-Update
+
+clibot can update itself:
 
 ```bash
-export PATH=$PATH:~/go/bin
+# Check and download the latest version
+clibot update
+
+# Apply the downloaded update (replace binary)
+clibot update --apply
 ```
 
-#### Configure clibot
-
-```bash
-# Create config directory
-mkdir -p ~/.config/clibot
-
-# Copy configuration template
-cp configs/config.mini.yaml ~/.config/clibot/config.yaml
-
-# Edit configuration
-nano ~/.config/clibot/config.yaml
-```
-
-#### Run clibot
-
-```bash
-clibot serve --config ~/.config/clibot/config.yaml
-```
-
-### macOS
-
-clibot runs natively on macOS with full feature support.
-
-#### Install Homebrew (if not installed)
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-#### Install dependencies
-
-```bash
-brew install go tmux git
-```
-
-#### Install clibot
-
-```bash
-go install github.com/keepmind9/clibot@latest
-```
-
-#### Configure and run
-
-Same as Linux instructions above.
-
-### Windows (WSL2)
-
-clibot can run on Windows using WSL2 (Windows Subsystem for Linux).
-
-#### Step 1: Install WSL2
-
-Open PowerShell or Command Prompt as Administrator:
-
-```powershell
-# Enable WSL
-wsl --install
-
-# Restart your computer when prompted
-```
-
-#### Step 2: Set WSL2 as default
-
-```powershell
-wsl --set-default-version 2
-```
-
-#### Step 3: Install Ubuntu (recommended)
-
-```powershell
-# View available distributions
-wsl --list --online
-
-# Install Ubuntu
-wsl --install -d Ubuntu
-```
-
-#### Step 4: Complete Ubuntu setup
-
-1. Launch Ubuntu from Start menu
-2. Create a username and password
-3. Update packages:
-
-```bash
-# Inside WSL Ubuntu terminal
-sudo apt update && sudo apt upgrade -y
-```
-
-#### Step 5: Install required tools in WSL
-
-```bash
-# Install Go
-wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-
-# Install tmux (for Hook Mode)
-sudo apt install tmux -y
-
-# Install Git
-sudo apt install git -y
-```
-
-#### Step 6: Install and run clibot
-
-```bash
-# Inside WSL Ubuntu terminal
-go install github.com/keepmind9/clibot@latest
-
-# Configure
-mkdir -p ~/.config/clibot
-cp /mnt/c/path/to/clibot/configs/config.yaml ~/.config/clibot/config.yaml
-nano ~/.config/clibot/config.yaml
-
-# Run clibot
-clibot serve --config ~/.config/clibot/config.yaml
-```
-
-#### Windows + WSL2 Tips
-
-- **Access Windows files from WSL**: `/mnt/c/Users/YourName/...`
-- **Access WSL files from Windows**: `\\wsl$\Ubuntu\home\yourname\...`
-- **Run as background service**: Use systemd inside WSL
-- **No firewall needed**: Bots use long-connections (outbound only)
-
-#### Limitations
-
-- Clipboard integration may not work seamlessly
-- File path conversions needed (WSL ↔ Windows)
-- Performance slightly lower than native Linux
+Features:
+- Resume support for interrupted downloads
+- Automatic binary replacement (Unix: rename-old trick, Windows: delayed swap)
 
 ## Next Steps
 
 After installation:
 
 1. **Configure clibot**:
-   - Edit `~/.config/clibot/config.yaml`
-   - Add your bot credentials
-   - Add your user ID to whitelist
+   ```bash
+   mkdir -p ~/.config/clibot
+   cp configs/config.mini.yaml ~/.config/clibot/config.yaml
+   nano ~/.config/clibot/config.yaml
+   ```
 
 2. **Choose your mode**:
    - **ACP Mode** (Recommended): No tmux required
+   - **Stdio Mode**: Zero config, no tmux required
    - **Hook Mode**: Requires tmux + CLI hook configuration
 
 3. **Start clibot**:
