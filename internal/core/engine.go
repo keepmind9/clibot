@@ -107,6 +107,8 @@ type Engine struct {
 	cliAdapters     map[string]cli.CLIAdapter        // CLI type -> adapter
 	activeBots      map[string]bot.BotAdapter        // Bot type -> adapter
 	sessions        map[string]*Session              // Session name -> Session
+	sessionIDs      map[int]string                   // Session ID -> name (for quick numeric reference)
+	nextSessionID   int                              // Auto-increment counter for session IDs
 	sessionMu       sync.RWMutex                     // Mutex for session access
 	messageChan     chan bot.BotMessage              // Bot message channel
 	hookServer      *http.Server                     // HTTP server for hooks
@@ -160,6 +162,7 @@ func NewEngine(config *Config) *Engine {
 		cliAdapters:     make(map[string]cli.CLIAdapter),
 		activeBots:      make(map[string]bot.BotAdapter),
 		sessions:        make(map[string]*Session),
+		sessionIDs:      make(map[int]string),
 		messageChan:     make(chan bot.BotMessage, constants.MessageChannelBufferSize),
 		sessionChannels: make(map[string]map[string]BotChannel),
 		userSessions:    make(map[string]string),
@@ -239,6 +242,7 @@ func (e *Engine) initializeSessions() error {
 			log.Printf("Session %s is not running and auto_start is disabled", session.Name)
 		}
 
+		e.assignSessionID(session)
 		e.sessions[session.Name] = session
 	}
 
@@ -436,13 +440,17 @@ func (e *Engine) handleSpecialCommandWithAuth(command string, args []string, msg
 	// Authorization passed, execute the command
 	// For session-specific commands, use TryLock to prevent concurrent execution
 	if requiresSessionLock(command) && len(args) > 0 {
-		sessionName := args[0]
+		resolvedName, ok := e.resolveSessionRef(args[0])
+		if !ok {
+			e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Session not found: %s", args[0]))
+			return
+		}
 
-		lock := e.getSessionCmdLock(sessionName)
+		lock := e.getSessionCmdLock(resolvedName)
 		if !lock.TryLock() {
 			// Lock is held by another command for this session
 			logger.WithFields(logrus.Fields{
-				"session": sessionName,
+				"session": resolvedName,
 				"command": command,
 				"user":    msg.UserID,
 			}).Warn("session-command-lock-held")
@@ -560,7 +568,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		for _, s := range availableSessions {
 			errorMsg += s + "\n"
 		}
-		errorMsg += "\n💡 Use: suse <session_name> to select a session"
+		errorMsg += "\n💡 Use: suse <id_or_name> to select a session"
 
 		e.SendToBot(msg.Platform, msg.Channel, errorMsg)
 		return
@@ -751,7 +759,7 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 	response := "📋 Available Sessions:\n\n"
 
 	if hasCurrent {
-		response += fmt.Sprintf("✅ Your current session: **%s**\n\n", currentSessionName)
+		response += fmt.Sprintf("✅ Your current session: %s\n\n", currentSessionName)
 	} else {
 		response += "⚠️  You haven't selected a session yet\n\n"
 	}
@@ -772,10 +780,10 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 		for _, session := range staticSessions {
 			marker := ""
 			if hasCurrent && session.Name == currentSessionName {
-				marker = " ⬅️ **CURRENT**"
+				marker = " ⬅️ CURRENT"
 			}
-			response += fmt.Sprintf("  • %s (%s) - %s [static]%s\n",
-				session.Name, session.CLIType, session.State, marker)
+			response += fmt.Sprintf("  #%d %s (%s) - %s [static]%s\n",
+				session.ID, session.Name, session.CLIType, session.State, marker)
 		}
 		response += "\n"
 	}
@@ -786,15 +794,15 @@ func (e *Engine) listSessions(msg bot.BotMessage) {
 		for _, session := range dynamicSessions {
 			marker := ""
 			if hasCurrent && session.Name == currentSessionName {
-				marker = " ⬅️ **CURRENT**"
+				marker = " ⬅️ CURRENT"
 			}
-			response += fmt.Sprintf("  • %s (%s) - %s [dynamic, created by %s]%s\n",
-				session.Name, session.CLIType, session.State, session.CreatedBy, marker)
+			response += fmt.Sprintf("  #%d %s (%s) - %s [dynamic, by %s]%s\n",
+				session.ID, session.Name, session.CLIType, session.State, session.CreatedBy, marker)
 		}
 	}
 
 	if !hasCurrent && len(e.sessions) > 0 {
-		response += "\n💡 Use: suse <session_name> to select a session\n"
+		response += "\n💡 Use: suse <id_or_name> to select a session\n"
 	}
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
@@ -842,13 +850,13 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 	e.sessionMu.RUnlock()
 
 	if session == nil {
-		response := fmt.Sprintf("🔍 **Your Information**\n\n"+
-			"**Platform:** %s\n"+
-			"**User ID:** `%s`\n"+
-			"**Channel ID:** `%s`\n"+
-			"**Current Session:** ⚠️  Not selected\n\n"+
+		response := fmt.Sprintf("🔍 Your Information\n\n"+
+			"Platform: %s\n"+
+			"User ID: `%s`\n"+
+			"Channel ID: `%s`\n"+
+			"Current Session: ⚠️  Not selected\n\n"+
 			"💡 Use 'slist' to see available sessions\n"+
-			"   Use 'suse <name>' to select a session",
+			"   Use 'suse <id_or_name>' to select a session",
 			msg.Platform, msg.UserID, msg.Channel)
 		e.SendToBot(msg.Platform, msg.Channel, response)
 		return
@@ -859,15 +867,15 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 		sessionType = fmt.Sprintf("Dynamic (created by %s)", session.CreatedBy)
 	}
 
-	response := fmt.Sprintf("🔍 **Your Information**\n\n"+
-		"**Platform:** %s\n"+
-		"**User ID:** `%s`\n"+
-		"**Channel ID:** `%s`\n\n"+
-		"**✅ Current Session:** %s\n"+
-		"**CLI Type:** %s\n"+
-		"**State:** %s\n"+
-		"**WorkDir:** %s\n"+
-		"**Type:** %s",
+	response := fmt.Sprintf("🔍 Your Information\n\n"+
+		"Platform: %s\n"+
+		"User ID: `%s`\n"+
+		"Channel ID: `%s`\n\n"+
+		"✅ Current Session: %s\n"+
+		"CLI Type: %s\n"+
+		"State: %s\n"+
+		"WorkDir: %s\n"+
+		"Type: %s",
 		msg.Platform, msg.UserID, msg.Channel,
 		session.Name, session.CLIType, session.State, session.WorkDir, sessionType)
 	e.SendToBot(msg.Platform, msg.Channel, response)
@@ -875,12 +883,12 @@ func (e *Engine) showWhoami(msg bot.BotMessage) {
 
 // showHelp displays help information about available commands and keywords
 func (e *Engine) showHelp(msg bot.BotMessage) {
-	help := `📖 **clibot Help**
+	help := `📖 clibot Help
 
-**Special Commands** (no prefix required):
+Special Commands (no prefix required):
   help         - Show this help message
   slist        - List all available sessions
-  suse <name>  - Switch current session
+  suse <id_or_name>  - Switch current session
   sclose [name] - Close running session (default: current session)
   sstatus [name] - Show session status (default: all sessions)
   status       - Show status of all sessions
@@ -893,7 +901,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   sswitch <session> <cli_type> - Switch session CLI type with resume (admin only)
   sexit [name] - Exit current session (or specified session)
 
-**Special Keywords** (exact match, case-insensitive):
+Special Keywords (exact match, case-insensitive):
   ⚠️ These keywords only work in Hook mode with tmux input
   tab            - Send Tab key
   esc            - Send Escape key
@@ -902,7 +910,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   ctrlc/ctrl-c    - Send Ctrl+C (interrupt)
   ctrlt/ctrl-t    - Send Ctrl+T
 
-**Usage Examples:**
+Usage Examples:
   help              → Show help
   slist             → List all sessions
   suse myproject    → Switch to session 'myproject'
@@ -917,7 +925,7 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
   snew myproject claude ~/work  → Create session (legacy)
   sn codex ~/work               → Create session from template
 
-**Tips:**
+Tips:
   - Special commands are exact match (case-sensitive)
   - Special keywords are case-insensitive
   - Any other input will be sent to the CLI
@@ -931,10 +939,10 @@ func (e *Engine) showHelp(msg bot.BotMessage) {
 
 // handleEcho returns the user's IM information to help with whitelist configuration
 func (e *Engine) handleEcho(msg bot.BotMessage) {
-	response := fmt.Sprintf("🔍 **Your IM Information**\n\n"+
-		"**Platform:** %s\n"+
-		"**User ID:** `%s` (Use this for whitelist)\n"+
-		"**Channel ID:** `%s`",
+	response := fmt.Sprintf("🔍 Your IM Information\n\n"+
+		"Platform: %s\n"+
+		"User ID: `%s` (Use this for whitelist)\n"+
+		"Channel ID: `%s`",
 		msg.Platform, msg.UserID, msg.Channel)
 
 	e.SendToBot(msg.Platform, msg.Channel, response)
@@ -1052,6 +1060,7 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 		return
 	}
 
+	e.assignSessionID(session)
 	e.sessions[name] = session
 
 	logFields := logrus.Fields{
@@ -1077,8 +1086,8 @@ func (e *Engine) createDynamicSession(p dynamicSessionParams, msg bot.BotMessage
 	if p.templateName != "" {
 		tplStr = fmt.Sprintf("\nTemplate: %s", p.templateName)
 	}
-	response = fmt.Sprintf("✅ Session '%s' created%s%s\nCLI: %s\nWorkDir: %s",
-		name, yoloStr, tplStr, p.cliType, expandedDir)
+	response = fmt.Sprintf("✅ Session '#%d %s' created%s%s\nCLI: %s\nWorkDir: %s",
+		session.ID, name, yoloStr, tplStr, p.cliType, expandedDir)
 }
 
 // dynamicSessionParams holds parameters for dynamic session creation.
@@ -1158,15 +1167,15 @@ func (e *Engine) listTemplates(msg bot.BotMessage) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	for _, name := range names {
+	for i, name := range names {
 		entry := entries[name]
 		yolo := ""
 		if entry.tpl.Yolo {
 			yolo = " [yolo]"
 		}
-		resp += fmt.Sprintf("  **%s** — `%s`%s (%s)\n", name, entry.tpl.CLIType, yolo, entry.source)
+		resp += fmt.Sprintf("  #%d %s — `%s`%s (%s)\n", i+1, name, entry.tpl.CLIType, yolo, entry.source)
 	}
-	resp += "\nUsage: `sn <template> <work_dir> [name]`"
+	resp += "\nUsage: `sn <id_or_template> <work_dir> [name]`"
 	e.SendToBot(msg.Platform, msg.Channel, resp)
 }
 
@@ -1187,14 +1196,14 @@ func (e *Engine) handleNewFromTemplate(args []string, msg bot.BotMessage) {
 
 	if len(args) < 2 {
 		e.SendToBot(msg.Platform, msg.Channel,
-			"❌ Invalid arguments\nUsage: sn <template> <work_dir> [name]\nTemplates: " + builtinTemplateNames())
+			"❌ Invalid arguments\nUsage: sn <template> <work_dir> [name]\nTemplates: "+builtinTemplateNames())
 		return
 	}
 
 	templateName := args[0]
 	workDir := args[1]
 
-	tpl := e.resolveTemplate(templateName)
+	tpl := e.resolveTemplateRef(templateName)
 	if tpl == nil {
 		e.SendToBot(msg.Platform, msg.Channel,
 			fmt.Sprintf("❌ Unknown template: '%s'\nBuilt-in: "+builtinTemplateNames(), templateName))
@@ -1243,6 +1252,27 @@ func (e *Engine) resolveTemplate(name string) *SessionTemplate {
 	return nil
 }
 
+// assignSessionID allocates a sequential ID for a session and registers it.
+// Must be called with sessionMu held.
+func (e *Engine) assignSessionID(session *Session) {
+	e.nextSessionID++
+	session.ID = e.nextSessionID
+	e.sessionIDs[session.ID] = session.Name
+}
+
+// resolveSessionRef resolves a session reference which can be either
+// a numeric ID or a session name. Returns the session name and whether it exists.
+func (e *Engine) resolveSessionRef(ref string) (string, bool) {
+	if id, err := strconv.Atoi(ref); err == nil {
+		if name, ok := e.sessionIDs[id]; ok {
+			return name, true
+		}
+		return "", false
+	}
+	_, exists := e.sessions[ref]
+	return ref, exists
+}
+
 // resolveNameConflict appends -2, -3, etc. if name exists.
 // Returns empty string if all candidates are exhausted.
 func (e *Engine) resolveNameConflict(name string) string {
@@ -1256,6 +1286,34 @@ func (e *Engine) resolveNameConflict(name string) string {
 		}
 	}
 	return ""
+}
+
+// resolveTemplateRef resolves a template reference which can be either
+// a numeric ID or a template name.
+func (e *Engine) resolveTemplateRef(ref string) *SessionTemplate {
+	if id, err := strconv.Atoi(ref); err == nil {
+		// Build ID map including custom templates
+		tpls := defaultBuiltinTemplates()
+		custom := e.cfg().SessionTemplates
+		all := make(map[string]SessionTemplate, len(tpls)+len(custom))
+		for k, v := range tpls {
+			all[k] = v
+		}
+		for k, v := range custom {
+			all[k] = v
+		}
+		names := make([]string, 0, len(all))
+		for name := range all {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		if id >= 1 && id <= len(names) {
+			t := all[names[id-1]]
+			return &t
+		}
+		return nil
+	}
+	return e.resolveTemplate(ref)
 }
 
 // generateSessionName creates a name from template + workdir basename.
@@ -1331,7 +1389,7 @@ func expandPath(path string) (string, error) {
 }
 
 // handleUseSession switches the user's current active session
-// Usage: suse <session_name>
+// Usage: suse <id_or_name>
 func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	logger.WithFields(logrus.Fields{
 		"platform": msg.Platform,
@@ -1342,11 +1400,11 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	// 1. Parameter validation
 	if len(args) < 1 {
 		e.SendToBot(msg.Platform, msg.Channel,
-			"❌ Invalid arguments\nUsage: suse <session_name>")
+			"❌ Invalid arguments\nUsage: suse <id_or_name>")
 		return
 	}
 
-	sessionName := args[0]
+	sessionName, exists := e.resolveSessionRef(args[0])
 	userKey := getUserKey(msg.Platform, msg.UserID)
 
 	e.sessionMu.Lock()
@@ -1359,11 +1417,11 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	}()
 
 	// 2. Check if session exists
-	session, exists := e.sessions[sessionName]
 	if !exists {
-		response = fmt.Sprintf("❌ Session '%s' does not exist\nUse 'slist' to see available sessions", sessionName)
+		response = fmt.Sprintf("❌ Session '%s' does not exist\nUse 'slist' to see available sessions", args[0])
 		return
 	}
+	session := e.sessions[sessionName]
 
 	// 3. Ensure session is running (start if necessary)
 	// Get session config
@@ -1407,7 +1465,7 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 	}).Info("user-switched-session")
 
 	// 5. Success response
-	response = fmt.Sprintf("✅ Your current session is now: **%s**\n\n", sessionName)
+	response = fmt.Sprintf("✅ Your current session is now: #%d %s\n\n", session.ID, sessionName)
 
 	if !sessionWasRunning {
 		response += "🚀 Session was not running, started automatically\n\n"
@@ -1429,7 +1487,7 @@ func (e *Engine) handleUseSession(args []string, msg bot.BotMessage) {
 }
 
 // handleDeleteSession deletes a dynamic session (admin only)
-// Usage: sdel <name>
+// Usage: sdel <id_or_name>
 
 func (e *Engine) handleSwitchSession(args []string, msg bot.BotMessage) {
 	logger.WithFields(logrus.Fields{
@@ -1445,11 +1503,15 @@ func (e *Engine) handleSwitchSession(args []string, msg bot.BotMessage) {
 
 	if len(args) < 2 {
 		e.SendToBot(msg.Platform, msg.Channel,
-			"\u274c Invalid arguments\nUsage: sswitch <session> <new_cli_type>")
+			"\u274c Invalid arguments\nUsage: sswitch <id_or_name> <new_cli_type>")
 		return
 	}
 
-	name := args[0]
+	name, exists := e.resolveSessionRef(args[0])
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Session not found: %s", args[0]))
+		return
+	}
 	newCLIType := args[1]
 
 	newAdapter, exists := e.cliAdapters[newCLIType]
@@ -1548,11 +1610,15 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	// 2. Parameter validation
 	if len(args) < 1 {
 		e.SendToBot(msg.Platform, msg.Channel,
-			"❌ Invalid arguments\nUsage: sdel <name>")
+			"❌ Invalid arguments\nUsage: sdel <id_or_name>")
 		return
 	}
 
-	name := args[0]
+	name, exists := e.resolveSessionRef(args[0])
+	if !exists {
+		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Session not found: %s", args[0]))
+		return
+	}
 
 	e.sessionMu.Lock()
 	var shouldPersist bool
@@ -1592,6 +1658,7 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 
 	// 6. Remove from sessions map
 	delete(e.sessions, name)
+	delete(e.sessionIDs, session.ID)
 	delete(e.sessionChannels, name)
 
 	// 7. Clean up user sessions that reference this deleted session
@@ -1653,7 +1720,7 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 		var exists bool
 		sessionName, exists = e.userSessions[userKey]
 		if !exists {
-			response = "❌ You don't have an active session\nUsage: sclose <name>"
+			response = "❌ You don't have an active session\nUsage: sclose <id_or_name>"
 			return
 		}
 		session, exists = e.sessions[sessionName]
@@ -1663,20 +1730,22 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 		}
 	} else {
 		// With argument: close specified session
-		sessionName = args[0]
 		var exists bool
-		session, exists = e.sessions[sessionName]
+		sessionName, exists = e.resolveSessionRef(args[0])
 		if !exists {
-			response = fmt.Sprintf("❌ Session '%s' not found", sessionName)
+			response = fmt.Sprintf("❌ Session '%s' not found", args[0])
 			return
 		}
+		session = e.sessions[sessionName]
 
-		// Permission check: admin or session creator
+		// Permission check: admin, session creator, or current user of the session
+		userKey := getUserKey(msg.Platform, msg.UserID)
 		isAdmin := e.cfg().IsAdmin(msg.Platform, msg.UserID)
-		isCreator := session.CreatedBy == getUserKey(msg.Platform, msg.UserID)
+		isCreator := session.CreatedBy == userKey
+		isCurrentUser := e.userSessions[userKey] == sessionName
 
-		if !isAdmin && !isCreator {
-			response = "❌ Permission denied: admin or session creator only"
+		if !isAdmin && !isCreator && !isCurrentUser {
+			response = "❌ Permission denied: admin, session creator, or current user only"
 			return
 		}
 	}
@@ -1706,7 +1775,23 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 		"user_id":  msg.UserID,
 	}).Info("session-closed-successfully")
 
-	response = fmt.Sprintf("✅ Session '%s' closed successfully", sessionName)
+	// Clean up users currently in this session
+	for userKey, sName := range e.userSessions {
+		if sName == sessionName {
+			delete(e.userSessions, userKey)
+		}
+	}
+
+	// Remove session entirely
+	delete(e.sessions, sessionName)
+	delete(e.sessionIDs, session.ID)
+	delete(e.sessionChannels, sessionName)
+
+	if session.IsDynamic {
+		response = fmt.Sprintf("✅ Session '#%d %s' closed and removed", session.ID, sessionName)
+	} else {
+		response = fmt.Sprintf("✅ Session '#%d %s' closed (will restore on next restart)", session.ID, sessionName)
+	}
 }
 
 // handleExitSession removes the calling user from their current session (or a named session).
@@ -1725,7 +1810,12 @@ func (e *Engine) handleExitSession(args []string, msg bot.BotMessage) {
 	// Resolve session name
 	sessionName := ""
 	if len(args) > 0 {
-		sessionName = args[0]
+		var ok bool
+		sessionName, ok = e.resolveSessionRef(args[0])
+		if !ok {
+			response = fmt.Sprintf("❌ Session '%s' not found", args[0])
+			return
+		}
 	} else {
 		var ok bool
 		sessionName, ok = e.userSessions[userKey]
@@ -1832,14 +1922,14 @@ func (e *Engine) handleSessionStatus(args []string, msg bot.BotMessage) {
 	}
 
 	// With argument: show specific session
-	sessionName := args[0]
-	session, exists := e.sessions[sessionName]
+	sessionName, exists := e.resolveSessionRef(args[0])
 	if !exists {
 		e.SendToBot(msg.Platform, msg.Channel,
-			fmt.Sprintf("❌ Session '%s' does not exist\nUse 'slist' to see available sessions", sessionName))
+			fmt.Sprintf("❌ Session '%s' does not exist\nUse 'slist' to see available sessions", args[0]))
 		return
 	}
 
+	session := e.sessions[sessionName]
 	status := e.getSessionStatus(session)
 	e.sendSessionStatus(msg, status)
 }
@@ -1858,7 +1948,7 @@ func (e *Engine) showAllSessionsStatus(msg bot.BotMessage) {
 	}
 
 	// Build response
-	response := "📊 **All Sessions Status**\n\n"
+	response := "📊 All Sessions Status\n\n"
 
 	for _, status := range statuses {
 		// Status icon
@@ -1880,7 +1970,7 @@ func (e *Engine) showAllSessionsStatus(msg bot.BotMessage) {
 			icon = "⚫"
 		}
 
-		response += fmt.Sprintf("%s **%s** - %s\n", icon, status.Name, status.State)
+		response += fmt.Sprintf("%s %s - %s\n", icon, status.Name, status.State)
 		response += fmt.Sprintf("  CLI: %s", status.CLIType)
 
 		if status.IsAlive && status.ProcessInfo != nil {
@@ -2064,7 +2154,7 @@ func formatUptime(seconds float64) string {
 
 // sendSessionStatus sends detailed session status to user
 func (e *Engine) sendSessionStatus(msg bot.BotMessage, status *SessionStatus) {
-	response := fmt.Sprintf("📊 **Session Status: %s**\n\n", status.Name)
+	response := fmt.Sprintf("📊 Session Status: %s\n\n", status.Name)
 
 	// State
 	var stateIcon string
@@ -2083,13 +2173,13 @@ func (e *Engine) sendSessionStatus(msg bot.BotMessage, status *SessionStatus) {
 
 	if !status.IsAlive {
 		stateIcon = "⚫"
-		response += "⚠️  **Status**: Not running\n\n"
+		response += "⚠️  Status: Not running\n\n"
 	} else {
-		response += fmt.Sprintf("**State**: %s %s\n\n", stateIcon, status.State)
+		response += fmt.Sprintf("State: %s %s\n\n", stateIcon, status.State)
 	}
 
 	// Basic info
-	response += "📋 **Basic Info**\n"
+	response += "📋 Basic Info\n"
 	response += fmt.Sprintf("  • CLI: %s\n", status.CLIType)
 	response += fmt.Sprintf("  • WorkDir: %s\n", status.WorkDir)
 
@@ -2101,7 +2191,7 @@ func (e *Engine) sendSessionStatus(msg bot.BotMessage, status *SessionStatus) {
 
 	// Process info
 	if status.IsAlive && status.ProcessInfo != nil {
-		response += "\n💻 **Process Info**\n"
+		response += "\n💻 Process Info\n"
 		response += fmt.Sprintf("  • PID: %d\n", status.ProcessInfo.PID)
 		if status.ProcessInfo.Command != "" {
 			response += fmt.Sprintf("  • Command: %s\n", status.ProcessInfo.Command)
@@ -2266,6 +2356,19 @@ func (e *Engine) loadPersistedSessions() {
 
 		s.State = StateIdle
 		s.cancelCtx = nil
+		if s.ID > 0 {
+			if existing, dup := e.sessionIDs[s.ID]; dup && existing != s.Name {
+				log.Printf("duplicate session ID %d: %q vs %q, assigning new ID", s.ID, existing, s.Name)
+				e.assignSessionID(s)
+			} else {
+				e.sessionIDs[s.ID] = s.Name
+				if s.ID >= e.nextSessionID {
+					e.nextSessionID = s.ID
+				}
+			}
+		} else {
+			e.assignSessionID(s)
+		}
 		e.sessions[s.Name] = s
 		restored++
 
@@ -2408,6 +2511,7 @@ func (e *Engine) cleanIdleSessions(idleTimeout time.Duration) {
 			continue
 		}
 		delete(e.sessions, name)
+		delete(e.sessionIDs, session.ID)
 		delete(e.sessionChannels, name)
 		for userKey, sessionName := range e.userSessions {
 			if sessionName == name {

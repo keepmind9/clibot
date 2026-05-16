@@ -32,27 +32,15 @@ func TestEngine_HandleCloseSession_NoArgs(t *testing.T) {
 	assert.Equal(t, 1, mockBot.messageCount)
 }
 
-// TestEngine_HandleCloseSession_NonExistingSession tests handleCloseSession with non-existing session
 func TestEngine_HandleCloseSession_NonExistingSession(t *testing.T) {
-	config := &Config{
-		Sessions: []SessionConfig{
-			{Name: "test", CLIType: "claude", WorkDir: "/tmp"},
-		},
-	}
-	engine := NewEngine(config)
+	engine := newTestEngine()
+	engine.RegisterCLIAdapter("test-stdio", &mockCLIAdapter{})
+	engine.initializeSessions()
 
-	mockBot := &mockBotAdapter{}
-	engine.RegisterBotAdapter("testbot", mockBot)
-
-	msg := bot.BotMessage{
-		Platform: "testbot",
-		Channel:  "test-channel",
-		UserID:   "user123",
-	}
-
+	msg := bot.BotMessage{Platform: "testbot", Channel: "ch1", UserID: "user1"}
 	engine.handleCloseSession([]string{"nonexistent"}, msg)
 
-	// Should send error message
+	mockBot := getMockBot(engine)
 	assert.Equal(t, 1, mockBot.messageCount)
 	assert.Contains(t, mockBot.lastMessage, "not found")
 }
@@ -156,4 +144,64 @@ func TestEngine_HandleBotMessage_MessageChannel(t *testing.T) {
 	// Message should be queued (we can't verify this without starting the engine)
 	// But we can verify it doesn't crash
 	assert.NotNil(t, engine.messageChan)
+}
+
+// TestEngine_CloseSessionThenList verifies that after sclose:
+// 1. The session is removed from the session list
+// 2. The user's current session is cleared
+func TestEngine_CloseSessionThenList(t *testing.T) {
+	config := &Config{
+		Sessions: []SessionConfig{
+			{Name: "session1", CLIType: "test-stdio", WorkDir: "/tmp", AutoStart: false},
+			{Name: "session2", CLIType: "test-stdio", WorkDir: "/tmp", AutoStart: false},
+		},
+	}
+	engine := NewEngine(config)
+	engine.RegisterCLIAdapter("test-stdio", &mockCLIAdapter{})
+
+	mockBot := &mockBotAdapter{}
+	engine.RegisterBotAdapter("testbot", mockBot)
+
+	// Initialize sessions (normally done by Serve)
+	engine.initializeSessions()
+
+	msg := bot.BotMessage{
+		Platform: "testbot",
+		Channel:  "ch1",
+		UserID:   "user1",
+	}
+
+	// Step 1: User selects session1
+	engine.handleUseSession([]string{"session1"}, msg)
+	assert.GreaterOrEqual(t, mockBot.messageCount, 1)
+
+	// Step 2: Verify slist shows session1 as current
+	mockBot.messageCount = 0
+	mockBot.lastMessage = ""
+	engine.listSessions(msg)
+	assert.Contains(t, mockBot.lastMessage, "session1")
+	assert.Contains(t, mockBot.lastMessage, "session2")
+	assert.Contains(t, mockBot.lastMessage, "CURRENT")
+
+	// Step 3: Close session1 (with arg)
+	mockBot.messageCount = 0
+	mockBot.lastMessage = ""
+	engine.handleCloseSession([]string{"session1"}, msg)
+	assert.Contains(t, mockBot.lastMessage, "closed")
+
+	// Step 4: Verify session is gone from internal maps
+	engine.sessionMu.RLock()
+	_, exists := engine.sessions["session1"]
+	userSession := engine.userSessions[getUserKey(msg.Platform, msg.UserID)]
+	engine.sessionMu.RUnlock()
+	assert.False(t, exists, "session1 should be removed from sessions map")
+	assert.Empty(t, userSession, "user's current session should be cleared")
+
+	// Step 5: Verify slist no longer shows session1 or current session
+	mockBot.messageCount = 0
+	mockBot.lastMessage = ""
+	engine.listSessions(msg)
+	assert.NotContains(t, mockBot.lastMessage, "session1", "slist should not show closed session1")
+	assert.Contains(t, mockBot.lastMessage, "session2", "slist should still show session2")
+	assert.NotContains(t, mockBot.lastMessage, "CURRENT", "no session should be marked as current")
 }

@@ -19,6 +19,7 @@ const (
 
 // Session represents a tmux session with its metadata
 type Session struct {
+	ID           int                `json:"id"`                     // Numeric ID for quick reference (stable, never reassigned)
 	Name         string             `json:"name"`                   // tmux session name
 	CLIType      string             `json:"cli_type"`               // claude/gemini/opencode
 	WorkDir      string             `json:"work_dir"`               // Working directory

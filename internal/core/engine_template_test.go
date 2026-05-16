@@ -349,7 +349,7 @@ func TestListTemplates_CustomOverridesBuiltIn(t *testing.T) {
 	assert.Equal(t, 1, mockBot.messageCount)
 	assert.Contains(t, mockBot.lastMessage, "[yolo]")
 	assert.Contains(t, mockBot.lastMessage, "custom")
-	assert.Equal(t, 1, strings.Count(mockBot.lastMessage, "**codex-stdio**"))
+	assert.Contains(t, mockBot.lastMessage, "(custom)")
 }
 
 func TestListTemplates_SortedOutput(t *testing.T) {
