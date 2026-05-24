@@ -114,6 +114,7 @@ func (b *Bot) probeLiveness() bool {
 
 // forceReconnect tears down the current WebSocket connection and starts a new one.
 func (b *Bot) forceReconnect() {
+	b.mu.Lock()
 	// Cancel current context to stop existing WS client
 	if b.cancel != nil {
 		b.cancel()
@@ -121,7 +122,6 @@ func (b *Bot) forceReconnect() {
 
 	b.ctx, b.cancel = context.WithCancel(context.Background())
 
-	b.mu.Lock()
 	opts := []ws.ClientOption{
 		ws.WithEventHandler(b.dispatcher),
 		ws.WithLogLevel(larkcore.LogLevelInfo),
@@ -129,10 +129,11 @@ func (b *Bot) forceReconnect() {
 	}
 	b.wsClient = ws.NewClient(b.appID, b.appSecret, opts...)
 	wsClient := b.wsClient
+	newCtx := b.ctx
 	b.mu.Unlock()
 
 	go func() {
-		if err := wsClient.Start(b.ctx); err != nil {
+		if err := wsClient.Start(newCtx); err != nil {
 			logger.WithFields(logrus.Fields{
 				"app_id": b.appID,
 				"error":  err,

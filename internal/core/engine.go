@@ -739,9 +739,11 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 
 	// Step 5: Send to CLI
 	// Block debounce queue while processing to prevent premature flushes
+	e.sessionMu.RLock()
 	if pq, ok := e.pendingQueues[msg.Platform]; ok {
 		pq.Block(effectiveChannel)
 	}
+	e.sessionMu.RUnlock()
 	if err := adapter.SendInput(session.Name, processedContent); err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
@@ -2810,9 +2812,11 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 		if botChannel.MessageID != "" {
 			e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
 		}
+		e.sessionMu.RLock()
 		if pq, ok := e.pendingQueues[botChannel.Platform]; ok {
 			pq.Unblock(botChannel.Channel)
 		}
+		e.sessionMu.RUnlock()
 	}
 }
 
@@ -2957,9 +2961,11 @@ func (e *Engine) Stop() error {
 	logger.Info("stopping-clibot-engine")
 
 	// Stop all debounce queues
+	e.sessionMu.RLock()
 	for _, pq := range e.pendingQueues {
 		pq.Stop()
 	}
+	e.sessionMu.RUnlock()
 
 	// Stop all active sessions first to prevent orphaned processes
 	// This handles graceful shutdown; on Linux, Pdeathsig handles crash scenarios

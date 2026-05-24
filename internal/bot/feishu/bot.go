@@ -114,7 +114,9 @@ func (b *Bot) Start(messageHandler func(bot.BotMessage)) error {
 		}
 	}()
 
-	go b.startMediaGC()
+	if b.mediaDir != "" {
+		go b.startMediaGC()
+	}
 	go b.startKeepaliveMonitor()
 
 	time.Sleep(constants.DefaultConnectionTimeout)
@@ -213,7 +215,9 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 
 		// Download media for non-text messages
 		if messageType != "" && messageType != "text" && messageType != "post" {
-			b.DownloadMedia(ctx, &msg)
+			if err := b.DownloadMedia(ctx, &msg); err != nil {
+				logger.WithField("error", err).Warn("feishu-media-download-failed-in-handler")
+			}
 		}
 
 		handler(msg)
