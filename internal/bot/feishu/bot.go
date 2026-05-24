@@ -34,6 +34,8 @@ type Bot struct {
 	cancel            context.CancelFunc
 	typingReactions   map[string]string
 	proxyMgr          proxy.Manager
+	mentionInGroup    bool
+	debounceMs        int
 }
 
 // NewBot creates a new Feishu bot instance
