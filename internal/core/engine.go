@@ -117,6 +117,7 @@ type Engine struct {
 	cmdLocksMu      sync.RWMutex                     // Protects sessionCmdLocks map
 	sessionCmdLocks map[string]*sync.Mutex           // Per-session command locks (prevents concurrent commands on same session)
 	proxyMgr        *proxy.ProxyManager              // Proxy manager for HTTP clients
+	pendingQueues   map[string]*bot.PendingQueue     // Platform -> debounce queue
 	ctx             context.Context                  // Context for cancellation
 	cancel          context.CancelFunc               // Cancel function for graceful shutdown
 }
@@ -167,6 +168,7 @@ func NewEngine(config *Config) *Engine {
 		sessionChannels: make(map[string]map[string]BotChannel),
 		userSessions:    make(map[string]string),
 		sessionCmdLocks: make(map[string]*sync.Mutex),
+		pendingQueues:   make(map[string]*bot.PendingQueue),
 		configAdapter:   NewCoreConfigAdapter(config),
 		proxyMgr:        nil,
 		ctx:             ctx,
@@ -192,6 +194,34 @@ func (e *Engine) getBotAdapter(platform string) bot.BotAdapter {
 	e.sessionMu.RLock()
 	defer e.sessionMu.RUnlock()
 	return e.activeBots[platform]
+}
+
+// getOrCreatePendingQueue lazily creates a PendingQueue for the given platform.
+// The flush handler coalesces batched messages into a single BotMessage.
+func (e *Engine) getOrCreatePendingQueue(platform string) *bot.PendingQueue {
+	e.sessionMu.Lock()
+	defer e.sessionMu.Unlock()
+
+	if pq, ok := e.pendingQueues[platform]; ok {
+		return pq
+	}
+
+	pq := bot.NewPendingQueue(func(msgs []bot.BotMessage) {
+		if len(msgs) == 0 {
+			return
+		}
+		// Coalesce: join content, use last message's metadata
+		var parts []string
+		for _, m := range msgs {
+			parts = append(parts, m.Content)
+		}
+		last := msgs[len(msgs)-1]
+		last.Content = strings.Join(parts, "\n\n")
+		e.messageChan <- last
+	})
+
+	e.pendingQueues[platform] = pq
+	return pq
 }
 
 // GetProxyManager returns the proxy manager
@@ -403,6 +433,18 @@ func (e *Engine) HandleBotMessage(msg bot.BotMessage) {
 
 		go e.handleSpecialCommandWithAuth(cmd, args, msg)
 		return
+	}
+
+	// Check debounce: coalesce rapid-fire messages from the same channel
+	if adapter := e.getBotAdapter(msg.Platform); adapter != nil {
+		if debouncer, ok := adapter.(bot.Debounceable); ok {
+			window := debouncer.DebounceWindow()
+			if window > 0 {
+				pq := e.getOrCreatePendingQueue(msg.Platform)
+				pq.Add(msg.Channel, msg, time.Duration(window)*time.Millisecond)
+				return
+			}
+		}
 	}
 
 	// Regular AI requests enter the message queue for serial processing
@@ -687,6 +729,10 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	}
 
 	// Step 5: Send to CLI
+	// Block debounce queue while processing to prevent premature flushes
+	if pq, ok := e.pendingQueues[msg.Platform]; ok {
+		pq.Block(effectiveChannel)
+	}
 	if err := adapter.SendInput(session.Name, processedContent); err != nil {
 		logger.WithFields(logrus.Fields{
 			"session": session.Name,
@@ -2755,6 +2801,9 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 		if botChannel.MessageID != "" {
 			e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
 		}
+		if pq, ok := e.pendingQueues[botChannel.Platform]; ok {
+			pq.Unblock(botChannel.Channel)
+		}
 	}
 }
 
@@ -2897,6 +2946,11 @@ func (e *Engine) sendResponseToUser(sessionName string, content string) {
 // Stop gracefully stops the engine
 func (e *Engine) Stop() error {
 	logger.Info("stopping-clibot-engine")
+
+	// Stop all debounce queues
+	for _, pq := range e.pendingQueues {
+		pq.Stop()
+	}
 
 	// Stop all active sessions first to prevent orphaned processes
 	// This handles graceful shutdown; on Linux, Pdeathsig handles crash scenarios
