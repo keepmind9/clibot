@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/keepmind9/clibot/internal/bot"
@@ -40,6 +41,7 @@ type Bot struct {
 	mediaDir          string
 	mediaTTL          time.Duration
 	maxMediaSize      int64
+	lastEventAt       atomic.Int64
 }
 
 // NewBot creates a new Feishu bot instance
@@ -113,6 +115,7 @@ func (b *Bot) Start(messageHandler func(bot.BotMessage)) error {
 	}()
 
 	go b.startMediaGC()
+	go b.startKeepaliveMonitor()
 
 	time.Sleep(constants.DefaultConnectionTimeout)
 
@@ -125,6 +128,8 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 	if event == nil || event.Event == nil {
 		return nil
 	}
+
+	b.lastEventAt.Store(time.Now().UnixNano())
 
 	eventJSON, err := json.Marshal(event)
 	if err == nil {
