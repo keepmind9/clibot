@@ -59,7 +59,7 @@ func (d *DiscordBot) Start(messageHandler func(BotMessage)) error {
 
 	// Log bot startup
 	logger.WithFields(logrus.Fields{
-		"token":   maskSecret(d.token),
+		"token":   MaskSecret(d.token),
 		"channel": d.channelID,
 	}).Info("starting-discord-bot")
 

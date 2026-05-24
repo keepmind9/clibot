@@ -52,7 +52,7 @@ func (d *DingTalkBot) Start(messageHandler func(BotMessage)) error {
 	d.ctx, d.cancel = context.WithCancel(context.Background())
 
 	logger.WithFields(logrus.Fields{
-		"client_id": maskSecret(d.clientID),
+		"client_id": MaskSecret(d.clientID),
 	}).Info("starting-dingtalk-bot-with-websocket-long-connection")
 
 	// Create stream client with credentials

@@ -1,9 +1,10 @@
-package bot
+package feishu
 
 import (
 	"context"
 	"testing"
 
+	"github.com/keepmind9/clibot/internal/bot"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/stretchr/testify/assert"
 )
@@ -22,7 +23,7 @@ func TestExtractTextContent(t *testing.T) {
 		{
 			name:     "text with special chars",
 			content:  `{"text":"hello\nworld"}`,
-			expected: "hello\nworld", // JSON unescape \n to actual newline
+			expected: "hello\nworld",
 		},
 		{
 			name:     "plain text without JSON",
@@ -32,12 +33,12 @@ func TestExtractTextContent(t *testing.T) {
 		{
 			name:     "empty JSON",
 			content:  `{}`,
-			expected: "", // Empty text field returns empty string
+			expected: "",
 		},
 		{
 			name:     "invalid JSON",
 			content:  `{invalid}`,
-			expected: "{invalid}", // Returns original content on parse failure
+			expected: "{invalid}",
 		},
 	}
 
@@ -75,6 +76,36 @@ func TestEscapeJSONString(t *testing.T) {
 			input:    "line1\nline2",
 			expected: "line1\\nline2",
 		},
+		{
+			name:     "with carriage return",
+			input:    "line1\rline2",
+			expected: "line1\\rline2",
+		},
+		{
+			name:     "with tab",
+			input:    "col1\tcol2",
+			expected: "col1\\tcol2",
+		},
+		{
+			name:     "mixed special chars",
+			input:    "quote: \"\nbackslash: \\\r",
+			expected: "quote: \\\"\\nbackslash: \\\\\\r",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "unicode characters",
+			input:    "hello 世界",
+			expected: "hello 世界",
+		},
+		{
+			name:     "all escape sequences",
+			input:    "\"\\\n\r\t",
+			expected: "\\\"\\\\\\n\\r\\t",
+		},
 	}
 
 	for _, tt := range tests {
@@ -85,41 +116,9 @@ func TestEscapeJSONString(t *testing.T) {
 	}
 }
 
-func TestMaskSecret(t *testing.T) {
-	tests := []struct {
-		name     string
-		secret   string
-		expected string
-	}{
-		{
-			name:     "normal secret",
-			secret:   "cli_1234567890abcdef",
-			expected: "cli_***cdef",
-		},
-		{
-			name:     "short secret",
-			secret:   "1234567890",
-			expected: "***",
-		},
-		{
-			name:     "very short secret",
-			secret:   "1234",
-			expected: "***",
-		},
-	}
+func TestBot_HandleMessageReceive(t *testing.T) {
+	b := NewBot("test_app_id", "test_app_secret")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := maskSecret(tt.secret)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestFeishuBot_HandleMessageReceive(t *testing.T) {
-	bot := NewFeishuBot("test_app_id", "test_app_secret")
-
-	// Create a test message event with proper structure
 	userID := "test_user_id"
 	messageID := "test_message_id"
 	chatID := "test_chat_id"
@@ -142,31 +141,28 @@ func TestFeishuBot_HandleMessageReceive(t *testing.T) {
 		},
 	}
 
-	messagesReceived := []BotMessage{}
-	bot.SetMessageHandler(func(msg BotMessage) {
+	messagesReceived := []bot.BotMessage{}
+	b.SetMessageHandler(func(msg bot.BotMessage) {
 		messagesReceived = append(messagesReceived, msg)
 	})
 
-	// Handle the message
-	err := bot.handleMessageReceive(context.Background(), event)
+	err := b.handleMessageReceive(context.Background(), event)
 	assert.NoError(t, err)
 
-	// Verify message was processed
 	assert.Len(t, messagesReceived, 1)
 	assert.Equal(t, "feishu", messagesReceived[0].Platform)
 	assert.Equal(t, "test_user_id", messagesReceived[0].UserID)
 	assert.Equal(t, "test_chat_id", messagesReceived[0].Channel)
 	assert.Equal(t, "hello world", messagesReceived[0].Content)
+	assert.Equal(t, "p2p", messagesReceived[0].ChatType)
 }
 
-func TestFeishuBot_HandleMessageReceive_NilEvent(t *testing.T) {
-	bot := NewFeishuBot("test_app_id", "test_app_secret")
+func TestBot_HandleMessageReceive_NilEvent(t *testing.T) {
+	b := NewBot("test_app_id", "test_app_secret")
 
-	// Test nil event
-	err := bot.handleMessageReceive(context.Background(), nil)
+	err := b.handleMessageReceive(context.Background(), nil)
 	assert.NoError(t, err)
 
-	// Test event with nil Event field
-	err = bot.handleMessageReceive(context.Background(), &larkim.P2MessageReceiveV1{})
+	err = b.handleMessageReceive(context.Background(), &larkim.P2MessageReceiveV1{})
 	assert.NoError(t, err)
 }

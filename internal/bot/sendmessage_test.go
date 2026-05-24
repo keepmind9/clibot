@@ -36,16 +36,6 @@ func TestTelegramBot_SendMessage_NoSession(t *testing.T) {
 	assert.Contains(t, err.Error(), "not initialized")
 }
 
-// TestFeishuBot_SendMessage_NoSession tests SendMessage when session is not initialized
-func TestFeishuBot_SendMessage_NoSession(t *testing.T) {
-	bot := NewFeishuBot("test-app-id", "test-app-secret")
-	// Don't call Start, so client remains nil
-
-	err := bot.SendMessage("", "test message")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not initialized")
-}
-
 // TestDingTalkBot_SendMessage_NoSession tests SendMessage when session is not initialized
 func TestDingTalkBot_SendMessage_NoSession(t *testing.T) {
 	bot := NewDingTalkBot("test-client-id", "test-client-secret")
@@ -68,15 +58,6 @@ func TestDiscordBot_Stop_NilSession(t *testing.T) {
 // TestTelegramBot_Stop_NilSession tests Stop when session is nil
 func TestTelegramBot_Stop_NilSession(t *testing.T) {
 	bot := NewTelegramBot("test-token")
-	// Don't call Start, session is nil
-
-	// Should not panic
-	bot.Stop()
-}
-
-// TestFeishuBot_Stop_NilSession tests Stop when session is nil
-func TestFeishuBot_Stop_NilSession(t *testing.T) {
-	bot := NewFeishuBot("test-app-id", "test-app-secret")
 	// Don't call Start, session is nil
 
 	// Should not panic

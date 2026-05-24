@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/keepmind9/clibot/internal/bot"
+	"github.com/keepmind9/clibot/internal/bot/feishu"
 	"github.com/keepmind9/clibot/internal/cli"
 	"github.com/keepmind9/clibot/internal/cli/stdio"
 	"github.com/keepmind9/clibot/internal/core"
@@ -279,7 +280,7 @@ func registerBotAdapters(engine *core.Engine, config *core.Config) error {
 			log.Printf("Registered %s bot adapter", botType)
 
 		case "feishu":
-			feishuBot := bot.NewFeishuBot(botConfig.AppID, botConfig.AppSecret)
+			feishuBot := feishu.NewBot(botConfig.AppID, botConfig.AppSecret)
 			if botConfig.EncryptKey != "" {
 				feishuBot.SetEncryptKey(botConfig.EncryptKey)
 			}

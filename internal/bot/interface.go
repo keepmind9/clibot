@@ -98,11 +98,11 @@ type BotAdapter interface {
 
 // BotMessage represents a bot message structure
 type BotMessage struct {
-	Platform   string    // feishu/discord/telegram
-	UserID     string    // Unique user identifier (for permission control)
-	Channel    string    // Channel/session ID
-	MessageID  string    // Message ID (for typing indicator)
-	Content    string    // Message content
+	Platform   string // feishu/discord/telegram
+	UserID     string // Unique user identifier (for permission control)
+	Channel    string // Channel/session ID
+	MessageID  string // Message ID (for typing indicator)
+	Content    string // Message content
 	Timestamp  time.Time
 	ThreadID   string // Optional: thread/topic ID
 	QuoteID    string // Optional: parent message ID (reply context)

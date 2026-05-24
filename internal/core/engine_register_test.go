@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/keepmind9/clibot/internal/bot"
+	"github.com/keepmind9/clibot/internal/bot/feishu"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -38,7 +39,7 @@ func TestEngine_RegisterMultipleBots(t *testing.T) {
 	// Register multiple bot adapters
 	engine.RegisterBotAdapter("discord", bot.NewDiscordBot("token1", "channel1"))
 	engine.RegisterBotAdapter("telegram", bot.NewTelegramBot("token2"))
-	engine.RegisterBotAdapter("feishu", bot.NewFeishuBot("app-id", "app-secret"))
+	engine.RegisterBotAdapter("feishu", feishu.NewBot("app-id", "app-secret"))
 
 	// Verify all were registered
 	assert.NotNil(t, engine.activeBots["discord"])

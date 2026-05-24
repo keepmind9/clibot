@@ -1,4 +1,4 @@
-package bot
+package feishu
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/keepmind9/clibot/internal/bot"
 	"github.com/keepmind9/clibot/internal/logger"
 	"github.com/keepmind9/clibot/internal/proxy"
 	"github.com/keepmind9/clibot/pkg/constants"
@@ -18,112 +19,92 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// FeishuBot implements BotAdapter interface for Feishu (Lark) using WebSocket long connection
-type FeishuBot struct {
+// Bot implements BotAdapter interface for Feishu (Lark) using WebSocket long connection
+type Bot struct {
 	mu                sync.RWMutex
 	appID             string
 	appSecret         string
-	encryptKey        string // Optional, for encrypted events
-	verificationToken string // Optional, for event verification
+	encryptKey        string
+	verificationToken string
 	wsClient          *ws.Client
 	larkClient        *lark.Client
 	dispatcher        *dispatcher.EventDispatcher
-	messageHandler    func(BotMessage)
+	messageHandler    func(bot.BotMessage)
 	ctx               context.Context
 	cancel            context.CancelFunc
-	typingReactions   map[string]string // messageID -> reactionID
+	typingReactions   map[string]string
 	proxyMgr          proxy.Manager
 }
 
-// NewFeishuBot creates a new Feishu bot instance
-func NewFeishuBot(appID, appSecret string) *FeishuBot {
-	bot := &FeishuBot{
+// NewBot creates a new Feishu bot instance
+func NewBot(appID, appSecret string) *Bot {
+	return &Bot{
 		appID:           appID,
 		appSecret:       appSecret,
 		typingReactions: make(map[string]string),
 	}
-	// Don't create larkClient here - it will be created in Start() with proxy support
-	return bot
 }
 
 // SetProxyManager sets the proxy manager for the Feishu bot
-func (f *FeishuBot) SetProxyManager(mgr proxy.Manager) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.proxyMgr = mgr
+func (b *Bot) SetProxyManager(mgr proxy.Manager) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.proxyMgr = mgr
 }
 
 // Start establishes WebSocket long connection to Feishu and begins listening for messages
-func (f *FeishuBot) Start(messageHandler func(BotMessage)) error {
-	f.SetMessageHandler(messageHandler)
-	f.ctx, f.cancel = context.WithCancel(context.Background())
+func (b *Bot) Start(messageHandler func(bot.BotMessage)) error {
+	b.SetMessageHandler(messageHandler)
+	b.ctx, b.cancel = context.WithCancel(context.Background())
 
-	// Log bot startup
 	logger.WithFields(logrus.Fields{
-		"app_id": maskSecret(f.appID),
+		"app_id": bot.MaskSecret(b.appID),
 	}).Info("starting-feishu-bot-with-websocket-long-connection")
 
 	// Create event dispatcher
-	f.mu.Lock()
-	f.dispatcher = dispatcher.NewEventDispatcher(f.verificationToken, f.encryptKey)
+	b.mu.Lock()
+	b.dispatcher = dispatcher.NewEventDispatcher(b.verificationToken, b.encryptKey)
 
-	// Create lark client with proxy support
-	if f.proxyMgr != nil {
-		proxyURL := f.proxyMgr.GetProxyURL("feishu")
+	if b.proxyMgr != nil {
+		proxyURL := b.proxyMgr.GetProxyURL("feishu")
 		if proxyURL != "" && proxyURL != "env://HTTP_PROXY" {
-			// Proxy is configured but SDK doesn't support custom client
 			logger.WithField("proxy", proxyURL).Info("feishu-proxy-configured-but-sdk-requires-env-vars")
 		}
-		f.larkClient = lark.NewClient(f.appID, f.appSecret)
+		b.larkClient = lark.NewClient(b.appID, b.appSecret)
 	} else {
-		f.larkClient = lark.NewClient(f.appID, f.appSecret)
+		b.larkClient = lark.NewClient(b.appID, b.appSecret)
 	}
-	f.mu.Unlock()
+	b.mu.Unlock()
 
 	// Register message received event handler
-	f.mu.RLock()
-	dispatcher := f.dispatcher
-	f.mu.RUnlock()
+	b.mu.RLock()
+	dispatcher := b.dispatcher
+	b.mu.RUnlock()
 	dispatcher.OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
-		return f.handleMessageReceive(ctx, event)
+		return b.handleMessageReceive(ctx, event)
 	})
 
-	// Create WebSocket client with proxy support
-	f.mu.Lock()
-	var opts []ws.ClientOption
-	if f.proxyMgr != nil {
-		proxyURL := f.proxyMgr.GetProxyURL("feishu")
-		if proxyURL != "" && proxyURL != "env://HTTP_PROXY" {
-			logger.WithField("proxy", proxyURL).Info("feishu-websocket-proxy-configured-but-sdk-requires-env-vars")
-		}
-		opts = []ws.ClientOption{
-			ws.WithEventHandler(dispatcher),
-			ws.WithLogLevel(larkcore.LogLevelInfo),
-			ws.WithAutoReconnect(true),
-		}
-	} else {
-		opts = []ws.ClientOption{
-			ws.WithEventHandler(dispatcher),
-			ws.WithLogLevel(larkcore.LogLevelInfo),
-			ws.WithAutoReconnect(true),
-		}
+	// Create WebSocket client
+	b.mu.Lock()
+	opts := []ws.ClientOption{
+		ws.WithEventHandler(dispatcher),
+		ws.WithLogLevel(larkcore.LogLevelInfo),
+		ws.WithAutoReconnect(true),
 	}
 
-	f.wsClient = ws.NewClient(f.appID, f.appSecret, opts...)
-	wsClient := f.wsClient
-	f.mu.Unlock()
+	b.wsClient = ws.NewClient(b.appID, b.appSecret, opts...)
+	wsClient := b.wsClient
+	b.mu.Unlock()
 
-	// Start long connection (this blocks)
 	go func() {
-		if err := wsClient.Start(f.ctx); err != nil {
+		if err := wsClient.Start(b.ctx); err != nil {
 			logger.WithFields(logrus.Fields{
-				"app_id": f.appID,
+				"app_id": b.appID,
 				"error":  err,
 			}).Error("feishu-websocket-connection-failed")
 		}
 	}()
 
-	// Give connection time to establish
 	time.Sleep(constants.DefaultConnectionTimeout)
 
 	logger.Info("feishu-websocket-long-connection-started")
@@ -131,12 +112,11 @@ func (f *FeishuBot) Start(messageHandler func(BotMessage)) error {
 }
 
 // handleMessageReceive handles incoming message events from Feishu
-func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil {
 		return nil
 	}
 
-	// Log the complete event object as JSON for debugging
 	eventJSON, err := json.Marshal(event)
 	if err == nil {
 		logger.WithField("event", string(eventJSON)).Info("Received Feishu event (raw JSON)")
@@ -144,13 +124,11 @@ func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2Me
 		logger.WithField("error", err).Warn("Failed to marshal event to JSON")
 	}
 
-	// Extract message information
 	ev := event.Event
 
 	var messageID, chatID, senderID, content string
 	var messageType, chatType string
 
-	// Get message details from Message field
 	if ev.Message != nil {
 		if ev.Message.MessageId != nil {
 			messageID = *ev.Message.MessageId
@@ -164,26 +142,20 @@ func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2Me
 		if ev.Message.ChatType != nil {
 			chatType = *ev.Message.ChatType
 		}
-		// Extract message content (JSON string format)
 		if ev.Message.Content != nil {
 			content = *ev.Message.Content
-			// For text messages, content is like: {"text":"actual message"}
-			// Parse to extract actual text
 			content = extractTextContent(content)
 		}
 	}
 
-	// Get sender ID (use open_id for whitelist)
 	if ev.Sender != nil && ev.Sender.SenderId != nil {
 		if ev.Sender.SenderId.OpenId != nil {
 			senderID = *ev.Sender.SenderId.OpenId
 		} else if ev.Sender.SenderId.UserId != nil {
-			// Fallback to user_id if open_id is not available
 			senderID = *ev.Sender.SenderId.UserId
 		}
 	}
 
-	// Log parsed event data
 	logger.WithFields(logrus.Fields{
 		"platform":     "feishu",
 		"user_id":      senderID,
@@ -195,16 +167,16 @@ func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2Me
 		"content_len":  len(content),
 	}).Info("received-feishu-message-event-parsed")
 
-	// Call the handler with BotMessage
-	handler := f.GetMessageHandler()
+	handler := b.GetMessageHandler()
 	if handler != nil {
-		handler(BotMessage{
+		handler(bot.BotMessage{
 			Platform:  "feishu",
 			UserID:    senderID,
 			Channel:   chatID,
-			MessageID: messageID, // Save message ID for reply
+			MessageID: messageID,
 			Content:   content,
 			Timestamp: time.Now(),
+			ChatType:  chatType,
 		})
 	}
 
@@ -212,11 +184,11 @@ func (f *FeishuBot) handleMessageReceive(ctx context.Context, event *larkim.P2Me
 }
 
 // SendMessage sends a message to a Feishu chat
-func (f *FeishuBot) SendMessage(chatID, message string) error {
-	f.mu.RLock()
-	larkClient := f.larkClient
-	ctx := f.ctx
-	f.mu.RUnlock()
+func (b *Bot) SendMessage(chatID, message string) error {
+	b.mu.RLock()
+	larkClient := b.larkClient
+	ctx := b.ctx
+	b.mu.RUnlock()
 
 	if larkClient == nil {
 		return fmt.Errorf("feishu client not initialized")
@@ -226,7 +198,6 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 		return fmt.Errorf("chat ID is required for Feishu")
 	}
 
-	// Feishu limit: text message content length
 	const maxFeishuLength = constants.MaxFeishuMessageLength
 	if len(message) > maxFeishuLength {
 		logger.WithFields(logrus.Fields{
@@ -236,8 +207,6 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 		message = message[:maxFeishuLength]
 	}
 
-	// Create message request body
-	// For text messages, content format: {"text":"actual content"}
 	contentJSON := fmt.Sprintf(`{"text":"%s"}`, escapeJSONString(message))
 
 	body := larkim.NewCreateMessageReqBodyBuilder().
@@ -251,7 +220,6 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 		Body(body).
 		Build()
 
-	// Send message
 	resp, err := larkClient.Im.Message.Create(ctx, req)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
@@ -279,79 +247,75 @@ func (f *FeishuBot) SendMessage(chatID, message string) error {
 }
 
 // Stop closes the Feishu WebSocket connection and cleans up resources
-func (f *FeishuBot) Stop() error {
-	if f.cancel != nil {
-		f.cancel()
+func (b *Bot) Stop() error {
+	if b.cancel != nil {
+		b.cancel()
 	}
 
-	f.mu.Lock()
-	f.wsClient = nil
-	f.mu.Unlock()
+	b.mu.Lock()
+	b.wsClient = nil
+	b.mu.Unlock()
 
 	logger.Info("feishu-bot-stopped")
 	return nil
 }
 
 // SetMessageHandler sets the message handler in a thread-safe manner
-func (f *FeishuBot) SetMessageHandler(handler func(BotMessage)) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.messageHandler = handler
+func (b *Bot) SetMessageHandler(handler func(bot.BotMessage)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.messageHandler = handler
 }
 
 // GetMessageHandler gets the message handler in a thread-safe manner
-func (f *FeishuBot) GetMessageHandler() func(BotMessage) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	return f.messageHandler
+func (b *Bot) GetMessageHandler() func(bot.BotMessage) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.messageHandler
 }
 
 // SetEncryptKey sets the encryption key for event verification
-func (f *FeishuBot) SetEncryptKey(key string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.encryptKey = key
+func (b *Bot) SetEncryptKey(key string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.encryptKey = key
 }
 
 // SetVerificationToken sets the verification token for event verification
-func (f *FeishuBot) SetVerificationToken(token string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.verificationToken = token
+func (b *Bot) SetVerificationToken(token string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.verificationToken = token
 }
 
 // SupportsTypingIndicator returns true as Feishu supports message reactions
-func (f *FeishuBot) SupportsTypingIndicator() bool {
+func (b *Bot) SupportsTypingIndicator() bool {
 	return true
 }
 
 // AddTypingIndicator adds a typing reaction to a message
-func (f *FeishuBot) AddTypingIndicator(messageID string) bool {
-	// Check if already exists (with minimal lock)
-	f.mu.RLock()
-	_, exists := f.typingReactions[messageID]
-	f.mu.RUnlock()
+func (b *Bot) AddTypingIndicator(messageID string) bool {
+	b.mu.RLock()
+	_, exists := b.typingReactions[messageID]
+	b.mu.RUnlock()
 
 	if exists {
 		return true
 	}
 
-	f.mu.RLock()
-	larkClient := f.larkClient
-	botCtx := f.ctx
-	f.mu.RUnlock()
+	b.mu.RLock()
+	larkClient := b.larkClient
+	botCtx := b.ctx
+	b.mu.RUnlock()
 
 	if larkClient == nil {
 		logger.WithField("error", "lark client not initialized").Error("failed-to-add-typing-indicator")
 		return false
 	}
 
-	// Use context with timeout for the API call
-	// Use bot's context as parent to ensure cancellation when bot stops
 	ctx, cancel := context.WithTimeout(botCtx, constants.TypingIndicatorTimeout)
 	defer cancel()
 
-	// Create reaction request using lark SDK
 	reactionType := larkim.NewEmojiBuilder().
 		EmojiType("Typing").
 		Build()
@@ -389,10 +353,9 @@ func (f *FeishuBot) AddTypingIndicator(messageID string) bool {
 		return false
 	}
 
-	// Store reaction ID (with write lock)
-	f.mu.Lock()
-	f.typingReactions[messageID] = *resp.Data.ReactionId
-	f.mu.Unlock()
+	b.mu.Lock()
+	b.typingReactions[messageID] = *resp.Data.ReactionId
+	b.mu.Unlock()
 
 	logger.WithFields(logrus.Fields{
 		"message_id":  messageID,
@@ -403,27 +366,25 @@ func (f *FeishuBot) AddTypingIndicator(messageID string) bool {
 }
 
 // RemoveTypingIndicator removes the typing reaction from a message
-func (f *FeishuBot) RemoveTypingIndicator(messageID string) error {
-	f.mu.Lock()
-	reactionID, exists := f.typingReactions[messageID]
+func (b *Bot) RemoveTypingIndicator(messageID string) error {
+	b.mu.Lock()
+	reactionID, exists := b.typingReactions[messageID]
 	if !exists {
-		f.mu.Unlock()
-		return nil // No reaction to remove
+		b.mu.Unlock()
+		return nil
 	}
-	delete(f.typingReactions, messageID)
-	f.mu.Unlock()
+	delete(b.typingReactions, messageID)
+	b.mu.Unlock()
 
-	f.mu.RLock()
-	larkClient := f.larkClient
-	botCtx := f.ctx
-	f.mu.RUnlock()
+	b.mu.RLock()
+	larkClient := b.larkClient
+	botCtx := b.ctx
+	b.mu.RUnlock()
 
 	if larkClient == nil {
 		return fmt.Errorf("lark client not initialized")
 	}
 
-	// Use context with timeout for the API call
-	// Use bot's context as parent to ensure cancellation when bot stops
 	ctx, cancel := context.WithTimeout(botCtx, constants.TypingIndicatorTimeout)
 	defer cancel()
 
@@ -447,44 +408,4 @@ func (f *FeishuBot) RemoveTypingIndicator(messageID string) error {
 	}).Info("feishu-typing-indicator-removed")
 
 	return nil
-}
-
-// TextContent represents the JSON structure of Feishu text message content
-type TextContent struct {
-	Text string `json:"text"`
-}
-
-// extractTextContent extracts actual text from Feishu message content
-// Feishu text message format: {"text":"actual message"}
-func extractTextContent(content string) string {
-	var tc TextContent
-	if err := json.Unmarshal([]byte(content), &tc); err != nil {
-		// If parsing fails, return original content
-		logger.WithField("error", err).Debug("failed-to-parse-text-content-json")
-		return content
-	}
-	return tc.Text
-}
-
-// escapeJSONString escapes special characters for JSON string content
-func escapeJSONString(s string) string {
-	// Simple JSON escaping for text content
-	result := ""
-	for _, c := range s {
-		switch c {
-		case '"':
-			result += "\\\""
-		case '\\':
-			result += "\\\\"
-		case '\n':
-			result += "\\n"
-		case '\r':
-			result += "\\r"
-		case '\t':
-			result += "\\t"
-		default:
-			result += string(c)
-		}
-	}
-	return result
 }
