@@ -110,9 +110,13 @@ func TestBot_ShouldRespond(t *testing.T) {
 func TestBot_SetMentionInGroup(t *testing.T) {
 	b := NewBot("test-app", "test-secret")
 
-	// Default should be false (no mention required)
-	assert.True(t, b.ShouldRespond(bot.BotMessage{
+	// Default should be true (mention required in groups)
+	assert.False(t, b.ShouldRespond(bot.BotMessage{
 		ChatType: "group",
+		Content:  "no mention",
+	}))
+	assert.True(t, b.ShouldRespond(bot.BotMessage{
+		ChatType: "p2p",
 		Content:  "no mention",
 	}))
 

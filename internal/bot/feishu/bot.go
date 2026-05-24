@@ -43,6 +43,7 @@ func NewBot(appID, appSecret string) *Bot {
 	return &Bot{
 		appID:           appID,
 		appSecret:       appSecret,
+		mentionInGroup:  true,
 		typingReactions: make(map[string]string),
 	}
 }
@@ -121,7 +122,7 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 
 	eventJSON, err := json.Marshal(event)
 	if err == nil {
-		logger.WithField("event", string(eventJSON)).Info("Received Feishu event (raw JSON)")
+		logger.WithField("event", string(eventJSON)).Debug("Received Feishu event (raw JSON)")
 	} else {
 		logger.WithField("error", err).Warn("Failed to marshal event to JSON")
 	}
@@ -129,7 +130,7 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 	ev := event.Event
 
 	var messageID, chatID, senderID, content string
-	var messageType, chatType string
+	var messageType, chatType, parentID string
 
 	if ev.Message != nil {
 		if ev.Message.MessageId != nil {
@@ -143,6 +144,9 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 		}
 		if ev.Message.ChatType != nil {
 			chatType = *ev.Message.ChatType
+		}
+		if ev.Message.ParentId != nil {
+			parentID = *ev.Message.ParentId
 		}
 		if ev.Message.Content != nil {
 			content = *ev.Message.Content
@@ -165,7 +169,7 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 		"chat_type":    chatType,
 		"message_id":   messageID,
 		"message_type": messageType,
-		"content":      content,
+		"parent_id":    parentID,
 		"content_len":  len(content),
 	}).Info("received-feishu-message-event-parsed")
 
@@ -179,6 +183,8 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 			Content:   content,
 			Timestamp: time.Now(),
 			ChatType:  chatType,
+			ThreadID:  parentID,
+			QuoteID:   parentID,
 		})
 	}
 

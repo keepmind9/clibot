@@ -3,6 +3,8 @@ package bot
 import (
 	"sync"
 	"time"
+
+	"github.com/keepmind9/clibot/internal/logger"
 )
 
 // PendingQueue coalesces messages per key using configurable debounce windows.
@@ -36,6 +38,7 @@ func (pq *PendingQueue) Add(key string, msg BotMessage, window time.Duration) {
 	defer pq.mu.Unlock()
 
 	if pq.stopped {
+		logger.WithField("key", key).Warn("pending-queue-add-after-stop: message dropped")
 		return
 	}
 

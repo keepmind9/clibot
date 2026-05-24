@@ -154,6 +154,9 @@ type Debounceable interface {
 
 // FormatQuoteBlock formats a quoted message for CLI context injection.
 func FormatQuoteBlock(q *QuotedMessage) string {
+	if q == nil {
+		return ""
+	}
 	return fmt.Sprintf(
 		"<quoted_message sender=%q sender_name=%q time=%q>\n%s\n</quoted_message>",
 		q.SenderID, q.SenderName, q.Timestamp.Format(time.RFC3339), q.Content,

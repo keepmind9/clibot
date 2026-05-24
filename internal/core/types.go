@@ -123,10 +123,6 @@ type BotConfig struct {
 	// Feishu-specific rich channel configuration
 	MentionInGroup   *bool  `yaml:"mention_in_group"`   // Require @bot in groups to respond (default: true when nil)
 	DebounceMs       int    `yaml:"debounce_ms"`        // Message debounce window in ms (0 = disabled)
-	ReplyMode        string `yaml:"reply_mode"`         // "text" (default), "markdown", "card"
-	MediaDir         string `yaml:"media_dir"`          // Media download directory (default: ~/.clibot/media/feishu)
-	MediaTTL         string `yaml:"media_ttl"`          // Media file TTL (default: "1h")
-	MaxMediaSize     string `yaml:"max_media_size"`     // Max media file size (default: "20MB")
 	MaxMessageLength int    `yaml:"max_message_length"` // Max chars per message before splitting by lines (0 = no limit)
 }
 
