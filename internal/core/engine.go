@@ -720,6 +720,15 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		}
 	}
 
+	// Step 4.25: Inject attachment info for media messages
+	if len(msg.Attachments) > 0 {
+		var attachLines []string
+		for _, a := range msg.Attachments {
+			attachLines = append(attachLines, fmt.Sprintf("  - type=%s name=%s path=%s", a.Type, a.FileName, a.FilePath))
+		}
+		processedContent = "<attachments>\n" + strings.Join(attachLines, "\n") + "\n</attachments>\n\n" + processedContent
+	}
+
 	// NOTE: Before snapshot capture removed - only hook mode is supported
 	adapter := e.cliAdapters[session.CLIType]
 

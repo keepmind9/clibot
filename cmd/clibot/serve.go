@@ -296,6 +296,19 @@ func registerBotAdapters(engine *core.Engine, config *core.Config) error {
 			if botConfig.DebounceMs > 0 {
 				feishuBot.SetDebounceMs(botConfig.DebounceMs)
 			}
+			if botConfig.MediaDir != "" {
+				ttl := 24 * time.Hour
+				if botConfig.MediaTTL != "" {
+					if d, err := time.ParseDuration(botConfig.MediaTTL); err == nil {
+						ttl = d
+					}
+				}
+				var maxSize int64
+				if botConfig.MaxMediaSize > 0 {
+					maxSize = int64(botConfig.MaxMediaSize)
+				}
+				feishuBot.SetMediaConfig(botConfig.MediaDir, ttl, maxSize)
+			}
 			botAdapter = feishuBot
 			log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
 

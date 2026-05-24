@@ -37,6 +37,9 @@ type Bot struct {
 	mentionInGroup    bool
 	debounceMs        int
 	nameCache         sync.Map
+	mediaDir          string
+	mediaTTL          time.Duration
+	maxMediaSize      int64
 }
 
 // NewBot creates a new Feishu bot instance
@@ -109,6 +112,8 @@ func (b *Bot) Start(messageHandler func(bot.BotMessage)) error {
 		}
 	}()
 
+	go b.startMediaGC()
+
 	time.Sleep(constants.DefaultConnectionTimeout)
 
 	logger.Info("feishu-websocket-long-connection-started")
@@ -151,7 +156,9 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 		}
 		if ev.Message.Content != nil {
 			content = *ev.Message.Content
-			content = extractTextContent(content)
+			if messageType == "text" || messageType == "post" {
+				content = extractTextContent(content)
+			}
 		}
 	}
 
@@ -185,18 +192,26 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 
 	handler := b.GetMessageHandler()
 	if handler != nil {
-		handler(bot.BotMessage{
-			Platform:   "feishu",
-			UserID:     senderID,
-			Channel:    chatID,
-			MessageID:  messageID,
-			Content:    content,
-			Timestamp:  time.Now(),
-			ChatType:   chatType,
-			ThreadID:   parentID,
-			QuoteID:    parentID,
-			SenderName: senderName,
-		})
+		msg := bot.BotMessage{
+			Platform:    "feishu",
+			UserID:      senderID,
+			Channel:     chatID,
+			MessageID:   messageID,
+			Content:     content,
+			Timestamp:   time.Now(),
+			ChatType:    chatType,
+			ThreadID:    parentID,
+			QuoteID:     parentID,
+			SenderName:  senderName,
+			MessageType: messageType,
+		}
+
+		// Download media for non-text messages
+		if messageType != "" && messageType != "text" && messageType != "post" {
+			b.DownloadMedia(ctx, &msg)
+		}
+
+		handler(msg)
 	}
 
 	return nil

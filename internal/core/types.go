@@ -124,6 +124,9 @@ type BotConfig struct {
 	MentionInGroup   *bool  `yaml:"mention_in_group"`   // Require @bot in groups to respond (default: true when nil)
 	DebounceMs       int    `yaml:"debounce_ms"`        // Message debounce window in ms (0 = disabled)
 	MaxMessageLength int    `yaml:"max_message_length"` // Max chars per message before splitting by lines (0 = no limit)
+	MediaDir         string `yaml:"media_dir"`          // Directory for downloaded media files
+	MediaTTL         string `yaml:"media_ttl"`          // TTL for cached media files (e.g., "24h", "0" to disable)
+	MaxMediaSize     int    `yaml:"max_media_size"`     // Max media file size in bytes (0 = no limit)
 }
 
 // CLIAdapterConfig represents CLI adapter configuration

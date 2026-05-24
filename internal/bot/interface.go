@@ -98,21 +98,38 @@ type BotAdapter interface {
 
 // BotMessage represents a bot message structure
 type BotMessage struct {
-	Platform   string // feishu/discord/telegram
-	UserID     string // Unique user identifier (for permission control)
-	Channel    string // Channel/session ID
-	MessageID  string // Message ID (for typing indicator)
-	Content    string // Message content
-	Timestamp  time.Time
-	ThreadID   string // Optional: thread/topic ID
-	QuoteID    string // Optional: parent message ID (reply context)
-	ChatType   string // Optional: "p2p", "group", "topic"
-	SenderName string // Optional: display name of sender
+	Platform    string // feishu/discord/telegram
+	UserID      string // Unique user identifier (for permission control)
+	Channel     string // Channel/session ID
+	MessageID   string // Message ID (for typing indicator)
+	Content     string // Message content
+	Timestamp   time.Time
+	ThreadID    string       // Optional: thread/topic ID
+	QuoteID     string       // Optional: parent message ID (reply context)
+	ChatType    string       // Optional: "p2p", "group", "topic"
+	SenderName  string       // Optional: display name of sender
+	MessageType string       // Optional: "text", "image", "file", "audio", "video", "post"
+	Attachments []Attachment // Optional: downloaded media files
+}
+
+// Attachment represents a downloaded media file attached to a message.
+type Attachment struct {
+	Type     string // "image", "file", "video", "audio"
+	FileName string // Original filename
+	FilePath string // Local path after download
+	FileKey  string // Platform-specific resource key
+	MimeType string // Inferred MIME type
+	Size     int64  // File size in bytes
 }
 
 // --- Optional Interfaces ---
 // Bot adapters implement these to opt-in to rich capabilities.
 // The engine detects support via type assertion and falls back gracefully.
+
+// MediaSupporter is an optional interface for channels that support media download.
+type MediaSupporter interface {
+	DownloadMedia(ctx context.Context, msg *BotMessage) error
+}
 
 // Quotable is an optional interface for channels that support fetching
 // quoted/referenced messages for context injection.

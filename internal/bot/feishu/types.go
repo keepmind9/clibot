@@ -11,6 +11,18 @@ type TextContent struct {
 	Text string `json:"text"`
 }
 
+// ImageContent represents the JSON structure of Feishu image message content
+type ImageContent struct {
+	ImageKey string `json:"image_key"`
+}
+
+// FileContent represents the JSON structure of Feishu file message content
+type FileContent struct {
+	FileKey  string `json:"file_key"`
+	FileName string `json:"file_name"`
+	FileSize string `json:"file_size"`
+}
+
 // extractTextContent extracts actual text from Feishu message content
 // Feishu text message format: {"text":"actual message"}
 func extractTextContent(content string) string {
