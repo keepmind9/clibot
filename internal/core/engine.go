@@ -641,6 +641,14 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		}).Debug("keyword-converted-to-key-sequence")
 	}
 
+	// Step 4.1: Inject bridge context for enriched CLI input
+	if msg.Platform != "" {
+		processedContent = fmt.Sprintf(
+			"<bridge_context chat_id=%q chat_type=%q sender_id=%q sender_name=%q thread_id=%q>\n%s\n</bridge_context>",
+			msg.Channel, msg.ChatType, msg.UserID, msg.SenderName, msg.ThreadID, processedContent,
+		)
+	}
+
 	// NOTE: Before snapshot capture removed - only hook mode is supported
 	adapter := e.cliAdapters[session.CLIType]
 
