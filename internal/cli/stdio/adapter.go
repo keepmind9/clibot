@@ -54,8 +54,10 @@ type stdioSession struct {
 	pendingPerm *PendingPermission
 	permMu      sync.Mutex
 	cancelCtx   context.CancelFunc
-	sessionID   string // CLI-side session ID for resume support
-	completed   bool   // True after first successful per-turn
+	sessionID   string        // CLI-side session ID for resume support
+	completed   bool          // True after first successful per-turn
+	streamCh    chan<- Event  // Active streaming sink (nil when inactive)
+	streamDone  chan struct{} // Closed when streaming turn completes
 }
 
 // Engine interface matches cli.Engine — duplicated here to avoid
@@ -166,6 +168,27 @@ func (a *StdioAdapter) SendInput(sessionName, input string) error {
 		return a.sendPerTurn(sess, input)
 	default:
 		return fmt.Errorf("unknown stdio mode")
+	}
+}
+
+// SendInputStreaming sends input and returns a channel of intermediate events.
+// Implements cli.StreamingCLI.
+func (a *StdioAdapter) SendInputStreaming(sessionName, input string) (<-chan cli.CLIEvent, error) {
+	a.mu.Lock()
+	sess, ok := a.sessions[sessionName]
+	a.mu.Unlock()
+
+	if !ok {
+		return nil, fmt.Errorf("session %q not found", sessionName)
+	}
+
+	switch a.spec.Mode() {
+	case PersistentMode:
+		return a.sendPersistentStreaming(sess, input)
+	case PerTurnMode:
+		return a.sendPerTurnStreaming(sess, input)
+	default:
+		return nil, fmt.Errorf("unknown stdio mode")
 	}
 }
 
@@ -292,6 +315,34 @@ func (a *StdioAdapter) sendPersistent(sess *stdioSession, input string) error {
 	return sess.process.WriteInput(input)
 }
 
+// sendPersistentStreaming writes input and returns a channel that receives
+// intermediate events for this turn. The eventLoop clones events into the
+// streamCh while it is active.
+func (a *StdioAdapter) sendPersistentStreaming(sess *stdioSession, input string) (<-chan cli.CLIEvent, error) {
+	if sess.streamCh != nil {
+		return nil, fmt.Errorf("streaming already in progress for session %q", sess.name)
+	}
+
+	if err := sess.process.WriteInput(input); err != nil {
+		return nil, err
+	}
+
+	eventCh := make(chan Event, 64)
+	outCh := make(chan cli.CLIEvent, 64)
+	sess.streamCh = eventCh
+	sess.streamDone = make(chan struct{})
+
+	// Adapter goroutine: convert internal Events to CLIEvents
+	go func() {
+		defer close(outCh)
+		for evt := range eventCh {
+			outCh <- stdioEventToCLIEvent(evt)
+		}
+	}()
+
+	return outCh, nil
+}
+
 // sendPerTurn spawns a new process for this message, collects output, and delivers response.
 // Note: SendInput must not be called concurrently for the same session.
 func (a *StdioAdapter) sendPerTurn(sess *stdioSession, input string) error {
@@ -364,10 +415,109 @@ func (a *StdioAdapter) sendPerTurn(sess *stdioSession, input string) error {
 	return nil
 }
 
+// sendPerTurnStreaming spawns a new process and returns a channel of events.
+func (a *StdioAdapter) sendPerTurnStreaming(sess *stdioSession, input string) (<-chan cli.CLIEvent, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), a.config.IdleTimeout)
+
+	opts := StartOptions{
+		WorkDir:   sess.workDir,
+		Env:       sess.env,
+		Context:   ctx,
+		Prompt:    input,
+		Resume:    sess.completed,
+		SessionID: sess.sessionID,
+		Yolo:      sess.yolo,
+	}
+
+	proc, err := NewStdioProcess(ctx, a.spec, opts)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("start per-turn process: %w", err)
+	}
+
+	if err := proc.WriteInput(input); err != nil {
+		proc.Close()
+		cancel()
+		return nil, fmt.Errorf("write input: %w", err)
+	}
+
+	if err := proc.CloseInput(); err != nil {
+		proc.Close()
+		cancel()
+		return nil, fmt.Errorf("close input: %w", err)
+	}
+
+	outCh := make(chan cli.CLIEvent, 64)
+
+	go func() {
+		defer close(outCh)
+		defer proc.Close()
+		defer cancel()
+
+		for evt := range proc.Events() {
+			if evt.SessionID != "" {
+				sess.sessionID = evt.SessionID
+			}
+			if evt.Type == EventResult && evt.Done {
+				sess.completed = true
+			}
+			outCh <- stdioEventToCLIEvent(evt)
+		}
+	}()
+
+	return outCh, nil
+}
+
+// stdioEventToCLIEvent converts an internal stdio Event to a cli.CLIEvent.
+func stdioEventToCLIEvent(evt Event) cli.CLIEvent {
+	switch evt.Type {
+	case EventText:
+		return cli.CLIEvent{Type: cli.CLIEventText, Content: evt.Text}
+	case EventToolUse:
+		meta := map[string]string{}
+		if evt.ToolUse != nil {
+			meta["input"] = evt.ToolUse.Input
+		}
+		ce := cli.CLIEvent{
+			Type:     cli.CLIEventToolUse,
+			ToolMeta: meta,
+		}
+		if evt.ToolUse != nil {
+			ce.ToolName = evt.ToolUse.Name
+		}
+		return ce
+	case EventResult:
+		return cli.CLIEvent{Type: cli.CLIEventDone, Content: evt.Text}
+	case EventError:
+		return cli.CLIEvent{Type: cli.CLIEventDone, Content: "error: " + evt.Error.Error()}
+	default:
+		return cli.CLIEvent{Type: cli.CLIEventText, Content: evt.Text}
+	}
+}
+
 // eventLoop reads events from the process and dispatches them.
 // Only used for PersistentMode.
 func (a *StdioAdapter) eventLoop(sess *stdioSession) {
 	for evt := range sess.process.Events() {
+		// Clone events to streaming channel when active
+		if sess.streamCh != nil {
+			sess.streamCh <- evt
+
+			// Close streaming on turn completion
+			if evt.Type == EventResult && evt.Done {
+				close(sess.streamCh)
+				sess.streamCh = nil
+				if sess.streamDone != nil {
+					close(sess.streamDone)
+					sess.streamDone = nil
+				}
+			}
+			// During streaming, skip engine delivery for intermediate events
+			if evt.Type == EventText || evt.Type == EventToolUse {
+				continue
+			}
+		}
+
 		switch evt.Type {
 		case EventPermission:
 			a.handlePermissionEvent(sess, evt.Permission)
