@@ -36,6 +36,7 @@ type Bot struct {
 	proxyMgr          proxy.Manager
 	mentionInGroup    bool
 	debounceMs        int
+	nameCache         sync.Map
 }
 
 // NewBot creates a new Feishu bot instance
@@ -162,9 +163,18 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 		}
 	}
 
+	var senderName string
+	b.mu.RLock()
+	lc := b.larkClient
+	b.mu.RUnlock()
+	if lc != nil && senderID != "" {
+		senderName = resolveSenderName(ctx, lc.Contact.V3.User, senderID, &b.nameCache)
+	}
+
 	logger.WithFields(logrus.Fields{
 		"platform":     "feishu",
 		"user_id":      senderID,
+		"sender_name":  senderName,
 		"chat_id":      chatID,
 		"chat_type":    chatType,
 		"message_id":   messageID,
@@ -176,15 +186,16 @@ func (b *Bot) handleMessageReceive(ctx context.Context, event *larkim.P2MessageR
 	handler := b.GetMessageHandler()
 	if handler != nil {
 		handler(bot.BotMessage{
-			Platform:  "feishu",
-			UserID:    senderID,
-			Channel:   chatID,
-			MessageID: messageID,
-			Content:   content,
-			Timestamp: time.Now(),
-			ChatType:  chatType,
-			ThreadID:  parentID,
-			QuoteID:   parentID,
+			Platform:   "feishu",
+			UserID:     senderID,
+			Channel:    chatID,
+			MessageID:  messageID,
+			Content:    content,
+			Timestamp:  time.Now(),
+			ChatType:   chatType,
+			ThreadID:   parentID,
+			QuoteID:    parentID,
+			SenderName: senderName,
 		})
 	}
 
