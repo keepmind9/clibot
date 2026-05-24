@@ -40,6 +40,8 @@
 package bot
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/keepmind9/clibot/internal/proxy"
@@ -96,10 +98,64 @@ type BotAdapter interface {
 
 // BotMessage represents a bot message structure
 type BotMessage struct {
-	Platform  string // feishu/discord/telegram
-	UserID    string // Unique user identifier (for permission control)
-	Channel   string // Channel/session ID
-	MessageID string // Message ID (for typing indicator)
-	Content   string // Message content
-	Timestamp time.Time
+	Platform   string    // feishu/discord/telegram
+	UserID     string    // Unique user identifier (for permission control)
+	Channel    string    // Channel/session ID
+	MessageID  string    // Message ID (for typing indicator)
+	Content    string    // Message content
+	Timestamp  time.Time
+	ThreadID   string // Optional: thread/topic ID
+	QuoteID    string // Optional: parent message ID (reply context)
+	ChatType   string // Optional: "p2p", "group", "topic"
+	SenderName string // Optional: display name of sender
+}
+
+// --- Optional Interfaces ---
+// Bot adapters implement these to opt-in to rich capabilities.
+// The engine detects support via type assertion and falls back gracefully.
+
+// Quotable is an optional interface for channels that support fetching
+// quoted/referenced messages for context injection.
+type Quotable interface {
+	FetchQuotedMessage(ctx context.Context, channelID, messageID string) (*QuotedMessage, error)
+}
+
+// QuotedMessage represents a referenced message for context injection.
+type QuotedMessage struct {
+	SenderID   string
+	SenderName string
+	Content    string
+	Timestamp  time.Time
+}
+
+// Threadable is an optional interface for channels that support
+// thread/topic isolation within a chat.
+type Threadable interface {
+	ThreadScope(channelID string, msg BotMessage) string
+}
+
+// Replyable is an optional interface for channels that support sending
+// replies that reference a specific message (visual thread).
+type Replyable interface {
+	SendMessageWithReply(channel, message, replyToMessageID string) error
+}
+
+// MentionPolicy is an optional interface for channels that need
+// to filter messages based on mention rules (e.g. only respond to @bot in groups).
+type MentionPolicy interface {
+	ShouldRespond(msg BotMessage) bool
+}
+
+// Debounceable is an optional interface for channels that benefit from
+// message debouncing (coalescing rapid-fire messages).
+type Debounceable interface {
+	DebounceWindow() int // milliseconds; 0 = disabled
+}
+
+// FormatQuoteBlock formats a quoted message for CLI context injection.
+func FormatQuoteBlock(q *QuotedMessage) string {
+	return fmt.Sprintf(
+		"<quoted_message sender=%q sender_name=%q time=%q>\n%s\n</quoted_message>",
+		q.SenderID, q.SenderName, q.Timestamp.Format(time.RFC3339), q.Content,
+	)
 }
