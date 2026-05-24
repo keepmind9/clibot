@@ -124,3 +124,34 @@ type CLIAdapter interface {
 	// StopSession stops and cleans up a running session.
 	StopSession(sessionName string) error
 }
+
+// StreamingCLI is an optional interface for CLI adapters that support
+// receiving intermediate events during processing.
+// The engine detects this via type assertion and uses it for rich streaming replies.
+type StreamingCLI interface {
+	// SendInputStreaming sends input and returns a channel of intermediate events.
+	// The channel is closed when the turn completes (normally or on error).
+	// Implementations must also satisfy CLIAdapter for session management.
+	SendInputStreaming(sessionName, input string) (<-chan CLIEvent, error)
+}
+
+// CLIEventType enumerates the kinds of events emitted during streaming.
+type CLIEventType string
+
+const (
+	CLIEventText       CLIEventType = "text"        // Text output chunk
+	CLIEventToolUse    CLIEventType = "tool_use"    // Tool invocation started
+	CLIEventToolResult CLIEventType = "tool_result" // Tool invocation completed
+	CLIEventThinking   CLIEventType = "thinking"    // Thinking/reasoning output
+	CLIEventDone       CLIEventType = "done"        // Turn completed
+	CLIEventUsage      CLIEventType = "usage"       // Token usage information
+)
+
+// CLIEvent represents an intermediate event during CLI processing.
+type CLIEvent struct {
+	Type     CLIEventType
+	Content  string            // Text content or tool output
+	ToolID   string            // For tool_use/tool_result: tool call ID
+	ToolName string            // For tool_use/tool_result: tool name
+	ToolMeta map[string]string // For tool_use: command, file_path, etc.
+}

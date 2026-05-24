@@ -169,6 +169,50 @@ type Debounceable interface {
 	DebounceWindow() int // milliseconds; 0 = disabled
 }
 
+// --- Rich Streaming Reply ---
+
+// ContentBlockType enumerates the kinds of content blocks for rich replies.
+type ContentBlockType string
+
+const (
+	ContentBlockText       ContentBlockType = "text"
+	ContentBlockToolCall   ContentBlockType = "tool_call"
+	ContentBlockToolResult ContentBlockType = "tool_result"
+	ContentBlockThinking   ContentBlockType = "thinking"
+	ContentBlockStatus     ContentBlockType = "status"
+)
+
+// ContentBlock represents a logical piece of rich reply content.
+type ContentBlock struct {
+	Type      ContentBlockType
+	Title     string            // Block title (e.g., tool name)
+	Content   string            // Markdown content
+	Collapsed bool              // Whether to collapse by default
+	Meta      map[string]string // Tool-specific metadata (command, file_path, etc.)
+}
+
+// RichMessageOptions configures the creation of a rich message.
+type RichMessageOptions struct {
+	Title     string            // Optional card title
+	StopText  string            // Stop button label (e.g., "Stop")
+	StopData  string            // Stop button callback data
+	ReplyToID string            // If set, reply to this message ID
+	Meta      map[string]string // Channel-specific metadata
+}
+
+// RichMessenger is an optional interface for channels that support
+// streaming rich replies (cards, embeds, etc.).
+type RichMessenger interface {
+	CreateRichMessage(channel string, opts RichMessageOptions) (RichMessageHandle, error)
+}
+
+// RichMessageHandle represents an active rich message being updated.
+type RichMessageHandle interface {
+	Channel() string
+	Update(blocks []ContentBlock) error // Incremental update during streaming
+	Finish(blocks []ContentBlock) error // Final update, remove interactive elements
+}
+
 // FormatQuoteBlock formats a quoted message for CLI context injection.
 func FormatQuoteBlock(q *QuotedMessage) string {
 	if q == nil {

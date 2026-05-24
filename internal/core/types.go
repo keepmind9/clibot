@@ -127,6 +127,7 @@ type BotConfig struct {
 	MediaDir         string `yaml:"media_dir"`          // Directory for downloaded media files
 	MediaTTL         string `yaml:"media_ttl"`          // TTL for cached media files (e.g., "24h", "0" to disable)
 	MaxMediaSize     int    `yaml:"max_media_size"`     // Max media file size in bytes (0 = no limit)
+	ReplyMode        string `yaml:"reply_mode"`         // "text" (default) or "card"
 }
 
 // CLIAdapterConfig represents CLI adapter configuration
