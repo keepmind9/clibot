@@ -288,6 +288,14 @@ func registerBotAdapters(engine *core.Engine, config *core.Config) error {
 				feishuBot.SetVerificationToken(botConfig.VerificationToken)
 			}
 			feishuBot.SetProxyManager(engine.GetProxyManager())
+			if botConfig.MentionInGroup != nil {
+				feishuBot.SetMentionInGroup(*botConfig.MentionInGroup)
+			} else {
+				feishuBot.SetMentionInGroup(true)
+			}
+			if botConfig.DebounceMs > 0 {
+				feishuBot.SetDebounceMs(botConfig.DebounceMs)
+			}
 			botAdapter = feishuBot
 			log.Printf("Registered %s bot adapter (WebSocket long connection)", botType)
 

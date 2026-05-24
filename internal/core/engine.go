@@ -187,6 +187,13 @@ func (e *Engine) RegisterBotAdapter(botType string, adapter bot.BotAdapter) {
 	e.activeBots[botType] = adapter
 }
 
+// getBotAdapter returns the bot adapter for the given platform.
+func (e *Engine) getBotAdapter(platform string) bot.BotAdapter {
+	e.sessionMu.RLock()
+	defer e.sessionMu.RUnlock()
+	return e.activeBots[platform]
+}
+
 // GetProxyManager returns the proxy manager
 func (e *Engine) GetProxyManager() *proxy.ProxyManager {
 	return e.proxyMgr
@@ -374,6 +381,13 @@ func (e *Engine) runEventLoop(ctx context.Context) {
 
 // HandleBotMessage is the callback function for bots to deliver messages
 func (e *Engine) HandleBotMessage(msg bot.BotMessage) {
+	// Check mention policy before processing
+	if policy, ok := e.getBotAdapter(msg.Platform).(bot.MentionPolicy); ok {
+		if !policy.ShouldRespond(msg) {
+			return
+		}
+	}
+
 	// Fast-track: special commands are processed immediately without queueing
 	// This allows commands like slist, sstatus, whoami to respond instantly
 	input := strings.TrimSpace(msg.Content)
@@ -515,6 +529,12 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		return
 	}
 
+	// Step 2.5: Compute effective channel for thread-capable platforms
+	effectiveChannel := msg.Channel
+	if threadable, ok := e.getBotAdapter(msg.Platform).(bot.Threadable); ok {
+		effectiveChannel = threadable.ThreadScope(msg.Channel, msg)
+	}
+
 	// Step 3: Get active session for this user
 
 	userKey := getUserKey(msg.Platform, msg.UserID)
@@ -587,12 +607,12 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 	}
 	e.sessionChannels[session.Name][userKey] = BotChannel{
 		Platform:  msg.Platform,
-		Channel:   msg.Channel,
+		Channel:   effectiveChannel,
 		MessageID: msg.MessageID,
 	}
 	session.LastChannel = &BotChannelRef{
 		Platform: msg.Platform,
-		Channel:  msg.Channel,
+		Channel:  effectiveChannel,
 	}
 	e.sessionMu.Unlock()
 
@@ -647,6 +667,15 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 			"<bridge_context chat_id=%q chat_type=%q sender_id=%q sender_name=%q thread_id=%q>\n%s\n</bridge_context>",
 			msg.Channel, msg.ChatType, msg.UserID, msg.SenderName, msg.ThreadID, processedContent,
 		)
+	}
+
+	// Step 4.2: Inject quoted message context if available
+	if msg.QuoteID != "" {
+		if quotable, ok := e.getBotAdapter(msg.Platform).(bot.Quotable); ok {
+			if quoted, err := quotable.FetchQuotedMessage(e.ctx, msg.Channel, msg.QuoteID); err == nil && quoted != nil {
+				processedContent = bot.FormatQuoteBlock(quoted) + "\n\n" + processedContent
+			}
+		}
 	}
 
 	// NOTE: Before snapshot capture removed - only hook mode is supported
@@ -2659,6 +2688,17 @@ func splitMessageByLines(message string, maxLen int) []string {
 	return chunks
 }
 
+// sendToBotWithReply sends a response preferring Replyable over plain SendMessage.
+// Falls back to SendToBot if Replyable is not supported or fails.
+func (e *Engine) sendToBotWithReply(platform, channel, message, replyToMessageID string) {
+	if replyable, ok := e.getBotAdapter(platform).(bot.Replyable); ok && replyToMessageID != "" {
+		if err := replyable.SendMessageWithReply(channel, message, replyToMessageID); err == nil {
+			return
+		}
+	}
+	e.SendToBot(platform, channel, message)
+}
+
 // removeTypingIndicatorAsync removes typing indicator after a delay
 // This is a shared helper to avoid code duplication
 func (e *Engine) removeTypingIndicatorAsync(platform, messageID string) {
@@ -2711,7 +2751,7 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 	}).Info("sending-response-to-session")
 
 	for _, botChannel := range channels {
-		e.SendToBot(botChannel.Platform, botChannel.Channel, message)
+		e.sendToBotWithReply(botChannel.Platform, botChannel.Channel, message, botChannel.MessageID)
 		if botChannel.MessageID != "" {
 			e.removeTypingIndicatorAsync(botChannel.Platform, botChannel.MessageID)
 		}
