@@ -90,6 +90,9 @@ func logReloadSummary(old, new_ *Config) {
 	if !reflect.DeepEqual(old.Sessions, new_.Sessions) {
 		needsRestart = append(needsRestart, "sessions")
 	}
+	if old.Session.MaxConcurrentRuns != new_.Session.MaxConcurrentRuns {
+		needsRestart = append(needsRestart, "session.max_concurrent_runs")
+	}
 	if !reflect.DeepEqual(old.CLIAdapters, new_.CLIAdapters) {
 		needsRestart = append(needsRestart, "cli_adapters")
 	}

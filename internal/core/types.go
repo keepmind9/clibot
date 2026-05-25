@@ -95,6 +95,7 @@ type WatchdogConfig struct {
 type SessionGlobalConfig struct {
 	MaxDynamicSessions int    `yaml:"max_dynamic_sessions"` // Maximum number of dynamic sessions allowed (default: 50)
 	IdleTimeout        string `yaml:"idle_timeout"`         // Auto-cleanup idle dynamic sessions (default: 1h, "0" to disable)
+	MaxConcurrentRuns  int    `yaml:"max_concurrent_runs"`  // Max simultaneous CLI runs (0 = no limit, default)
 }
 
 // SessionConfig represents a session configuration

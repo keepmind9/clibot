@@ -158,6 +158,7 @@ func (e *Engine) handleHookRequest(w http.ResponseWriter, r *http.Request) {
 	// Update session state to idle
 	e.updateSessionState(session.Name, StateIdle)
 	e.touchSession(session.Name)
+	e.releasePool(session.Name)
 
 	// Get the bot channel for this session
 	channels := e.snapshotSessionChannels(session.Name)

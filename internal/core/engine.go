@@ -118,6 +118,8 @@ type Engine struct {
 	sessionCmdLocks map[string]*sync.Mutex           // Per-session command locks (prevents concurrent commands on same session)
 	proxyMgr        *proxy.ProxyManager              // Proxy manager for HTTP clients
 	pendingQueues   map[string]*bot.PendingQueue     // Platform -> debounce queue
+	pool            *bot.ProcessPool                 // Concurrency limiter for CLI runs
+	poolPermits     map[string]bool                  // Sessions holding pool permits (survives session deletion)
 	ctx             context.Context                  // Context for cancellation
 	cancel          context.CancelFunc               // Cancel function for graceful shutdown
 }
@@ -175,6 +177,8 @@ func NewEngine(config *Config) *Engine {
 		cancel:          cancel,
 	}
 	engine.config.Store(config)
+	engine.pool = bot.NewProcessPool(config.Session.MaxConcurrentRuns)
+	engine.poolPermits = make(map[string]bool)
 	engine.proxyMgr = proxy.NewProxyManager(engine.configAdapter)
 	return engine
 }
@@ -737,7 +741,10 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		return
 	}
 
-	// Step 4.6: Streaming rich reply path
+	// Step 4.6: Acquire concurrency pool permit before starting a run
+	e.acquirePool(session.Name)
+
+	// Step 4.7: Streaming rich reply path
 	cfg := e.cfg()
 	botCfg := cfg.Bots[msg.Platform]
 	if botCfg.ReplyMode == "card" {
@@ -762,6 +769,7 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 			"error":   err,
 		}).Error("failed-to-send-input-to-cli")
 		e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("❌ Failed to send input: %v", err))
+		e.releasePool(session.Name)
 		return
 	}
 	e.touchSession(session.Name)
@@ -812,6 +820,8 @@ func (e *Engine) handleStreamingReply(
 	content string,
 	effectiveChannel string,
 ) {
+	defer e.releasePool(session.Name)
+
 	// Block debounce queue while processing
 	e.sessionMu.RLock()
 	if pq, ok := e.pendingQueues[msg.Platform]; ok {
@@ -1810,6 +1820,7 @@ func (e *Engine) handleSwitchSession(args []string, msg bot.BotMessage) {
 		logger.WithField("error", err).Warn("switch-stop-old-session-failed")
 	}
 	oldChannel := e.sessionChannels[name]
+	e.releasePoolLocked(name)
 	delete(e.sessions, name)
 	delete(e.sessionChannels, name)
 
@@ -1915,6 +1926,7 @@ func (e *Engine) handleDeleteSession(args []string, msg bot.BotMessage) {
 	}
 
 	// 6. Remove from sessions map
+	e.releasePoolLocked(name)
 	delete(e.sessions, name)
 	delete(e.sessionIDs, session.ID)
 	delete(e.sessionChannels, name)
@@ -2041,6 +2053,7 @@ func (e *Engine) handleCloseSession(args []string, msg bot.BotMessage) {
 	}
 
 	// Remove session entirely
+	e.releasePoolLocked(sessionName)
 	delete(e.sessions, sessionName)
 	delete(e.sessionIDs, session.ID)
 	delete(e.sessionChannels, sessionName)
@@ -2482,6 +2495,47 @@ func (e *Engine) updateSessionState(sessionName string, newState SessionState) {
 	}
 }
 
+// acquirePool acquires a ProcessPool permit for the given session.
+// Blocks if the pool is at capacity. No-op if pool is nil.
+func (e *Engine) acquirePool(sessionName string) {
+	if e.pool == nil {
+		return
+	}
+	e.pool.Acquire()
+	e.sessionMu.Lock()
+	e.poolPermits[sessionName] = true
+	e.sessionMu.Unlock()
+}
+
+// releasePool releases a ProcessPool permit for the given session.
+// Idempotent: safe to call multiple times. No-op if pool is nil or session has no permit.
+func (e *Engine) releasePool(sessionName string) {
+	if e.pool == nil {
+		return
+	}
+	shouldRelease := false
+	e.sessionMu.Lock()
+	if e.poolPermits[sessionName] {
+		delete(e.poolPermits, sessionName)
+		shouldRelease = true
+	}
+	e.sessionMu.Unlock()
+	if shouldRelease {
+		e.pool.Release()
+	}
+}
+
+// releasePoolLocked releases a pool permit while sessionMu is already held.
+func (e *Engine) releasePoolLocked(sessionName string) {
+	if e.pool == nil {
+		return
+	}
+	if e.poolPermits[sessionName] {
+		delete(e.poolPermits, sessionName)
+		e.pool.Release()
+	}
+}
+
 // sessionStateFile returns the path to the persistent session state file.
 func (e *Engine) sessionStateFile() string {
 	dir := e.cfg().DataDir
@@ -2768,6 +2822,7 @@ func (e *Engine) cleanIdleSessions(idleTimeout time.Duration) {
 		if session == nil {
 			continue
 		}
+		e.releasePoolLocked(name)
 		delete(e.sessions, name)
 		delete(e.sessionIDs, session.ID)
 		delete(e.sessionChannels, name)
@@ -2982,6 +3037,7 @@ func (e *Engine) SendResponseToSession(sessionName, message string) {
 		}
 		e.sessionMu.RUnlock()
 	}
+	e.releasePool(sessionName)
 }
 
 // snapshotSessionChannels returns a snapshot of all channels for a session.
