@@ -54,10 +54,10 @@ type stdioSession struct {
 	pendingPerm *PendingPermission
 	permMu      sync.Mutex
 	cancelCtx   context.CancelFunc
-	sessionID   string        // CLI-side session ID for resume support
-	completed   bool          // True after first successful per-turn
-	streamCh    chan<- Event  // Active streaming sink (nil when inactive)
-	streamDone  chan struct{} // Closed when streaming turn completes
+	sessionID   string       // CLI-side session ID for resume support
+	completed   bool         // True after first successful per-turn
+	streamCh    chan<- Event // Active streaming sink (nil when inactive)
+	streamMu    sync.Mutex   // Protects streamCh
 }
 
 // Engine interface matches cli.Engine — duplicated here to avoid
@@ -319,18 +319,21 @@ func (a *StdioAdapter) sendPersistent(sess *stdioSession, input string) error {
 // intermediate events for this turn. The eventLoop clones events into the
 // streamCh while it is active.
 func (a *StdioAdapter) sendPersistentStreaming(sess *stdioSession, input string) (<-chan cli.CLIEvent, error) {
+	sess.streamMu.Lock()
 	if sess.streamCh != nil {
+		sess.streamMu.Unlock()
 		return nil, fmt.Errorf("streaming already in progress for session %q", sess.name)
 	}
 
 	if err := sess.process.WriteInput(input); err != nil {
+		sess.streamMu.Unlock()
 		return nil, err
 	}
 
 	eventCh := make(chan Event, 64)
 	outCh := make(chan cli.CLIEvent, 64)
 	sess.streamCh = eventCh
-	sess.streamDone = make(chan struct{})
+	sess.streamMu.Unlock()
 
 	// Adapter goroutine: convert internal Events to CLIEvents
 	go func() {
@@ -453,13 +456,22 @@ func (a *StdioAdapter) sendPerTurnStreaming(sess *stdioSession, input string) (<
 		defer close(outCh)
 		defer proc.Close()
 		defer cancel()
+		defer func() {
+			if r := recover(); r != nil {
+				logger.WithField("panic", r).Error("per-turn-streaming-panic")
+			}
+		}()
 
 		for evt := range proc.Events() {
 			if evt.SessionID != "" {
+				sess.permMu.Lock()
 				sess.sessionID = evt.SessionID
+				sess.permMu.Unlock()
 			}
 			if evt.Type == EventResult && evt.Done {
+				sess.permMu.Lock()
 				sess.completed = true
+				sess.permMu.Unlock()
 			}
 			outCh <- stdioEventToCLIEvent(evt)
 		}
@@ -500,17 +512,21 @@ func stdioEventToCLIEvent(evt Event) cli.CLIEvent {
 func (a *StdioAdapter) eventLoop(sess *stdioSession) {
 	for evt := range sess.process.Events() {
 		// Clone events to streaming channel when active
-		if sess.streamCh != nil {
-			sess.streamCh <- evt
+		sess.streamMu.Lock()
+		ch := sess.streamCh
+		sess.streamMu.Unlock()
+
+		if ch != nil {
+			ch <- evt
 
 			// Close streaming on turn completion
 			if evt.Type == EventResult && evt.Done {
-				close(sess.streamCh)
-				sess.streamCh = nil
-				if sess.streamDone != nil {
-					close(sess.streamDone)
-					sess.streamDone = nil
+				sess.streamMu.Lock()
+				if sess.streamCh == ch {
+					close(sess.streamCh)
+					sess.streamCh = nil
 				}
+				sess.streamMu.Unlock()
 			}
 			// During streaming, skip engine delivery for intermediate events
 			if evt.Type == EventText || evt.Type == EventToolUse {

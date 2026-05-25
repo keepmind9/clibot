@@ -26,7 +26,7 @@ func buildBatchUpdateActions(blocks []bot.ContentBlock, existingToolCount int) (
 
 		case bot.ContentBlockToolCall:
 			toolCount++
-			actions = append(actions, buildToolCallAction(block, toolCount > toolCollapseThreshold))
+			actions = append(actions, buildToolCallAction(block, toolCount, toolCount > toolCollapseThreshold))
 
 		case bot.ContentBlockToolResult:
 			actions = append(actions, buildToolResultAction(block))
@@ -55,11 +55,11 @@ func buildTextAction(block bot.ContentBlock) larkcardkit.Action {
 	}
 }
 
-func buildToolCallAction(block bot.ContentBlock, collapsed bool) larkcardkit.Action {
+func buildToolCallAction(block bot.ContentBlock, index int, collapsed bool) larkcardkit.Action {
 	summary := toolSummary(block.Title, block.Meta)
-	safeName := sanitizeID(block.Title)
-	if safeName == "" {
-		safeName = "tool"
+	safeName := fmt.Sprintf("%s_%d", sanitizeID(block.Title), index)
+	if sanitizeID(block.Title) == "" {
+		safeName = fmt.Sprintf("tool_%d", index)
 	}
 
 	collapsedAttr := ""

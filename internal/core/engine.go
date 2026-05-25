@@ -863,58 +863,70 @@ func (e *Engine) handleStreamingReply(
 	lastUpdate := time.Now()
 	const updateInterval = 500 * time.Millisecond
 
-	for evt := range eventCh {
-		switch evt.Type {
-		case cli.CLIEventText:
-			textBuf.WriteString(evt.Content)
-		case cli.CLIEventToolUse:
-			if textBuf.Len() > 0 {
-				blocks = append(blocks, bot.ContentBlock{
-					Type:    bot.ContentBlockText,
-					Content: textBuf.String(),
-				})
-				textBuf.Reset()
+	streaming := true
+	for streaming {
+		select {
+		case evt, ok := <-eventCh:
+			if !ok {
+				streaming = false
+				break
 			}
-			blocks = append(blocks, bot.ContentBlock{
-				Type:      bot.ContentBlockToolCall,
-				Title:     evt.ToolName,
-				Meta:      evt.ToolMeta,
-				Collapsed: true,
-			})
-		case cli.CLIEventToolResult:
-			if evt.Content != "" {
+			switch evt.Type {
+			case cli.CLIEventText:
+				textBuf.WriteString(evt.Content)
+			case cli.CLIEventToolUse:
+				if textBuf.Len() > 0 {
+					blocks = append(blocks, bot.ContentBlock{
+						Type:    bot.ContentBlockText,
+						Content: textBuf.String(),
+					})
+					textBuf.Reset()
+				}
 				blocks = append(blocks, bot.ContentBlock{
-					Type:    bot.ContentBlockToolResult,
+					Type:      bot.ContentBlockToolCall,
+					Title:     evt.ToolName,
+					Meta:      evt.ToolMeta,
+					Collapsed: true,
+				})
+			case cli.CLIEventToolResult:
+				if evt.Content != "" {
+					blocks = append(blocks, bot.ContentBlock{
+						Type:    bot.ContentBlockToolResult,
+						Content: evt.Content,
+					})
+				}
+			case cli.CLIEventThinking:
+				blocks = append(blocks, bot.ContentBlock{
+					Type:    bot.ContentBlockThinking,
 					Content: evt.Content,
 				})
+			case cli.CLIEventDone:
+				if textBuf.Len() > 0 {
+					blocks = append(blocks, bot.ContentBlock{
+						Type:    bot.ContentBlockText,
+						Content: textBuf.String(),
+					})
+					textBuf.Reset()
+				}
+				if evt.Content != "" {
+					blocks = append(blocks, bot.ContentBlock{
+						Type:    bot.ContentBlockText,
+						Content: evt.Content,
+					})
+				}
 			}
-		case cli.CLIEventThinking:
-			blocks = append(blocks, bot.ContentBlock{
-				Type:    bot.ContentBlockThinking,
-				Content: evt.Content,
-			})
-		case cli.CLIEventDone:
-			if textBuf.Len() > 0 {
-				blocks = append(blocks, bot.ContentBlock{
-					Type:    bot.ContentBlockText,
-					Content: textBuf.String(),
-				})
-				textBuf.Reset()
-			}
-			if evt.Content != "" {
-				blocks = append(blocks, bot.ContentBlock{
-					Type:    bot.ContentBlockText,
-					Content: evt.Content,
-				})
-			}
-		}
 
-		// Throttled update
-		if time.Since(lastUpdate) >= updateInterval {
-			if err := handle.Update(blocks); err != nil {
-				logger.WithField("error", err).Warn("streaming-card-update-error")
+			// Throttled update
+			if time.Since(lastUpdate) >= updateInterval {
+				if err := handle.Update(blocks); err != nil {
+					logger.WithField("error", err).Warn("streaming-card-update-error")
+				}
+				lastUpdate = time.Now()
 			}
-			lastUpdate = time.Now()
+
+		case <-e.ctx.Done():
+			logger.Info("streaming-aborted-engine-shutdown")
+			streaming = false
 		}
 	}
 

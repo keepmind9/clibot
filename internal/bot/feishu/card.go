@@ -120,7 +120,12 @@ func (h *cardHandle) Finish(blocks []bot.ContentBlock) error {
 				Build()).
 			Build()
 
-		h.api.BatchUpdate(h.ctx, req)
+		if _, err := h.api.BatchUpdate(h.ctx, req); err != nil {
+			logger.WithFields(logrus.Fields{
+				"card_id": h.cardID,
+				"error":   err,
+			}).Warn("feishu-card-finish-batch-update-error")
+		}
 	}
 
 	// End streaming mode
@@ -250,7 +255,12 @@ func sendCardAsNewMessage(ctx context.Context, msgSender interface {
 		Body(body).
 		Build()
 
-	msgSender.Create(ctx, req)
+	if _, err := msgSender.Create(ctx, req); err != nil {
+		logger.WithFields(logrus.Fields{
+			"channel": channel,
+			"error":   err,
+		}).Warn("feishu-card-send-message-error")
+	}
 }
 
 // buildSkeletonCard creates the initial card JSON with streaming mode enabled.
@@ -285,9 +295,10 @@ func extractSummary(blocks []bot.ContentBlock) string {
 	return "Done"
 }
 
-func truncateString(s string, max int) string {
-	if len(s) <= max {
+func truncateString(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
 		return s
 	}
-	return s[:max-3] + "..."
+	return string(runes[:maxRunes-3]) + "..."
 }
