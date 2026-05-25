@@ -20,8 +20,6 @@ func (m *mockUserGetter) Get(_ context.Context, _ *larkcontact.GetUserReq, _ ...
 	return m.resp, m.err
 }
 
-func strPtr(s string) *string { return &s }
-
 func TestResolveSenderName(t *testing.T) {
 	tests := []struct {
 		name       string
