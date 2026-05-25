@@ -296,6 +296,9 @@ func registerBotAdapters(engine *core.Engine, config *core.Config) error {
 			if botConfig.DebounceMs > 0 {
 				feishuBot.SetDebounceMs(botConfig.DebounceMs)
 			}
+			if botConfig.ReplyMode != "" && botConfig.ReplyMode != "text" && botConfig.ReplyMode != "card" {
+				log.Fatalf("Invalid reply_mode %q for feishu bot, must be 'text' or 'card'", botConfig.ReplyMode)
+			}
 			if botConfig.MediaDir != "" {
 				ttl := 24 * time.Hour
 				if botConfig.MediaTTL != "" {

@@ -737,6 +737,18 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 		return
 	}
 
+	// Step 4.6: Streaming rich reply path
+	cfg := e.cfg()
+	botCfg := cfg.Bots[msg.Platform]
+	if botCfg.ReplyMode == "card" {
+		if streamCLI, ok := adapter.(cli.StreamingCLI); ok {
+			if rich, ok := e.getBotAdapter(msg.Platform).(bot.RichMessenger); ok {
+				go e.handleStreamingReply(streamCLI, rich, session, msg, processedContent, effectiveChannel)
+				return
+			}
+		}
+	}
+
 	// Step 5: Send to CLI
 	// Block debounce queue while processing to prevent premature flushes
 	e.sessionMu.RLock()
@@ -787,6 +799,146 @@ func (e *Engine) HandleUserMessage(msg bot.BotMessage) {
 				}).Error("watchdog-failed")
 			}
 		}(session.Name, ctx)
+
+	}
+}
+
+// handleStreamingReply orchestrates streaming CLI events into a rich message card.
+func (e *Engine) handleStreamingReply(
+	streamCLI cli.StreamingCLI,
+	rich bot.RichMessenger,
+	session *Session,
+	msg bot.BotMessage,
+	content string,
+	effectiveChannel string,
+) {
+	// Block debounce queue while processing
+	e.sessionMu.RLock()
+	if pq, ok := e.pendingQueues[msg.Platform]; ok {
+		pq.Block(effectiveChannel)
+	}
+	e.sessionMu.RUnlock()
+
+	// Update session state
+	e.updateSessionState(session.Name, StateProcessing)
+	e.touchSession(session.Name)
+
+	// Create rich message card
+	handle, err := rich.CreateRichMessage(effectiveChannel, bot.RichMessageOptions{
+		Title:     "Processing...",
+		ReplyToID: msg.MessageID,
+	})
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"platform": msg.Platform,
+			"error":    err,
+		}).Warn("streaming-card-create-failed-falling-back-to-text")
+		// Fallback to non-streaming text path
+		if adapter := e.cliAdapters[session.CLIType]; adapter != nil {
+			if err := adapter.SendInput(session.Name, content); err != nil {
+				e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("Failed to send input: %v", err))
+			}
+		} else {
+			e.SendToBot(msg.Platform, msg.Channel, "Failed to create rich message")
+		}
+		return
+	}
+
+	// Start streaming from CLI
+	eventCh, err := streamCLI.SendInputStreaming(session.Name, content)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"session": session.Name,
+			"error":   err,
+		}).Error("streaming-send-input-failed")
+		handle.Finish([]bot.ContentBlock{
+			{Type: bot.ContentBlockText, Content: fmt.Sprintf("Failed to start streaming: %v", err)},
+		})
+		return
+	}
+
+	// Consume events and update card
+	var blocks []bot.ContentBlock
+	var textBuf strings.Builder
+	lastUpdate := time.Now()
+	const updateInterval = 500 * time.Millisecond
+
+	for evt := range eventCh {
+		switch evt.Type {
+		case cli.CLIEventText:
+			textBuf.WriteString(evt.Content)
+		case cli.CLIEventToolUse:
+			if textBuf.Len() > 0 {
+				blocks = append(blocks, bot.ContentBlock{
+					Type:    bot.ContentBlockText,
+					Content: textBuf.String(),
+				})
+				textBuf.Reset()
+			}
+			blocks = append(blocks, bot.ContentBlock{
+				Type:      bot.ContentBlockToolCall,
+				Title:     evt.ToolName,
+				Meta:      evt.ToolMeta,
+				Collapsed: true,
+			})
+		case cli.CLIEventToolResult:
+			if evt.Content != "" {
+				blocks = append(blocks, bot.ContentBlock{
+					Type:    bot.ContentBlockToolResult,
+					Content: evt.Content,
+				})
+			}
+		case cli.CLIEventThinking:
+			blocks = append(blocks, bot.ContentBlock{
+				Type:    bot.ContentBlockThinking,
+				Content: evt.Content,
+			})
+		case cli.CLIEventDone:
+			if textBuf.Len() > 0 {
+				blocks = append(blocks, bot.ContentBlock{
+					Type:    bot.ContentBlockText,
+					Content: textBuf.String(),
+				})
+				textBuf.Reset()
+			}
+			if evt.Content != "" {
+				blocks = append(blocks, bot.ContentBlock{
+					Type:    bot.ContentBlockText,
+					Content: evt.Content,
+				})
+			}
+		}
+
+		// Throttled update
+		if time.Since(lastUpdate) >= updateInterval {
+			if err := handle.Update(blocks); err != nil {
+				logger.WithField("error", err).Warn("streaming-card-update-error")
+			}
+			lastUpdate = time.Now()
+		}
+	}
+
+	// Final update and finish
+	if err := handle.Finish(blocks); err != nil {
+		logger.WithField("error", err).Warn("streaming-card-finish-error")
+	}
+
+	// Clean up state
+	e.updateSessionState(session.Name, StateIdle)
+	e.sessionMu.RLock()
+	if pq, ok := e.pendingQueues[msg.Platform]; ok {
+		pq.Unblock(effectiveChannel)
+	}
+	e.sessionMu.RUnlock()
+
+	// Remove typing indicator
+	if msg.MessageID != "" {
+		e.sessionMu.RLock()
+		botAdapter, exists := e.activeBots[msg.Platform]
+		e.sessionMu.RUnlock()
+		if exists {
+			botAdapter.RemoveTypingIndicator(msg.MessageID)
+		}
 	}
 }
 
