@@ -6,7 +6,7 @@
 
 English | [中文版](./README_zh.md)
 
-clibot is a lightweight middleware that bridges ACP-compatible AI CLI tools (Claude Code, Gemini CLI, OpenCode) to IM platforms (Discord, Telegram, Feishu, DingTalk, QQ, WeChat). Use powerful desktop AI programming assistants from your phone with streaming responses - no public IP required.
+clibot is a lightweight middleware that bridges AI CLI tools (Claude Code, Codex, Gemini CLI, OpenCode) to IM platforms (Discord, Telegram, Feishu, DingTalk, QQ, WeChat). Use powerful desktop AI programming assistants from your phone with streaming responses - no public IP required.
 
 ## ✨ Features
 

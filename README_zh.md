@@ -6,7 +6,7 @@
 
 [English](./README.md) | 中文版
 
-clibot 是一个轻量级中间件，将 ACP 兼容的 AI CLI 工具（Claude Code、Gemini CLI、OpenCode）与 IM 平台（Discord、Telegram、飞书、钉钉、QQ 机器人、微信）连接起来，让你可以在手机上使用桌面 AI 编程助手，支持流式响应，无需公网 IP。
+clibot 是一个轻量级中间件，将 AI CLI 工具（Claude Code、Codex、Gemini CLI、OpenCode）与 IM 平台（Discord、Telegram、飞书、钉钉、QQ 机器人、微信）连接起来，让你可以在手机上使用桌面 AI 编程助手，支持流式响应，无需公网 IP。
 
 ## ✨ 特性
 
