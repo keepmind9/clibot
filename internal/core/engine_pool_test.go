@@ -187,7 +187,8 @@ func TestPool_StreamingPathRelease(t *testing.T) {
 
 	// Wait for streaming to complete
 	assert.Eventually(t, func() bool {
-		return richBot.rich.handle != nil && richBot.rich.handle.finished
+		h := richBot.rich.getHandle()
+			return h != nil && h.finished.Load()
 	}, 2*time.Second, 50*time.Millisecond)
 
 	// Pool permit should be released — can acquire again

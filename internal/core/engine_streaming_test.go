@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,6 +47,7 @@ func (m *mockStreamingCLI) SendInputStreaming(sessionName, input string) (<-chan
 type mockRichMessenger struct {
 	handle    *mockRichHandle
 	createErr error
+	mu        sync.Mutex
 }
 
 func (m *mockRichMessenger) CreateRichMessage(channel string, opts bot.RichMessageOptions) (bot.RichMessageHandle, error) {
@@ -52,8 +55,16 @@ func (m *mockRichMessenger) CreateRichMessage(channel string, opts bot.RichMessa
 		return nil, m.createErr
 	}
 	h := &mockRichHandle{channel: channel, blocks: make(map[int][]bot.ContentBlock)}
+	m.mu.Lock()
 	m.handle = h
+	m.mu.Unlock()
 	return h, nil
+}
+
+func (m *mockRichMessenger) getHandle() *mockRichHandle {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.handle
 }
 
 type mockRichHandle struct {
@@ -62,7 +73,7 @@ type mockRichHandle struct {
 	updateCnt  int
 	finishCnt  int
 	finishCall int
-	finished   bool
+	finished   atomic.Bool
 }
 
 func (h *mockRichHandle) Channel() string { return h.channel }
@@ -77,7 +88,7 @@ func (h *mockRichHandle) Finish(blocks []bot.ContentBlock) error {
 	h.finishCnt++
 	h.finishCall++
 	h.blocks[-h.finishCall] = append([]bot.ContentBlock{}, blocks...)
-	h.finished = true
+	h.finished.Store(true)
 	return nil
 }
 
@@ -132,7 +143,7 @@ func TestHandleStreamingReply_HappyPath(t *testing.T) {
 	engine.handleStreamingReply(streamCLI, richBot.rich, session, msg, "test input", "ch1")
 
 	assert.NotNil(t, richBot.rich.handle)
-	assert.True(t, richBot.rich.handle.finished)
+	assert.True(t, richBot.rich.handle.finished.Load())
 	assert.Equal(t, 1, richBot.rich.handle.finishCnt)
 
 	// Verify the final blocks contain text and tool call
@@ -173,7 +184,7 @@ func TestHandleStreamingReply_StreamStartFails(t *testing.T) {
 
 	// Should finish card with error message
 	assert.NotNil(t, richBot.rich.handle)
-	assert.True(t, richBot.rich.handle.finished)
+	assert.True(t, richBot.rich.handle.finished.Load())
 }
 
 func TestHandleStreamingReply_EmptyEvents(t *testing.T) {
@@ -191,7 +202,7 @@ func TestHandleStreamingReply_EmptyEvents(t *testing.T) {
 	engine.handleStreamingReply(streamCLI, richBot.rich, session, msg, "test input", "ch1")
 
 	assert.NotNil(t, richBot.rich.handle)
-	assert.True(t, richBot.rich.handle.finished)
+	assert.True(t, richBot.rich.handle.finished.Load())
 }
 
 func TestHandleStreamingReply_Throttle(t *testing.T) {
@@ -217,7 +228,7 @@ func TestHandleStreamingReply_Throttle(t *testing.T) {
 
 	_ = elapsed
 	assert.NotNil(t, richBot.rich.handle)
-	assert.True(t, richBot.rich.handle.finished)
+	assert.True(t, richBot.rich.handle.finished.Load())
 	// With 500ms throttle and 20 events sent instantly via buffered channel,
 	// updates should be limited (not 20 updates)
 	assert.Less(t, richBot.rich.handle.updateCnt, 20)
@@ -278,7 +289,7 @@ func TestHandleStreamingReply_ThinkingAndToolResult(t *testing.T) {
 	engine.handleStreamingReply(streamCLI, richBot.rich, session, msg, "test input", "ch1")
 
 	assert.NotNil(t, richBot.rich.handle)
-	assert.True(t, richBot.rich.handle.finished)
+	assert.True(t, richBot.rich.handle.finished.Load())
 
 	finalBlocks := richBot.rich.handle.blocks[-1]
 	// Should have: thinking, text, tool_call, tool_result
