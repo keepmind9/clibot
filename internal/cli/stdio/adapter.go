@@ -325,11 +325,7 @@ func (a *StdioAdapter) sendPersistentStreaming(sess *stdioSession, input string)
 		return nil, fmt.Errorf("streaming already in progress for session %q", sess.name)
 	}
 
-	if err := sess.process.WriteInput(input); err != nil {
-		sess.streamMu.Unlock()
-		return nil, err
-	}
-
+	// Set up streamCh BEFORE writing input so eventLoop captures all events.
 	eventCh := make(chan Event, 64)
 	outCh := make(chan cli.CLIEvent, 64)
 	sess.streamCh = eventCh
@@ -342,6 +338,17 @@ func (a *StdioAdapter) sendPersistentStreaming(sess *stdioSession, input string)
 			outCh <- stdioEventToCLIEvent(evt)
 		}
 	}()
+
+	if err := sess.process.WriteInput(input); err != nil {
+		// Clean up streamCh on write failure
+		sess.streamMu.Lock()
+		if sess.streamCh == eventCh {
+			close(sess.streamCh)
+			sess.streamCh = nil
+		}
+		sess.streamMu.Unlock()
+		return nil, err
+	}
 
 	return outCh, nil
 }
@@ -500,6 +507,13 @@ func stdioEventToCLIEvent(evt Event) cli.CLIEvent {
 		return ce
 	case EventResult:
 		return cli.CLIEvent{Type: cli.CLIEventDone, Content: evt.Text}
+	case EventPermission:
+		ce := cli.CLIEvent{Type: cli.CLIEventPermission}
+		if evt.Permission != nil {
+			ce.ToolName = evt.Permission.ToolName
+			ce.Content = evt.Permission.FormatOptions()
+		}
+		return ce
 	case EventError:
 		return cli.CLIEvent{Type: cli.CLIEventDone, Content: "error: " + evt.Error.Error()}
 	default:
@@ -528,8 +542,9 @@ func (a *StdioAdapter) eventLoop(sess *stdioSession) {
 				}
 				sess.streamMu.Unlock()
 			}
-			// During streaming, skip engine delivery for intermediate events
-			if evt.Type == EventText || evt.Type == EventToolUse {
+			// During streaming, events are delivered via streamCh only.
+			// Permission events still need engine handling for user response.
+			if evt.Type != EventPermission {
 				continue
 			}
 		}

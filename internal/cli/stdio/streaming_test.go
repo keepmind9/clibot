@@ -49,7 +49,7 @@ func TestStdioEventToCLIEvent(t *testing.T) {
 			want: cli.CLIEvent{Type: cli.CLIEventDone, Content: "error: " + assert.AnError.Error()},
 		},
 		{
-			name: "permission event maps to text",
+			name: "permission event maps to permission type",
 			evt: Event{
 				Type: EventPermission,
 				Permission: &PermissionRequest{
@@ -58,7 +58,7 @@ func TestStdioEventToCLIEvent(t *testing.T) {
 					Options:   []PermissionOption{{ID: "allow", Text: "Allow"}},
 				},
 			},
-			want: cli.CLIEvent{Type: cli.CLIEventText, Content: ""},
+			want: cli.CLIEvent{Type: cli.CLIEventPermission, ToolName: "Edit", Content: "Permission requested: Edit\nReply 1-1:\n1. Allow"},
 		},
 	}
 

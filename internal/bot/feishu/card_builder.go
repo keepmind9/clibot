@@ -2,124 +2,67 @@ package feishu
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/keepmind9/clibot/internal/bot"
 	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
 )
 
 const (
-	maxFieldChars         = 600
-	maxThinkingChars      = 1500
-	toolCollapseThreshold = 5
+	maxFieldChars    = 600
+	maxThinkingChars = 1500
 )
 
-// buildBatchUpdateActions converts ContentBlocks into CardKit batch update action list.
-// Returns the actions list and updated tool count.
+// buildBatchUpdateActions converts ContentBlocks into a single update_element action.
+// All blocks are rendered into one markdown string to replace the main_content element.
 func buildBatchUpdateActions(blocks []bot.ContentBlock, existingToolCount int) ([]larkcardkit.Action, int) {
-	var actions []larkcardkit.Action
+	if len(blocks) == 0 {
+		return nil, existingToolCount
+	}
+
+	content := renderBlocksToMarkdown(blocks)
+
 	toolCount := existingToolCount
-
 	for _, block := range blocks {
-		switch block.Type {
-		case bot.ContentBlockText:
-			actions = append(actions, buildTextAction(block))
-
-		case bot.ContentBlockToolCall:
+		if block.Type == bot.ContentBlockToolCall {
 			toolCount++
-			actions = append(actions, buildToolCallAction(block, toolCount, toolCount > toolCollapseThreshold))
-
-		case bot.ContentBlockToolResult:
-			actions = append(actions, buildToolResultAction(block))
-
-		case bot.ContentBlockThinking:
-			actions = append(actions, buildThinkingAction(block))
-
-		case bot.ContentBlockStatus:
-			actions = append(actions, buildStatusAction(block))
 		}
 	}
 
-	return actions, toolCount
+	element := fmt.Sprintf(`{"tag":"markdown","element_id":"main_content","content":%q}`, content)
+
+	return []larkcardkit.Action{{
+		Action: strPtr("update_element"),
+		Params: &larkcardkit.Params{
+			ElementId: strPtr("main_content"),
+			Element:   strPtr(element),
+		},
+	}}, toolCount
 }
 
-func buildTextAction(block bot.ContentBlock) larkcardkit.Action {
-	content := truncateString(block.Content, maxFieldChars)
-	partial := fmt.Sprintf(`{"content":%q}`, content)
-
-	return larkcardkit.Action{
-		Action: strPtr("partial_update_element"),
-		Params: &larkcardkit.Params{
-			ElementId:      strPtr("main_content"),
-			PartialElement: strPtr(partial),
-		},
+// renderBlocksToMarkdown concatenates all blocks into a single markdown string.
+func renderBlocksToMarkdown(blocks []bot.ContentBlock) string {
+	var sb strings.Builder
+	for i, block := range blocks {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		switch block.Type {
+		case bot.ContentBlockText:
+			sb.WriteString(truncateString(block.Content, maxFieldChars))
+		case bot.ContentBlockToolCall:
+			summary := toolSummary(block.Title, block.Meta)
+			sb.WriteString(fmt.Sprintf("**[%s]**", truncateString(summary, maxFieldChars)))
+		case bot.ContentBlockToolResult:
+			sb.WriteString(truncateString(block.Content, maxFieldChars))
+		case bot.ContentBlockThinking:
+			sb.WriteString(truncateString(block.Content, maxThinkingChars))
+		case bot.ContentBlockStatus:
+			sb.WriteString(truncateString(block.Content, maxFieldChars))
+			sb.WriteString("\n")
+		}
 	}
-}
-
-func buildToolCallAction(block bot.ContentBlock, index int, collapsed bool) larkcardkit.Action {
-	summary := toolSummary(block.Title, block.Meta)
-	safeName := fmt.Sprintf("%s_%d", sanitizeID(block.Title), index)
-	if sanitizeID(block.Title) == "" {
-		safeName = fmt.Sprintf("tool_%d", index)
-	}
-
-	collapsedAttr := ""
-	if collapsed {
-		collapsedAttr = `,"collapsed":true`
-	}
-
-	element := fmt.Sprintf(
-		`{"tag":"collapsible_panel","element_id":%q,"title":{"content":%q,"tag":"plain_text"}%s}`,
-		safeName, truncateString(summary, maxFieldChars), collapsedAttr,
-	)
-
-	return larkcardkit.Action{
-		Action: strPtr("add_elements"),
-		Params: &larkcardkit.Params{
-			Type:     strPtr("append"),
-			Elements: []string{element},
-		},
-	}
-}
-
-func buildToolResultAction(block bot.ContentBlock) larkcardkit.Action {
-	content := truncateString(block.Content, maxFieldChars)
-	partial := fmt.Sprintf(`{"content":%q}`, content)
-
-	return larkcardkit.Action{
-		Action: strPtr("partial_update_element"),
-		Params: &larkcardkit.Params{
-			ElementId:      strPtr("main_content"),
-			PartialElement: strPtr(partial),
-		},
-	}
-}
-
-func buildThinkingAction(block bot.ContentBlock) larkcardkit.Action {
-	content := truncateString(block.Content, maxThinkingChars)
-	element := fmt.Sprintf(
-		`{"tag":"collapsible_panel","element_id":"thinking","title":{"content":"Thinking","tag":"plain_text"},"collapsed":true,"content":{"tag":"markdown","content":%q}}`,
-		content,
-	)
-
-	return larkcardkit.Action{
-		Action: strPtr("add_elements"),
-		Params: &larkcardkit.Params{
-			Type:     strPtr("append"),
-			Elements: []string{element},
-		},
-	}
-}
-
-func buildStatusAction(block bot.ContentBlock) larkcardkit.Action {
-	partial := fmt.Sprintf(`{"content":%q}`, truncateString(block.Content, maxFieldChars))
-
-	return larkcardkit.Action{
-		Action: strPtr("partial_update_element"),
-		Params: &larkcardkit.Params{
-			ElementId:      strPtr("main_content"),
-			PartialElement: strPtr(partial),
-		},
-	}
+	return strings.TrimSpace(sb.String())
 }
 
 // toolSummary generates a short summary for a tool call based on tool name and metadata.
@@ -145,7 +88,6 @@ func toolSummary(name string, meta map[string]string) string {
 }
 
 func sanitizeID(s string) string {
-	// Keep only alphanumeric, underscore, dash
 	var result []byte
 	for _, c := range s {
 		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' {

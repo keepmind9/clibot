@@ -143,6 +143,7 @@ const (
 	CLIEventToolUse    CLIEventType = "tool_use"    // Tool invocation started
 	CLIEventToolResult CLIEventType = "tool_result" // Tool invocation completed
 	CLIEventThinking   CLIEventType = "thinking"    // Thinking/reasoning output
+	CLIEventPermission CLIEventType = "permission"  // Permission request pending user action
 	CLIEventDone       CLIEventType = "done"        // Turn completed
 	CLIEventUsage      CLIEventType = "usage"       // Token usage information
 )

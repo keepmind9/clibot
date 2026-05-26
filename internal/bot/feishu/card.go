@@ -2,7 +2,6 @@ package feishu
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -19,33 +18,32 @@ type cardCreator interface {
 	Create(ctx context.Context, req *larkcardkit.CreateCardReq, opts ...larkcore.RequestOptionFunc) (*larkcardkit.CreateCardResp, error)
 }
 
-// cardBatchUpdater abstracts Cardkit.V1.Card.BatchUpdate for testability.
-type cardBatchUpdater interface {
-	BatchUpdate(ctx context.Context, req *larkcardkit.BatchUpdateCardReq, opts ...larkcore.RequestOptionFunc) (*larkcardkit.BatchUpdateCardResp, error)
+// cardElementContentUpdater abstracts Cardkit.V1.CardElement.Content for testability.
+type cardElementContentUpdater interface {
+	Content(ctx context.Context, req *larkcardkit.ContentCardElementReq, opts ...larkcore.RequestOptionFunc) (*larkcardkit.ContentCardElementResp, error)
 }
 
-// cardSettingsUpdater abstracts Cardkit.V1.Card.Settings for testability.
-type cardSettingsUpdater interface {
-	Settings(ctx context.Context, req *larkcardkit.SettingsCardReq, opts ...larkcore.RequestOptionFunc) (*larkcardkit.SettingsCardResp, error)
+// cardUpdater abstracts Cardkit.V1.Card.Update for testability.
+type cardUpdater interface {
+	Update(ctx context.Context, req *larkcardkit.UpdateCardReq, opts ...larkcore.RequestOptionFunc) (*larkcardkit.UpdateCardResp, error)
 }
 
-// cardAPI combines card creation, batch update, and settings for testability.
+// cardAPI combines card creation, update and settings for testability.
 type cardAPI interface {
 	cardCreator
-	cardBatchUpdater
-	cardSettingsUpdater
+	cardUpdater
 }
 
 // cardHandle implements bot.RichMessageHandle for a Feishu CardKit card.
 type cardHandle struct {
-	api       cardAPI
-	cardID    string
-	channel   string
-	ctx       context.Context
-	sequence  int
-	mu        sync.Mutex
-	finished  bool
-	toolCount int
+	api      cardAPI
+	elemAPI  cardElementContentUpdater
+	cardID   string
+	channel  string
+	ctx      context.Context
+	seq      int
+	mu       sync.Mutex
+	finished bool
 }
 
 func (h *cardHandle) Channel() string { return h.channel }
@@ -58,41 +56,54 @@ func (h *cardHandle) Update(blocks []bot.ContentBlock) error {
 		return fmt.Errorf("card already finished")
 	}
 
-	actions, newToolCount := buildBatchUpdateActions(blocks, h.toolCount)
-	h.toolCount = newToolCount
-
-	actionsJSON, err := json.Marshal(actions)
-	if err != nil {
-		return fmt.Errorf("marshal actions: %w", err)
+	if len(blocks) == 0 {
+		return nil
 	}
 
-	h.sequence++
-	seq := h.sequence
+	content := renderBlocksToMarkdown(blocks)
 
-	req := larkcardkit.NewBatchUpdateCardReqBuilder().
+	h.seq++
+	seq := h.seq
+
+	req := larkcardkit.NewContentCardElementReqBuilder().
 		CardId(h.cardID).
-		Body(larkcardkit.NewBatchUpdateCardReqBodyBuilder().
+		ElementId("main_content").
+		Body(larkcardkit.NewContentCardElementReqBodyBuilder().
+			Content(content).
 			Sequence(seq).
-			Actions(string(actionsJSON)).
 			Build()).
 		Build()
 
-	resp, err := h.api.BatchUpdate(h.ctx, req)
+	logger.WithFields(logrus.Fields{
+		"card_id":     h.cardID,
+		"seq":         seq,
+		"content_len": len(content),
+	}).Debug("feishu-card-element-content-request")
+
+	resp, err := h.elemAPI.Content(h.ctx, req)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"card_id": h.cardID,
+			"seq":     seq,
 			"error":   err,
-		}).Warn("feishu-card-batch-update-error")
+		}).Warn("feishu-card-element-content-error")
 		return err
 	}
 	if !resp.Success() {
 		logger.WithFields(logrus.Fields{
 			"card_id": h.cardID,
+			"seq":     seq,
 			"code":    resp.Code,
 			"msg":     resp.Msg,
-		}).Warn("feishu-card-batch-update-api-error")
-		return fmt.Errorf("card update API error: code=%d", resp.Code)
+		}).Warn("feishu-card-element-content-api-error")
+		return fmt.Errorf("card element content API error: code=%d", resp.Code)
 	}
+
+	logger.WithFields(logrus.Fields{
+		"card_id": h.cardID,
+		"seq":     seq,
+		"code":    resp.Code,
+	}).Debug("feishu-card-element-content-success")
 
 	return nil
 }
@@ -106,50 +117,80 @@ func (h *cardHandle) Finish(blocks []bot.ContentBlock) error {
 	}
 	h.finished = true
 
-	// Final content update
+	// Final content update via CardElement.Content
 	if len(blocks) > 0 {
-		actions, _ := buildBatchUpdateActions(blocks, h.toolCount)
-		actionsJSON, _ := json.Marshal(actions)
-		h.sequence++
+		content := renderBlocksToMarkdown(blocks)
+		h.seq++
 
-		req := larkcardkit.NewBatchUpdateCardReqBuilder().
+		req := larkcardkit.NewContentCardElementReqBuilder().
 			CardId(h.cardID).
-			Body(larkcardkit.NewBatchUpdateCardReqBodyBuilder().
-				Sequence(h.sequence).
-				Actions(string(actionsJSON)).
+			ElementId("main_content").
+			Body(larkcardkit.NewContentCardElementReqBodyBuilder().
+				Content(content).
+				Sequence(h.seq).
 				Build()).
 			Build()
 
-		if _, err := h.api.BatchUpdate(h.ctx, req); err != nil {
+		logger.WithFields(logrus.Fields{
+			"card_id":     h.cardID,
+			"seq":         h.seq,
+			"content_len": len(content),
+		}).Debug("feishu-card-finish-content-request")
+
+		resp, err := h.elemAPI.Content(h.ctx, req)
+		if err != nil {
 			logger.WithFields(logrus.Fields{
 				"card_id": h.cardID,
 				"error":   err,
-			}).Warn("feishu-card-finish-batch-update-error")
+			}).Warn("feishu-card-finish-content-error")
+		} else if !resp.Success() {
+			logger.WithFields(logrus.Fields{
+				"card_id": h.cardID,
+				"code":    resp.Code,
+				"msg":     resp.Msg,
+			}).Warn("feishu-card-finish-content-api-error")
+		} else {
+			logger.WithFields(logrus.Fields{
+				"card_id": h.cardID,
+				"seq":     h.seq,
+				"code":    resp.Code,
+			}).Debug("feishu-card-finish-content-success")
 		}
+	} else {
+		logger.WithField("card_id", h.cardID).Debug("feishu-card-finish-no-blocks")
 	}
 
-	// End streaming mode
-	streamingMode := false
-	settingsJSON := fmt.Sprintf(
-		`{"config":{"streaming_mode":%t},"summary":{"content":%q}}`,
-		streamingMode,
-		truncateString(extractSummary(blocks), 100),
-	)
+	// End streaming and remove header via Card.Update
+	h.seq++
 
-	h.sequence++
-	settingsReq := larkcardkit.NewSettingsCardReqBuilder().
+	// Include final content in the update to avoid overwriting CardElement.Content
+	content := ""
+	if len(blocks) > 0 {
+		content = escapeJSONString(renderBlocksToMarkdown(blocks))
+	}
+
+	// No header in final card — just body with content and streaming off
+	finalCardData := fmt.Sprintf(`{"schema":"2.0","body":{"elements":[{"tag":"markdown","element_id":"main_content","content":"%s"}]},"config":{"streaming_mode":false}}`, content)
+
+	updateReq := larkcardkit.NewUpdateCardReqBuilder().
 		CardId(h.cardID).
-		Body(larkcardkit.NewSettingsCardReqBodyBuilder().
-			Sequence(h.sequence).
-			Settings(settingsJSON).
+		Body(larkcardkit.NewUpdateCardReqBodyBuilder().
+			Card(&larkcardkit.Card{Type: ptrString("card_json"), Data: ptrString(finalCardData)}).
+			Sequence(h.seq).
 			Build()).
 		Build()
 
-	if resp, err := h.api.Settings(h.ctx, settingsReq); err != nil || !resp.Success() {
+	if resp, err := h.api.Update(h.ctx, updateReq); err != nil {
 		logger.WithFields(logrus.Fields{
 			"card_id": h.cardID,
 			"error":   err,
-		}).Warn("feishu-card-settings-error")
+		}).Warn("feishu-card-update-error")
+	} else if !resp.Success() {
+		logger.WithFields(logrus.Fields{
+			"card_id": h.cardID,
+			"code":    resp.Code,
+			"msg":     resp.Msg,
+		}).Warn("feishu-card-update-api-error")
 	}
 
 	logger.WithField("card_id", h.cardID).Info("feishu-card-finished")
@@ -167,12 +208,13 @@ func (b *Bot) CreateRichMessage(channel string, opts bot.RichMessageOptions) (bo
 		return nil, fmt.Errorf("feishu client not initialized")
 	}
 
-	return createRichMessage(botCtx, larkClient.Cardkit.V1.Card, larkClient.Im.Message, channel, opts)
+	return createRichMessage(botCtx, larkClient.Cardkit.V1.Card, larkClient.Cardkit.V1.CardElement, larkClient.Im.Message, channel, opts)
 }
 
 func createRichMessage(
 	ctx context.Context,
 	api cardAPI,
+	elemAPI cardElementContentUpdater,
 	msgSender interface {
 		Create(ctx context.Context, req *larkim.CreateMessageReq, opts ...larkcore.RequestOptionFunc) (*larkim.CreateMessageResp, error)
 		Reply(ctx context.Context, req *larkim.ReplyMessageReq, opts ...larkcore.RequestOptionFunc) (*larkim.ReplyMessageResp, error)
@@ -180,12 +222,7 @@ func createRichMessage(
 	channel string,
 	opts bot.RichMessageOptions,
 ) (bot.RichMessageHandle, error) {
-	title := "Processing..."
-	if opts.Title != "" {
-		title = opts.Title
-	}
-
-	cardData := buildSkeletonCard(title, opts.StopText)
+	cardData := buildSkeletonCard(opts.StopText)
 
 	req := larkcardkit.NewCreateCardReqBuilder().
 		Body(larkcardkit.NewCreateCardReqBodyBuilder().
@@ -207,8 +244,8 @@ func createRichMessage(
 
 	cardID := *resp.Data.CardId
 
-	// Send card reference to chat
-	contentJSON := fmt.Sprintf(`{"card_id":"%s"}`, cardID)
+	// Send card reference to chat — Feishu requires {"type":"card","data":{"card_id":"..."}} format
+	contentJSON := fmt.Sprintf(`{"type":"card","data":{"card_id":"%s"}}`, cardID)
 
 	if opts.ReplyToID != "" {
 		body := larkim.NewReplyMessageReqBodyBuilder().
@@ -235,6 +272,7 @@ func createRichMessage(
 
 	return &cardHandle{
 		api:     api,
+		elemAPI: elemAPI,
 		ctx:     ctx,
 		cardID:  cardID,
 		channel: channel,
@@ -264,17 +302,16 @@ func sendCardAsNewMessage(ctx context.Context, msgSender interface {
 }
 
 // buildSkeletonCard creates the initial card JSON with streaming mode enabled.
-func buildSkeletonCard(title, stopText string) string {
+func buildSkeletonCard(stopText string) string {
 	if stopText == "" {
 		stopText = "Stop"
 	}
 
-	escapedTitle := escapeJSONString(title)
 	escapedStop := escapeJSONString(stopText)
 
 	return fmt.Sprintf(`{
   "schema": "2.0",
-  "header": {"title": {"content": "%s", "tag": "plain_text"}},
+  "header": {"title": {"content": "Processing...", "tag": "plain_text"}},
   "body": {"elements": [
     {"tag": "markdown", "element_id": "main_content", "content": ""}
   ]},
@@ -282,7 +319,7 @@ func buildSkeletonCard(title, stopText string) string {
     {"tag": "button", "element_id": "stop_btn", "text": {"content": "%s", "tag": "plain_text"}, "type": "danger", "value": {"action": "stop"}}
   ]},
   "config": {"streaming_mode": true}
-}`, escapedTitle, escapedStop)
+}`, escapedStop)
 }
 
 // extractSummary builds a short summary from content blocks for the card summary field.
@@ -294,6 +331,8 @@ func extractSummary(blocks []bot.ContentBlock) string {
 	}
 	return "Done"
 }
+
+func ptrString(s string) *string { return &s }
 
 func truncateString(s string, maxRunes int) string {
 	runes := []rune(s)

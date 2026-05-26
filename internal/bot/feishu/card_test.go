@@ -13,15 +13,12 @@ import (
 
 // mockCardAPI implements cardAPI for testing.
 type mockCardAPI struct {
-	createResp       *larkcardkit.CreateCardResp
-	createErr        error
-	createCalls      int
-	batchUpdateResp  *larkcardkit.BatchUpdateCardResp
-	batchUpdateErr   error
-	batchUpdateCalls int
-	settingsResp     *larkcardkit.SettingsCardResp
-	settingsErr      error
-	settingsCalls    int
+	createResp  *larkcardkit.CreateCardResp
+	createErr   error
+	createCalls int
+	updateResp  *larkcardkit.UpdateCardResp
+	updateErr   error
+	updateCalls int
 }
 
 func (m *mockCardAPI) Create(_ context.Context, _ *larkcardkit.CreateCardReq, _ ...larkcore.RequestOptionFunc) (*larkcardkit.CreateCardResp, error) {
@@ -29,14 +26,21 @@ func (m *mockCardAPI) Create(_ context.Context, _ *larkcardkit.CreateCardReq, _ 
 	return m.createResp, m.createErr
 }
 
-func (m *mockCardAPI) BatchUpdate(_ context.Context, _ *larkcardkit.BatchUpdateCardReq, _ ...larkcore.RequestOptionFunc) (*larkcardkit.BatchUpdateCardResp, error) {
-	m.batchUpdateCalls++
-	return m.batchUpdateResp, m.batchUpdateErr
+func (m *mockCardAPI) Update(_ context.Context, _ *larkcardkit.UpdateCardReq, _ ...larkcore.RequestOptionFunc) (*larkcardkit.UpdateCardResp, error) {
+	m.updateCalls++
+	return m.updateResp, m.updateErr
 }
 
-func (m *mockCardAPI) Settings(_ context.Context, _ *larkcardkit.SettingsCardReq, _ ...larkcore.RequestOptionFunc) (*larkcardkit.SettingsCardResp, error) {
-	m.settingsCalls++
-	return m.settingsResp, m.settingsErr
+// mockCardElementAPI implements cardElementContentUpdater for testing.
+type mockCardElementAPI struct {
+	contentResp  *larkcardkit.ContentCardElementResp
+	contentErr   error
+	contentCalls int
+}
+
+func (m *mockCardElementAPI) Content(_ context.Context, _ *larkcardkit.ContentCardElementReq, _ ...larkcore.RequestOptionFunc) (*larkcardkit.ContentCardElementResp, error) {
+	m.contentCalls++
+	return m.contentResp, m.contentErr
 }
 
 // mockMsgCreateReply implements message create and reply for testing.
@@ -66,19 +70,16 @@ func makeCreateCardResp(cardID string) *larkcardkit.CreateCardResp {
 	return r
 }
 
-func makeBatchUpdateResp() *larkcardkit.BatchUpdateCardResp {
-	return &larkcardkit.BatchUpdateCardResp{}
-}
-
-func makeSettingsResp() *larkcardkit.SettingsCardResp {
-	return &larkcardkit.SettingsCardResp{}
+func makeContentResp() *larkcardkit.ContentCardElementResp {
+	return &larkcardkit.ContentCardElementResp{}
 }
 
 func TestCreateRichMessage_Success(t *testing.T) {
 	api := &mockCardAPI{createResp: makeCreateCardResp("card_123")}
+	elemAPI := &mockCardElementAPI{contentResp: makeContentResp()}
 	sender := &mockMsgCreateReply{createResp: &larkim.CreateMessageResp{}}
 
-	handle, err := createRichMessage(context.Background(), api, sender, "chat_001", bot.RichMessageOptions{
+	handle, err := createRichMessage(context.Background(), api, elemAPI, sender, "chat_001", bot.RichMessageOptions{
 		Title: "Test Card",
 	})
 	assert.NoError(t, err)
@@ -88,12 +89,13 @@ func TestCreateRichMessage_Success(t *testing.T) {
 
 func TestCreateRichMessage_WithReply(t *testing.T) {
 	api := &mockCardAPI{createResp: makeCreateCardResp("card_456")}
+	elemAPI := &mockCardElementAPI{contentResp: makeContentResp()}
 	sender := &mockMsgCreateReply{
 		replyResp:  &larkim.ReplyMessageResp{},
 		createResp: &larkim.CreateMessageResp{},
 	}
 
-	handle, err := createRichMessage(context.Background(), api, sender, "chat_002", bot.RichMessageOptions{
+	handle, err := createRichMessage(context.Background(), api, elemAPI, sender, "chat_002", bot.RichMessageOptions{
 		ReplyToID: "msg_reply_target",
 	})
 	assert.NoError(t, err)
@@ -104,12 +106,13 @@ func TestCreateRichMessage_WithReply(t *testing.T) {
 
 func TestCreateRichMessage_ReplyFallsBackToCreate(t *testing.T) {
 	api := &mockCardAPI{createResp: makeCreateCardResp("card_789")}
+	elemAPI := &mockCardElementAPI{contentResp: makeContentResp()}
 	sender := &mockMsgCreateReply{
 		replyErr:   assert.AnError,
 		createResp: &larkim.CreateMessageResp{},
 	}
 
-	handle, err := createRichMessage(context.Background(), api, sender, "chat_003", bot.RichMessageOptions{
+	handle, err := createRichMessage(context.Background(), api, elemAPI, sender, "chat_003", bot.RichMessageOptions{
 		ReplyToID: "msg_will_fail",
 	})
 	assert.NoError(t, err)
@@ -120,9 +123,10 @@ func TestCreateRichMessage_ReplyFallsBackToCreate(t *testing.T) {
 
 func TestCreateRichMessage_CardCreateError(t *testing.T) {
 	api := &mockCardAPI{createErr: assert.AnError}
+	elemAPI := &mockCardElementAPI{contentResp: makeContentResp()}
 	sender := &mockMsgCreateReply{}
 
-	_, err := createRichMessage(context.Background(), api, sender, "chat_004", bot.RichMessageOptions{})
+	_, err := createRichMessage(context.Background(), api, elemAPI, sender, "chat_004", bot.RichMessageOptions{})
 	assert.Error(t, err)
 }
 
@@ -131,20 +135,20 @@ func TestCreateRichMessage_CardCreateApiError(t *testing.T) {
 	r.Code = 999
 	r.Msg = "forbidden"
 	api := &mockCardAPI{createResp: r}
+	elemAPI := &mockCardElementAPI{contentResp: makeContentResp()}
 	sender := &mockMsgCreateReply{}
 
-	_, err := createRichMessage(context.Background(), api, sender, "chat_005", bot.RichMessageOptions{})
+	_, err := createRichMessage(context.Background(), api, elemAPI, sender, "chat_005", bot.RichMessageOptions{})
 	assert.Error(t, err)
 }
 
 func TestCardHandle_UpdateAndFinish(t *testing.T) {
-	api := &mockCardAPI{
-		batchUpdateResp: makeBatchUpdateResp(),
-		settingsResp:    makeSettingsResp(),
-	}
+	api := &mockCardAPI{updateResp: &larkcardkit.UpdateCardResp{}}
+	elemAPI := &mockCardElementAPI{contentResp: makeContentResp()}
 
 	handle := &cardHandle{
 		api:     api,
+		elemAPI: elemAPI,
 		ctx:     context.Background(),
 		cardID:  "card_test",
 		channel: "chat_test",
@@ -156,18 +160,18 @@ func TestCardHandle_UpdateAndFinish(t *testing.T) {
 		{Type: bot.ContentBlockText, Content: "Hello"},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, 1, api.batchUpdateCalls)
+	assert.Equal(t, 1, elemAPI.contentCalls)
 
 	// Double finish should be ok
 	assert.NoError(t, handle.Finish(nil))
-	assert.Equal(t, 1, api.settingsCalls)
+	assert.Equal(t, 1, api.updateCalls)
 	assert.NoError(t, handle.Finish(nil))
-	assert.Equal(t, 1, api.settingsCalls) // second call is no-op
+	assert.Equal(t, 1, api.updateCalls) // second call is no-op
 }
 
 func TestBuildSkeletonCard(t *testing.T) {
-	card := buildSkeletonCard("Hello", "Cancel")
-	assert.Contains(t, card, `"content": "Hello"`)
+	card := buildSkeletonCard("Cancel")
+	assert.Contains(t, card, `"Processing..."`)
 	assert.Contains(t, card, `"content": "Cancel"`)
 	assert.Contains(t, card, `"streaming_mode": true`)
 	assert.Contains(t, card, `"element_id": "main_content"`)

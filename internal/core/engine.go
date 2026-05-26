@@ -867,6 +867,8 @@ func (e *Engine) handleStreamingReply(
 		return
 	}
 
+	logger.WithField("session", session.Name).Debug("streaming-event-loop-started")
+
 	// Consume events and update card
 	var blocks []bot.ContentBlock
 	var textBuf strings.Builder
@@ -878,9 +880,15 @@ func (e *Engine) handleStreamingReply(
 		select {
 		case evt, ok := <-eventCh:
 			if !ok {
+				logger.Debug("streaming-event-channel-closed")
 				streaming = false
 				break
 			}
+			logger.WithFields(logrus.Fields{
+				"event_type":  string(evt.Type),
+				"content_len": len(evt.Content),
+				"tool":        evt.ToolName,
+			}).Debug("streaming-event-received")
 			switch evt.Type {
 			case cli.CLIEventText:
 				textBuf.WriteString(evt.Content)
@@ -910,7 +918,7 @@ func (e *Engine) handleStreamingReply(
 					Type:    bot.ContentBlockThinking,
 					Content: evt.Content,
 				})
-			case cli.CLIEventDone:
+			case cli.CLIEventPermission:
 				if textBuf.Len() > 0 {
 					blocks = append(blocks, bot.ContentBlock{
 						Type:    bot.ContentBlockText,
@@ -918,11 +926,17 @@ func (e *Engine) handleStreamingReply(
 					})
 					textBuf.Reset()
 				}
-				if evt.Content != "" {
+				blocks = append(blocks, bot.ContentBlock{
+					Type:    bot.ContentBlockStatus,
+					Content: evt.Content,
+				})
+			case cli.CLIEventDone:
+				if textBuf.Len() > 0 {
 					blocks = append(blocks, bot.ContentBlock{
 						Type:    bot.ContentBlockText,
-						Content: evt.Content,
+						Content: textBuf.String(),
 					})
+					textBuf.Reset()
 				}
 			}
 

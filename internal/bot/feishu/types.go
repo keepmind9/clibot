@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/keepmind9/clibot/internal/logger"
 )
@@ -49,8 +50,16 @@ func escapeJSONString(s string) string {
 			result += "\\r"
 		case '\t':
 			result += "\\t"
+		case '\b':
+			result += "\\b"
+		case '\f':
+			result += "\\f"
 		default:
-			result += string(c)
+			if c < 0x20 {
+				result += fmt.Sprintf("\\u%04x", c)
+			} else {
+				result += string(c)
+			}
 		}
 	}
 	return result
