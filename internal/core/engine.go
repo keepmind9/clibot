@@ -954,9 +954,25 @@ func (e *Engine) handleStreamingReply(
 		}
 	}
 
+	// Filter out transient status blocks (permission prompts) from final card
+	var finalBlocks []bot.ContentBlock
+	for _, b := range blocks {
+		if b.Type != bot.ContentBlockStatus {
+			finalBlocks = append(finalBlocks, b)
+		}
+	}
+
 	// Final update and finish
-	if err := handle.Finish(blocks); err != nil {
+	if err := handle.Finish(finalBlocks); err != nil {
 		logger.WithField("error", err).Warn("streaming-card-finish-error")
+	} else {
+		// Notify user that streaming is complete (card may be scrolled out of view)
+		notifText := "✅ Done"
+		if session.permDenied.Load() {
+			notifText = "🚫 Permission denied"
+			session.permDenied.Store(false)
+		}
+		e.sendToBotWithReply(msg.Platform, msg.Channel, notifText, msg.MessageID)
 	}
 
 	// Clean up state
@@ -3122,8 +3138,15 @@ func (e *Engine) handlePermissionResponse(session *Session, input string, msg bo
 		return true
 	}
 
+	if opt.ID == "deny" {
+		session.permDenied.Store(true)
+	}
+
 	e.touchSession(session.Name)
-	e.SendToBot(msg.Platform, msg.Channel, fmt.Sprintf("Permission response sent: %s", opt.Text))
+	logger.WithFields(logrus.Fields{
+		"session": session.Name,
+		"option":  opt.Text,
+	}).Info("permission-response-sent")
 	return true
 }
 

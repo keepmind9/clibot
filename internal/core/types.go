@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/keepmind9/clibot/internal/cli/stdio"
@@ -32,6 +33,7 @@ type Session struct {
 	Env          map[string]string  `json:"env,omitempty"`          // Environment variables for the session
 	LastChannel  *BotChannelRef     `json:"last_channel,omitempty"` // Last active bot channel for response routing
 	cancelCtx    context.CancelFunc `json:"-"`                      // Cancel function for active watchdog goroutine
+	permDenied   atomic.Bool        `json:"-"`                      // Set when user denies a permission during streaming
 }
 
 // BotChannelRef is the persistable subset of BotChannel.
