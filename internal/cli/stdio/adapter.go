@@ -2,6 +2,7 @@ package stdio
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -493,16 +494,10 @@ func stdioEventToCLIEvent(evt Event) cli.CLIEvent {
 	case EventText:
 		return cli.CLIEvent{Type: cli.CLIEventText, Content: evt.Text}
 	case EventToolUse:
-		meta := map[string]string{}
-		if evt.ToolUse != nil {
-			meta["input"] = evt.ToolUse.Input
-		}
-		ce := cli.CLIEvent{
-			Type:     cli.CLIEventToolUse,
-			ToolMeta: meta,
-		}
+		ce := cli.CLIEvent{Type: cli.CLIEventToolUse}
 		if evt.ToolUse != nil {
 			ce.ToolName = evt.ToolUse.Name
+			ce.ToolMeta = parseToolInputMeta(evt.ToolUse.Input)
 		}
 		return ce
 	case EventResult:
@@ -519,6 +514,27 @@ func stdioEventToCLIEvent(evt Event) cli.CLIEvent {
 	default:
 		return cli.CLIEvent{Type: cli.CLIEventText, Content: evt.Text}
 	}
+}
+
+// parseToolInputMeta parses a JSON tool input string into individual fields
+// for rich display (e.g., file_path for Read/Edit/Write, command for Bash).
+func parseToolInputMeta(input string) map[string]string {
+	meta := map[string]string{}
+	if input == "" {
+		return meta
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(input), &m); err != nil {
+		return meta
+	}
+	for k, v := range m {
+		if s, ok := v.(string); ok {
+			meta[k] = s
+		} else {
+			meta[k] = fmt.Sprintf("%v", v)
+		}
+	}
+	return meta
 }
 
 // eventLoop reads events from the process and dispatches them.

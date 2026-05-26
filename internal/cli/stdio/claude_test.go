@@ -143,7 +143,7 @@ func TestClaudeSpec_ParseLine(t *testing.T) {
 			expectType:   EventToolUse,
 			expectToolUse: &ToolUseInfo{
 				Name:  "Bash",
-				Input: "ls -la",
+				Input: `{"command":"ls -la"}`,
 			},
 		},
 		{

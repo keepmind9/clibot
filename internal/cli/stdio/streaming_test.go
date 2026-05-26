@@ -22,12 +22,12 @@ func TestStdioEventToCLIEvent(t *testing.T) {
 			name: "tool use event",
 			evt: Event{
 				Type:    EventToolUse,
-				ToolUse: &ToolUseInfo{Name: "Bash", Input: "ls -la"},
+				ToolUse: &ToolUseInfo{Name: "Bash", Input: `{"command":"ls -la"}`},
 			},
 			want: cli.CLIEvent{
 				Type:     cli.CLIEventToolUse,
 				ToolName: "Bash",
-				ToolMeta: map[string]string{"input": "ls -la"},
+				ToolMeta: map[string]string{"command": "ls -la"},
 			},
 		},
 		{
@@ -35,6 +35,30 @@ func TestStdioEventToCLIEvent(t *testing.T) {
 			evt:  Event{Type: EventToolUse},
 			want: cli.CLIEvent{
 				Type:     cli.CLIEventToolUse,
+				ToolMeta: nil,
+			},
+		},
+		{
+			name: "tool use Read event parses file_path",
+			evt: Event{
+				Type:    EventToolUse,
+				ToolUse: &ToolUseInfo{Name: "Read", Input: `{"file_path":"/tmp/test.go"}`},
+			},
+			want: cli.CLIEvent{
+				Type:     cli.CLIEventToolUse,
+				ToolName: "Read",
+				ToolMeta: map[string]string{"file_path": "/tmp/test.go"},
+			},
+		},
+		{
+			name: "tool use invalid JSON yields nil meta",
+			evt: Event{
+				Type:    EventToolUse,
+				ToolUse: &ToolUseInfo{Name: "Unknown", Input: "not-json"},
+			},
+			want: cli.CLIEvent{
+				Type:     cli.CLIEventToolUse,
+				ToolName: "Unknown",
 				ToolMeta: map[string]string{},
 			},
 		},
@@ -68,9 +92,7 @@ func TestStdioEventToCLIEvent(t *testing.T) {
 			assert.Equal(t, tt.want.Type, got.Type)
 			assert.Equal(t, tt.want.Content, got.Content)
 			assert.Equal(t, tt.want.ToolName, got.ToolName)
-			if tt.want.ToolMeta != nil {
-				assert.Equal(t, tt.want.ToolMeta, got.ToolMeta)
-			}
+			assert.Equal(t, tt.want.ToolMeta, got.ToolMeta)
 		})
 	}
 }

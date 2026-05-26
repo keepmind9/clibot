@@ -72,13 +72,43 @@ func toolSummary(name string, meta map[string]string) string {
 		if cmd, ok := meta["command"]; ok {
 			return truncateString(cmd, 80)
 		}
-	case "Read", "Edit", "Write":
+	case "Read", "Edit", "Write", "NotebookEdit":
 		if path, ok := meta["file_path"]; ok {
 			return fmt.Sprintf("%s: %s", name, truncateString(path, 60))
 		}
-	case "Grep", "Glob":
+	case "Grep":
+		pat := meta["pattern"]
+		p := meta["path"]
+		if p != "" {
+			return fmt.Sprintf("Grep: %s in %s", truncateString(pat, 40), truncateString(p, 30))
+		}
+		if pat != "" {
+			return "Grep: " + truncateString(pat, 60)
+		}
+	case "Glob":
 		if pattern, ok := meta["pattern"]; ok {
-			return fmt.Sprintf("%s: %s", name, truncateString(pattern, 60))
+			return "Glob: " + truncateString(pattern, 60)
+		}
+	case "WebFetch":
+		if url, ok := meta["url"]; ok {
+			return "WebFetch: " + truncateString(url, 60)
+		}
+	case "WebSearch":
+		if q, ok := meta["query"]; ok {
+			return "WebSearch: " + truncateString(q, 60)
+		}
+	case "Agent", "Task":
+		if desc, ok := meta["description"]; ok {
+			return fmt.Sprintf("%s: %s", name, truncateString(desc, 60))
+		}
+		if sub, ok := meta["subagent_type"]; ok {
+			return fmt.Sprintf("%s: %s", name, truncateString(sub, 60))
+		}
+	default:
+		for _, key := range []string{"command", "file_path", "path", "query"} {
+			if v, ok := meta[key]; ok {
+				return fmt.Sprintf("%s: %s", name, truncateString(v, 60))
+			}
 		}
 	}
 	if name != "" {

@@ -180,19 +180,28 @@ func TestBuildSkeletonCard(t *testing.T) {
 func TestToolSummary(t *testing.T) {
 	tests := []struct {
 		name string
+		tool string
 		meta map[string]string
 		want string
 	}{
-		{"Bash", map[string]string{"command": "ls -la"}, "ls -la"},
-		{"Read", map[string]string{"file_path": "/tmp/test.go"}, "Read: /tmp/test.go"},
-		{"Grep", map[string]string{"pattern": "TODO"}, "Grep: TODO"},
-		{"Unknown", nil, "Unknown"},
-		{"", nil, "Tool"},
+		{"Bash", "Bash", map[string]string{"command": "ls -la"}, "ls -la"},
+		{"Read", "Read", map[string]string{"file_path": "/tmp/test.go"}, "Read: /tmp/test.go"},
+		{"Edit", "Edit", map[string]string{"file_path": "/app/main.go"}, "Edit: /app/main.go"},
+		{"Grep pattern only", "Grep", map[string]string{"pattern": "TODO"}, "Grep: TODO"},
+		{"Grep with path", "Grep", map[string]string{"pattern": "TODO", "path": "/src"}, "Grep: TODO in /src"},
+		{"Glob", "Glob", map[string]string{"pattern": "*.go"}, "Glob: *.go"},
+		{"WebFetch", "WebFetch", map[string]string{"url": "https://example.com"}, "WebFetch: https://example.com"},
+		{"WebSearch", "WebSearch", map[string]string{"query": "golang test"}, "WebSearch: golang test"},
+		{"Agent", "Agent", map[string]string{"description": "search code"}, "Agent: search code"},
+		{"NotebookEdit", "NotebookEdit", map[string]string{"file_path": "/note.ipynb"}, "NotebookEdit: /note.ipynb"},
+		{"Unknown with file_path", "Unknown", map[string]string{"file_path": "/x"}, "Unknown: /x"},
+		{"Unknown", "Unknown", nil, "Unknown"},
+		{"Empty tool", "", nil, "Tool"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := toolSummary(tt.name, tt.meta)
+			got := toolSummary(tt.tool, tt.meta)
 			assert.Equal(t, tt.want, got)
 		})
 	}

@@ -126,7 +126,7 @@ func parseAssistant(raw map[string]any) []Event {
 			}
 		case "tool_use":
 			name, _ := c["name"].(string)
-			input := summarizeInput(name, c["input"])
+			input := encodeToolInput(c["input"])
 			events = append(events, Event{
 				Type:    EventToolUse,
 				ToolUse: &ToolUseInfo{Name: name, Input: input},
@@ -172,6 +172,23 @@ func parseControlRequest(raw map[string]any) []Event {
 			},
 		},
 	}}
+}
+
+// encodeToolInput serializes a tool input to JSON for ToolUseInfo.Input.
+func encodeToolInput(input any) string {
+	if input == nil {
+		return ""
+	}
+	switch v := input.(type) {
+	case string:
+		return v
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return string(b)
+	}
 }
 
 // summarizeInput creates a short summary of a tool input for display.

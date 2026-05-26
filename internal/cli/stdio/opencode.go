@@ -95,7 +95,7 @@ func parseOpenCodeToolUse(raw map[string]any) []Event {
 	if name == "" {
 		return nil
 	}
-	input := summarizeInput(name, raw["input"])
+	input := encodeToolInput(raw["input"])
 	return []Event{
 		{
 			Type:    EventToolUse,

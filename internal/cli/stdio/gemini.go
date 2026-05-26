@@ -110,7 +110,7 @@ func parseGeminiToolUse(raw map[string]any) []Event {
 	if name == "" {
 		return nil
 	}
-	input := summarizeGeminiArgs(name, raw["args"])
+	input := encodeToolInput(raw["args"])
 	return []Event{
 		{
 			Type:    EventToolUse,
@@ -131,14 +131,6 @@ func parseGeminiResult(raw map[string]any) []Event {
 		Done:      true,
 		SessionID: sessionID,
 	}}
-}
-
-// summarizeGeminiArgs creates a short summary of tool arguments for display.
-func summarizeGeminiArgs(toolName string, args any) string {
-	if args == nil {
-		return ""
-	}
-	return summarizeInput(toolName, args)
 }
 
 var _ CLISpec = GeminiSpec{}
