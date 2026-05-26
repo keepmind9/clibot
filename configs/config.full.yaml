@@ -256,6 +256,7 @@ session_templates:
 session:
   max_dynamic_sessions: 50
   # idle_timeout: "1h"   # Auto-cleanup idle dynamic sessions (default: 1h, "0" to disable)
+  # max_concurrent_runs: 3  # Max simultaneous CLI runs across all sessions (0 = no limit)
 
 # ==============================================================================
 # Bot Configuration
@@ -276,6 +277,12 @@ bots:
     app_id: "cli_a...."
     app_secret: "HTCoxSDE3...."
     max_message_length: 4000
+    # reply_mode: "card"          # Streaming card reply with typewriter effect (default: "text")
+    # debounce_ms: 2000           # Merge rapid messages within window in ms (0 = disabled)
+    # mention_in_group: true      # Only respond when @mentioned in groups (default: true)
+    # media_dir: "~/.clibot/feishu/media"  # Directory for downloaded media files
+    # media_ttl: "24h"            # Media cache TTL ("0" to disable cleanup)
+    # max_media_size: 10485760    # Max media file size in bytes (0 = no limit)
 
   # Telegram Bot
   telegram:

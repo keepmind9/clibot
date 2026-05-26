@@ -268,6 +268,12 @@ bots:
     enabled: true
     app_id: "cli_xxxxxxxxx"
     app_secret: "xxxxxxxxxxxxxxxx"
+    # reply_mode: "card"          # Streaming card reply with typewriter effect (default: "text")
+    # debounce_ms: 2000           # Merge rapid messages within window (0 = disabled)
+    # mention_in_group: true      # Only respond when @mentioned in group chats (default: true)
+    # media_dir: "~/.clibot/feishu/media"  # Directory for downloaded media
+    # media_ttl: "24h"            # Media cache TTL ("0" to disable cleanup)
+    # max_media_size: 10485760    # Max media file size in bytes (0 = no limit)
 ```
 
 ### Discord
