@@ -216,3 +216,25 @@ func TestValidateConfigDetails_MultipleWarnings(t *testing.T) {
 	warnings := validateConfigDetails(cfg)
 	assert.GreaterOrEqual(t, len(warnings), 2, "should have multiple warnings")
 }
+
+// TestValidateConfigDetails_MissingCLIType tests warning when session has empty cli_type
+func TestValidateConfigDetails_MissingCLIType(t *testing.T) {
+	cfg := &core.Config{
+		Security: core.SecurityConfig{
+			WhitelistEnabled: true,
+			AllowedUsers: map[string][]string{
+				"discord": {"user123"},
+			},
+		},
+		Bots: map[string]core.BotConfig{
+			"discord": {Enabled: true, Token: "test"},
+		},
+		Sessions: []core.SessionConfig{
+			{Name: "test", CLIType: "", WorkDir: "/tmp", StartCmd: "opencode -acp", Transport: "stdio://"},
+		},
+	}
+
+	warnings := validateConfigDetails(cfg)
+	assert.NotEmpty(t, warnings)
+	assert.Contains(t, strings.Join(warnings, "\n"), "missing required field 'cli_type'")
+}

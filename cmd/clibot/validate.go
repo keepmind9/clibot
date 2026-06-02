@@ -208,6 +208,13 @@ func validateConfigDetails(cfg *core.Config) []string {
 		warnings = append(warnings, "No sessions configured - add at least one session")
 	}
 
+	// Validate session fields
+	for _, session := range cfg.Sessions {
+		if session.CLIType == "" {
+			warnings = append(warnings, fmt.Sprintf("Session %q is missing required field 'cli_type'", session.Name))
+		}
+	}
+
 	return warnings
 }
 

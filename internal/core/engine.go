@@ -263,11 +263,15 @@ func (e *Engine) initializeSessions() error {
 			CreatedBy:    "",
 		}
 
+		// Validate CLI type is specified
+		if session.CLIType == "" {
+			return fmt.Errorf("session %q is missing required field 'cli_type'", session.Name)
+		}
+
 		// Check if CLI adapter exists
 		adapter, exists := e.cliAdapters[session.CLIType]
 		if !exists {
-			log.Printf("Warning: CLI adapter %s not found for session %s", session.CLIType, session.Name)
-			continue
+			return fmt.Errorf("session %q references unknown cli_type %q -- check cli_adapters config or see docs for supported types", session.Name, session.CLIType)
 		}
 
 		// Check if session is alive or create if auto_start is enabled

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestEngine_InitializeSessions tests session initialization
-func TestEngine_InitializeSessions(t *testing.T) {
+// TestEngine_InitializeSessions_UnknownCLIType tests error when adapters not registered
+func TestEngine_InitializeSessions_UnknownCLIType(t *testing.T) {
 	config := &Config{
 		Sessions: []SessionConfig{
 			{Name: "session1", CLIType: "claude", WorkDir: "/tmp1"},
@@ -19,14 +19,9 @@ func TestEngine_InitializeSessions(t *testing.T) {
 	}
 	engine := NewEngine(config)
 
-	// Call initializeSessions
-	// Note: This will log warnings about CLI adapters not being found
-	// but should not return an error
 	err := engine.initializeSessions()
-	assert.NoError(t, err)
-
-	// Sessions won't be created if CLI adapters aren't registered
-	// This is expected behavior
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown cli_type")
 	assert.Empty(t, engine.sessions)
 }
 
@@ -68,21 +63,57 @@ func TestEngine_RegisterBotAdapter_DuplicateRegistration(t *testing.T) {
 }
 
 // TestEngine_InitializeSessions_DuplicateNames tests duplicate session names
+// First occurrence wins; subsequent duplicates are silently skipped
 func TestEngine_InitializeSessions_DuplicateNames(t *testing.T) {
 	config := &Config{
 		Sessions: []SessionConfig{
 			{Name: "dup", CLIType: "claude", WorkDir: "/tmp1"},
-			{Name: "dup", CLIType: "gemini", WorkDir: "/tmp2"},
+			{Name: "dup", CLIType: "claude", WorkDir: "/tmp2"},
 		},
 	}
 	engine := NewEngine(config)
+	engine.RegisterCLIAdapter("claude", &mockCLIAdapter{})
 
 	err := engine.initializeSessions()
-	// Should handle duplicate names (either error or take first)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	// Should have at most one session named "dup"
-	assert.LessOrEqual(t, len(engine.sessions), 1)
+	// Only one session kept (first occurrence wins)
+	assert.Len(t, engine.sessions, 1)
+	assert.Equal(t, "/tmp1", engine.sessions["dup"].WorkDir)
+}
+
+// TestEngine_InitializeSessions_MissingCLIType tests that missing cli_type returns an error
+func TestEngine_InitializeSessions_MissingCLIType(t *testing.T) {
+	tests := []struct {
+		name    string
+		session SessionConfig
+		errMsg  string
+	}{
+		{
+			name:    "empty cli_type",
+			session: SessionConfig{Name: "test", CLIType: "", WorkDir: "/tmp"},
+			errMsg:  "missing required field 'cli_type'",
+		},
+		{
+			name:    "unknown cli_type",
+			session: SessionConfig{Name: "test", CLIType: "unknown-cli", WorkDir: "/tmp"},
+			errMsg:  "unknown cli_type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				Sessions: []SessionConfig{tt.session},
+			}
+			engine := NewEngine(config)
+
+			err := engine.initializeSessions()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errMsg)
+			assert.Empty(t, engine.sessions)
+		})
+	}
 }
 
 // TestEngine_GetUserKey tests the getUserKey function
